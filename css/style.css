@@ -1,0 +1,813 @@
+/* =========================================================
+   Leatheron — light, quiet interface
+   Soft neutrals, generous spacing, rounded corners, one
+   accent colour that shifts with the zone you are in.
+   ========================================================= */
+
+:root{
+  /* surfaces */
+  --bg:#faf9f7;
+  --card:#ffffff;
+  --sunk:#f2f1ee;
+  --line:#e6e3de;
+  --line-2:#d6d2cb;
+
+  /* type */
+  --ink:#2f2d2a;
+  --ink-2:#6b665f;
+  --ink-3:#9a948c;
+
+  /* accent — overridden per zone from ZONE_THEME */
+  --accent:#3f7d52;
+  --zone-soft:#eef5ef;
+  --zone-line:#cfe3d4;
+
+  /* semantic */
+  --good:#4a8a5c;
+  --warn:#c98a3c;
+  --bad:#c25a4e;
+  --spirit:#7a68a6;
+  --hp:#5aa06c;
+  --hp-low:#d4a03c;
+  --hp-crit:#c25a4e;
+
+  --r:10px;
+  --r-sm:7px;
+  --play-card-w:108px;
+  --play-card-h:164px;
+  --shadow:0 1px 2px rgba(35,31,26,.06), 0 2px 8px rgba(35,31,26,.05);
+}
+
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+body{
+  background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+  font-size:14px;line-height:1.5;
+  display:flex;justify-content:center;user-select:none;
+  -webkit-font-smoothing:antialiased;
+}
+#app{
+  width:100%;max-width:430px;height:100dvh;
+  display:flex;flex-direction:column;position:relative;
+  background:var(--bg);overflow:hidden;
+}
+/* a landed hit on an enemy or a location punches the whole screen —
+   short and sharp so it never slows down fast play */
+#app.shake{animation:screenshake .32s cubic-bezier(.36,.07,.19,.97)}
+@keyframes screenshake{
+  0%{transform:translate(0,0)}
+  15%{transform:translate(-6px,2px) rotate(-.4deg)}
+  30%{transform:translate(5px,-2px) rotate(.4deg)}
+  45%{transform:translate(-4px,1px)}
+  60%{transform:translate(3px,-1px)}
+  80%{transform:translate(-1px,1px)}
+  100%{transform:translate(0,0)}
+}
+.emb{display:block;flex-shrink:0}
+
+/* ---------- primitives ---------- */
+.px-btn{
+  font:inherit;font-size:12px;font-weight:500;
+  background:var(--card);color:var(--ink);
+  border:1px solid var(--line-2);border-radius:var(--r-sm);
+  padding:8px 12px;cursor:pointer;white-space:nowrap;
+  transition:background .12s,border-color .12s,opacity .12s;
+}
+.px-btn:active{background:var(--sunk)}
+.px-btn:disabled{color:var(--ink-3);background:var(--sunk);border-color:var(--line);cursor:default}
+.px-btn.acc{background:var(--accent);border-color:var(--accent);color:#fff}
+.px-btn.acc:disabled{background:var(--sunk);border-color:var(--line);color:var(--ink-3)}
+.px-btn.spirit{background:var(--spirit);border-color:var(--spirit);color:#fff}
+.px-btn.warn{color:var(--bad);border-color:#e8cdc8;background:var(--card)}
+.label{font-size:11px;font-weight:500;color:var(--ink-2);letter-spacing:.01em}
+.num{font-variant-numeric:tabular-nums;font-size:22px;font-weight:600;line-height:1.1}
+.campfire-box{margin:10px 0 0}
+.campfire-label{display:block;font-size:11px;font-weight:600;color:var(--ink-2);margin-bottom:6px}
+.campfire-select{width:100%;font:inherit;font-size:13px;color:var(--ink);background:var(--card);
+  border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px}
+.campfire-select:focus{outline:2px solid var(--zone-line);outline-offset:1px}
+
+/* ---------- header ---------- */
+.header{padding:9px 14px 7px;background:var(--card);
+  border-bottom:1px solid var(--line);flex-shrink:0}
+.hdr-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+.hdr-zone{position:relative;overflow:hidden;font:inherit;font-size:15px;font-weight:600;color:var(--ink);
+  display:flex;align-items:baseline;gap:8px;
+  background:var(--sunk);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:5px 12px 6px;cursor:pointer}
+.hdr-zone:active{background:var(--zone-soft)}
+.hdr-zone i{font-style:normal;font-size:11px;font-weight:400;color:var(--accent);
+  background:var(--zone-soft);padding:2px 8px;border-radius:20px}
+.hdr-lv{font-size:11px;font-weight:500;color:var(--ink-3);
+  background:var(--sunk);border:1px solid var(--line-2);padding:2px 7px;border-radius:20px}
+/* zone xp — a thin fill along the bottom edge of the pill itself */
+.hdr-zone-xp{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--line-2)}
+.hdr-zone-xp-fill{display:block;height:100%;width:0;background:var(--accent);
+  transition:width .3s ease-out}
+/* deck + bag sit together at the top right — both are "your stuff",
+   as opposed to the nav below which is "where you are" */
+.hdr-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.hdr-bag{width:34px;height:34px;flex-shrink:0;display:flex;align-items:center;
+  justify-content:center;background:var(--sunk);border:1px solid var(--line);
+  border-radius:var(--r-sm);cursor:pointer}
+.hdr-bag:active{background:var(--zone-soft)}
+.hdr-bag.bump{animation:bagbump .4s ease-out}
+@keyframes bagbump{0%,100%{transform:scale(1)}35%{transform:scale(1.25)}}
+.hdr-deck{position:relative;height:34px;flex-shrink:0;display:flex;align-items:center;gap:5px;
+  padding:0 9px;font:inherit;background:var(--sunk);border:1px solid var(--line);
+  border-radius:var(--r-sm);cursor:pointer;color:var(--ink-3)}
+.hdr-deck:active{background:var(--zone-soft)}
+.hdr-deck-ico{display:flex;align-items:center}
+.hdr-deck-n{font-size:12px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.hdr-deck-n b{color:var(--ink);font-weight:600}
+.hdr-deck-n i{font-style:normal;opacity:.5;margin:0 1px}
+.hdr-deck .dot{position:absolute;top:-3px;right:-3px}
+/* the page you are on reads as pressed-in */
+.hdr-deck.active,.hdr-bag.active{background:var(--zone-soft);border-color:var(--zone-line)}
+
+/* hotbar */
+.hotbar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:7px}
+.hot{background:var(--sunk);border:1px solid var(--line);border-radius:var(--r);
+  padding:6px 8px;min-height:46px;display:flex;flex-direction:column;gap:2px;cursor:pointer}
+.hot.ready{background:var(--card);border-color:var(--zone-line)}
+.hot.ready:active{background:var(--zone-soft)}
+.hot.empty{border-style:dashed;opacity:.6;align-items:center;justify-content:center}
+.hot-empty{font-size:11px;color:var(--ink-3)}
+.hot-top{display:flex;align-items:center;justify-content:space-between}
+.hot-qty{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+.hot-name{font-size:10px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hot-heal{font-size:11px;color:var(--good);font-weight:500;margin-top:auto}
+
+/* vitals */
+.vitals,.wt-row{display:flex;align-items:center;gap:9px}
+.wt-row{margin-top:5px}
+.blocks{display:flex;gap:3px;flex:1}
+.blk{flex:1;height:8px;border-radius:4px;background:var(--line)}
+.blk.on{background:var(--hp)}
+.blk.on.low{background:var(--hp-low)}
+.blk.on.crit{background:var(--hp-crit)}
+.vit-num{font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums;
+  min-width:52px;text-align:right}
+.hp-flash{animation:pulse .4s ease-out}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.wt-bar{flex:1;height:8px;border-radius:4px;background:var(--line);
+  display:flex;gap:1px;padding:0;overflow:hidden}
+.wt-seg{flex:1;background:transparent}
+.wt-seg.on{background:var(--good)}
+.wt-seg.on.warn{background:var(--warn)}
+.wt-seg.on.full{background:var(--bad)}
+
+/* ---------- pages ---------- */
+.pages{flex:1;position:relative;min-height:0}
+.page{position:absolute;inset:0;display:none;flex-direction:column;
+  overflow-y:auto;-webkit-overflow-scrolling:touch}
+.page.active{display:flex}
+.pad{padding:14px}
+.sec{font-size:12px;font-weight:600;color:var(--ink-2);margin:0 0 10px;
+  display:flex;justify-content:space-between;align-items:center;gap:8px}
+.sec .sec-l{display:flex;align-items:center;gap:7px}
+.sec .hint{font-size:11px;font-weight:400;color:var(--ink-3)}
+.sec + .sec{margin-top:20px}
+
+/* ---------- play ---------- */
+.field{flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:flex-start;padding:10px 12px;min-height:0;position:relative;cursor:pointer;
+  overflow-y:auto;-webkit-overflow-scrolling:touch}
+.warnbar{width:100%;max-width:330px;margin-bottom:10px;padding:9px 11px;
+  border-radius:var(--r);background:#fdf3e8;border:1px solid #f0dfc6;
+  font-size:12px;line-height:1.5;color:#8a5f26;display:none;align-items:center;gap:9px}
+.warnbar.show{display:flex}
+.statusbar{width:100%;max-width:330px;margin-bottom:7px;display:flex;
+  flex-wrap:wrap;gap:6px}
+.statusbar:empty{display:none}
+.status-chip{display:flex;align-items:center;gap:5px;padding:4px 9px;
+  border-radius:20px;background:#f1eef7;border:1px solid #d9d0ea;
+  font-size:11px;color:#5c4d85}
+.status-chip b{font-weight:600;font-variant-numeric:tabular-nums}
+
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}
+  75%{transform:translateX(4px)}}
+
+/* location field — boulders, trees, ore veins, and animals; up to 3
+   at once, cleared one at a time by whatever matching card you play
+   (see G.activeLocation). An animal is just another location card —
+   no separate enemy panel — showing only its emblem, name and hp.
+   The strip is a tinted "table" the field sits on, visually split
+   from the hand below it — also a natural spot to hang a zone/location
+   blurb later, once there's copy for it. */
+.field-strip{width:100%;max-width:340px;padding:12px 10px 14px;
+  background:linear-gradient(180deg,#efece4,#e8e3d6);
+  border-radius:var(--r);margin-bottom:14px;display:flex;flex-direction:column;
+  align-items:center;flex-shrink:0}
+.field-strip:has(.locfield:empty){display:none}
+.field-strip-lbl{font-size:10px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:#8a8065;margin-bottom:9px}
+.locfield{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;
+  width:100%;max-width:340px;flex-shrink:0}
+.field-strip .locfield{margin-bottom:0}
+.locfield:empty{display:none}
+.locslot{display:flex;flex-direction:column;gap:5px;min-width:0}
+.locslot-lbl{font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:#8a8065;text-align:center}
+.locslot-empty{height:74px;border:1px dashed rgba(122,111,86,.35);border-radius:var(--r);
+  background:rgba(255,255,255,.28)}
+.locard{position:relative;flex:1;min-width:0;max-width:108px;
+  border-width:2.5px;border-style:solid;border-radius:var(--r);
+  box-shadow:0 3px 6px rgba(35,31,26,.16),0 1px 0 rgba(255,255,255,.5) inset;
+  display:flex;flex-direction:column;align-items:center;padding:8px 7px;
+  text-align:center}
+/* combat-only: what a swing costs you, visible before you commit —
+   sits in the corner so it doesn't compete with the name/emblem */
+.locard-atk{position:absolute;top:5px;right:6px;display:flex;align-items:center;gap:2px;
+  color:var(--bad);opacity:.85}
+.locard-atk svg{width:11px;height:11px}
+.locard-atk b{font-size:11px;font-weight:700;line-height:1}
+.locard-req{position:absolute;top:5px;left:6px;width:13px;height:13px;display:flex;
+  align-items:center;justify-content:center;color:#7a2e26;opacity:.95}
+.locard-req-ico{display:flex;align-items:center;justify-content:center}
+.locard-req-ico svg{width:11px;height:11px}
+.locard-req-slash{position:absolute;width:15px;height:2px;background:var(--bad);
+  border-radius:999px;transform:rotate(-45deg);box-shadow:0 0 0 1px rgba(255,255,255,.2)}
+/* tinted solid, not the pale wash the old single amber scheme used —
+   deliberately heavier than the white hand cards so field vs. hand
+   reads at a glance. grey = broken by a pick, brown = by an axe,
+   red = fights back (melee or ranged). */
+.locard.tint-stone{background:#dde0e4;border-color:#5c6570}
+.locard.tint-stone .locard-name{color:#3d434b}
+.locard.tint-wood{background:#e8d7b7;border-color:#7a5a22}
+.locard.tint-wood .locard-name{color:#5c4419}
+.locard.tint-blood{background:#f6d9d4;border-color:#a8443a}
+.locard.tint-blood .locard-name{color:#7a2e26}
+.locard.tint-blood .locard-blocks .blk.on{background:var(--bad)}
+.locard.tint-range{background:#dceef3;border-color:#3f7a8a}
+.locard.tint-range .locard-name{color:#2e5a65}
+.locard-emb{margin-bottom:4px}
+.locard-emb svg{width:24px;height:24px}
+.locard-name{font-size:11px;font-weight:600;margin-bottom:5px}
+.locard-blocks{width:100%}
+.locard-blocks .blk{height:5px}
+.locard-blocks .blk.on{background:var(--warn)}
+.locard.hurt{animation:shake .3s ease-out}
+/* break animation: card spins edge-on (scaleX to 0) and back, with
+   its content swapped at the invisible midpoint (see UI.showLocation
+   Broken) so the back face reads as the same card flipping over, not
+   a cut. Holds on the back, then fades once flyToBag has launched. */
+.locard.flip-anim{animation:locFlip .32s cubic-bezier(.36,.07,.19,.97) forwards}
+@keyframes locFlip{0%{transform:scaleX(1)}50%{transform:scaleX(0)}100%{transform:scaleX(1)}}
+.locard.fading{animation:fade .15s ease-in forwards}
+.locard-back-lbl{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:6px}
+.locard-back-gains{display:flex;flex-direction:column;gap:4px;width:100%}
+.locard-back-gain{display:flex;align-items:center;justify-content:center;gap:4px;
+  font-size:12px;font-weight:700}
+.locard-back-gain svg{width:16px;height:16px}
+@media (prefers-reduced-motion: reduce){
+  .locard.flip-anim{animation:none}
+}
+
+/* ---------- farm plots (Town tab) ---------- */
+.farm-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.farm-plot{position:relative;border-width:2px;border-style:dashed;border-color:var(--line);
+  border-radius:var(--r);background:var(--card);aspect-ratio:1;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;padding:6px;text-align:center;cursor:pointer}
+.farm-plot.growing,.farm-plot.ready{border-style:solid;border-color:var(--accent)}
+.farm-plot-hint{font-size:10px;color:var(--ink-3);line-height:1.3}
+.farm-plot-name{font-size:11px;font-weight:600}
+.farm-ring{position:absolute;top:4px;right:4px;width:26px;height:26px;
+  transform:rotate(-90deg)}
+.farm-ring circle{fill:none;stroke-width:3}
+.farm-ring .track{stroke:var(--line-2)}
+.farm-ring .fill{stroke:var(--accent);stroke-linecap:round}
+.farm-plot.ready .farm-ring .fill{stroke:var(--good)}
+
+/* hand — trading-card layout: art on top, a type band, effects
+   below. Framed in the card's own tint colour so the deck you're
+   holding reads visually distinct from the tinted field strip above. */
+.hand-lbl{font-size:10px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-3);text-align:center;margin-bottom:8px;flex-shrink:0}
+.hand{display:flex;gap:7px;width:100%;max-width:100%;justify-content:center;flex-shrink:0;
+  overflow-x:auto;overflow-y:hidden;padding:0 2px 2px;scrollbar-width:none}
+.hand::-webkit-scrollbar{display:none}
+.hcard{flex:0 0 var(--play-card-w);width:var(--play-card-w);min-width:var(--play-card-w);
+  max-width:var(--play-card-w);min-height:var(--play-card-h);background:var(--card);
+  border:2px solid var(--tint,var(--line-2));border-radius:var(--r);box-shadow:var(--shadow);
+  display:flex;flex-direction:column;overflow:hidden;
+  cursor:pointer;animation:rise .125s ease-out backwards;
+  transition:transform .12s,border-color .12s}
+.hcard:active{transform:translateY(1px)}
+@keyframes rise{0%{transform:translateY(14px);opacity:0}100%{transform:none;opacity:1}}
+.hcard{animation-duration:.095s}
+.hc-art{height:38px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  background:var(--tint-soft,var(--sunk));border-bottom:2px solid var(--tint,var(--line-2))}
+.hc-art svg{width:26px;height:26px}
+.hc-type{font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  text-align:center;padding:2px 4px;color:var(--tint,var(--ink-3));
+  background:var(--card);border-bottom:1px solid var(--line)}
+.hc-body{padding:6px 6px 8px;text-align:center;flex:1;min-height:0;
+  display:flex;flex-direction:column;align-items:center}
+.hc-name{font-size:11.5px;font-weight:600;line-height:1.2;margin-bottom:4px;
+  min-height:0;display:flex;align-items:center;justify-content:center}
+.hc-durability{width:70%;height:4px;border-radius:2px;background:var(--sunk);
+  overflow:hidden;margin:-1px 0 5px}
+.hc-durability-fill{height:100%;border-radius:2px;background:var(--good);
+  transition:width .2s ease-out}
+.hc-durability.low .hc-durability-fill{background:var(--warn)}
+.hc-durability.crit .hc-durability-fill{background:var(--bad)}
+.hc-y{display:flex;flex-direction:column;gap:4px;width:100%}
+.hcard.resulting{justify-content:center}
+.hc-result{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:6px;height:100%;padding:10px 8px;text-align:center}
+.hc-result-lbl{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.hc-result-gains{display:flex;flex-direction:column;gap:4px;width:100%}
+.hc-result-gain{display:flex;align-items:center;justify-content:center;gap:4px;font-size:12px;font-weight:700}
+.cy{display:flex;align-items:center;gap:4px;justify-content:center}
+.cy b{font-size:13px;font-weight:600;color:var(--good)}
+.cy span{font-size:10px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cy i{font-style:normal;font-size:9px;color:var(--ink-3)}
+.cy.combat b{color:var(--bad);font-size:12px}
+.hcard.blocked{opacity:.55}
+.hcard.blocked .cy b{color:var(--warn)}
+.hcard.picked{border-color:var(--accent);box-shadow:0 0 0 2px var(--zone-soft)}
+.hcard.armed{border-color:var(--good);
+  animation:rise .125s ease-out backwards,armedglow 1.4s ease-in-out .15s infinite}
+.hcard.armed .hc-name{color:var(--good)}
+@keyframes armedglow{0%,100%{box-shadow:0 0 0 2px rgba(74,138,92,.22)}
+  50%{box-shadow:0 0 0 4px rgba(74,138,92,.4)}}
+.hcard.passed{opacity:.35}
+.hcard.out{animation:fade .115s ease-in forwards}
+@keyframes fade{to{opacity:0;transform:translateY(-10px)}}
+
+/* A tool/weapon hitting zero durability gets its own send-off instead
+   of just fading like any other played card — a shake, a crack flash,
+   then it goes grey and crumbles away. Overrides the plain .out fade
+   for this one card only (see the 'card:broken' handler in main.js). */
+.hcard.breaking{position:relative;overflow:visible}
+.hcard.breaking.out{animation:cardBreak .275s cubic-bezier(.36,.07,.19,.97) forwards}
+@keyframes cardBreak{
+  0%{transform:translate(0,0) rotate(0);filter:grayscale(0);opacity:1}
+  10%{transform:translate(-3px,0) rotate(-2deg)}
+  20%{transform:translate(3px,0) rotate(2deg)}
+  30%{transform:translate(-4px,1px) rotate(-3deg)}
+  40%{transform:translate(4px,1px) rotate(3deg);filter:grayscale(.6)}
+  55%{transform:translate(-2px,2px) rotate(-1deg)}
+  70%{transform:scale(.94) translateY(4px);filter:grayscale(1) brightness(.85)}
+  100%{transform:scale(.8) translateY(16px);opacity:0;filter:grayscale(1) brightness(.7)}
+}
+.hcard.breaking::after{
+  content:'';position:absolute;inset:0;pointer-events:none;border-radius:inherit;z-index:5;
+  background-image:
+    linear-gradient(105deg,transparent 46%,rgba(255,255,255,.9) 47%,rgba(50,40,32,.6) 48%,transparent 49%),
+    linear-gradient(18deg,transparent 60%,rgba(255,255,255,.85) 61%,rgba(50,40,32,.55) 62%,transparent 63%),
+    linear-gradient(155deg,transparent 28%,rgba(255,255,255,.8) 29%,rgba(50,40,32,.5) 30%,transparent 31%);
+  opacity:0;animation:crackFlash .275s ease-out forwards}
+@keyframes crackFlash{0%,15%{opacity:0}25%{opacity:1}45%,100%{opacity:.85}}
+@media (prefers-reduced-motion: reduce){
+  .hcard.breaking.out{animation:fade .15s ease-in forwards}
+  .hcard.breaking::after{animation:none;opacity:0}
+}
+
+/* press-and-hold drag-drop: a floating clone follows the pointer,
+   the real hand card sits invisible underneath (still holding its
+   layout slot) until the ghost lands or snaps back. */
+.hcard-ghost{position:fixed;margin:0;z-index:600;pointer-events:none;
+  cursor:grabbing;animation:none;
+  transform-origin:center center;
+  transition:transform .16s cubic-bezier(.34,1.56,.64,1),opacity .16s ease,
+    left .16s cubic-bezier(.34,1.56,.64,1),top .16s cubic-bezier(.34,1.56,.64,1);
+  box-shadow:0 24px 28px -12px rgba(35,31,26,.5),0 4px 10px -2px rgba(35,31,26,.25)}
+.hcard-ghost.lifted{transform:scale(1.16) translateY(-12px);transition:transform .14s ease-out}
+.hcard-ghost.falling{transition:left .22s cubic-bezier(.55,0,1,.45),
+    top .22s cubic-bezier(.55,0,1,.45),transform .22s ease-in,opacity .18s ease .06s}
+.hcard-ghost.snapback{transition:left .22s ease,top .22s ease,
+    transform .22s ease,opacity .22s ease}
+
+/* card tint identities — matches card.tint in data.js. armed/picked
+   above still win the border colour (same specificity, later rule). */
+.hcard.tint-stone{--tint:#8d97a3;--tint-soft:#eef0f2}
+.hcard.tint-wood{--tint:#a9793f;--tint-soft:#f6efe4}
+.hcard.tint-plant{--tint:#4f8a4a;--tint-soft:#eef5ee}
+.hcard.tint-blood{--tint:#c25a4e;--tint-soft:#fbeeec}
+.hcard.tint-range{--tint:#3f7a8a;--tint-soft:#e9f3f5}
+.hcard.tint-cloth{--tint:#a89572;--tint-soft:#f6f2e8}
+.hcard.tint-spirit{--tint:#7a68a6;--tint-soft:#f1eef7}
+
+/* ---- card cosmetics -------------------------------------------
+   Pulled from the zone level-up wheel (G.ZONE_LOOT). Purely visual —
+   a foil Gather Flint plays exactly like a plain one. These sit after
+   the armed/picked rules on purpose so the finish still shows through
+   on an armed card. */
+.hc-art{position:relative}
+.hcard.foil,.hcard.prismatic{position:relative}
+/* No mix-blend-mode here on purpose: the card body is pure white, and
+   `screen` against white is a no-op — the sheen would be invisible
+   exactly where there is most room for it. Plain alpha tints instead. */
+.hcard.foil::after,.hcard.prismatic::after{
+  content:'';position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+  z-index:2;background-size:260% 260%;
+  background-image:linear-gradient(115deg,
+    rgba(255,255,255,0) 12%, rgba(255,90,175,.30) 28%, rgba(120,190,255,.32) 42%,
+    rgba(120,230,170,.30) 54%, rgba(255,215,90,.32) 68%, rgba(255,255,255,0) 86%);
+  animation:holo 3.2s ease-in-out infinite}
+@keyframes holo{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.hcard.foil{border-color:#b48a3e}
+.hcard.prismatic{border-color:#8a5fd0;
+  box-shadow:0 0 0 2px rgba(138,95,208,.4),0 4px 14px -4px rgba(138,95,208,.55)}
+.hcard.prismatic::after{animation-duration:1.7s}
+/* corner mark so the finish still reads with motion reduced */
+.hcard.foil .hc-art::after,.hcard.prismatic .hc-art::after{
+  content:'✦';position:absolute;top:2px;right:5px;font-size:9px;z-index:3;color:#b48a3e}
+.hcard.prismatic .hc-art::after{content:'✸';color:#8a5fd0}
+@media (prefers-reduced-motion: reduce){
+  .hcard.foil::after,.hcard.prismatic::after{animation:none;background-position:60% 50%}
+}
+
+/* timing */
+.timing{width:200px;margin-top:16px;height:22px;position:relative;
+  opacity:0;transition:opacity .15s}
+.timing.live{opacity:1}
+.timing-lbl{position:absolute;top:-14px;left:0;right:0;text-align:center;
+  font-size:11px;color:var(--ink-3)}
+.track{position:absolute;top:8px;left:0;right:0;height:8px;
+  background:var(--line);border-radius:4px;overflow:hidden}
+.hitzone{position:absolute;top:0;bottom:0;background:var(--accent);opacity:.35}
+.timing.combat .hitzone{background:var(--bad);opacity:.35}
+.needle{position:absolute;top:5px;width:3px;height:14px;border-radius:2px;background:var(--ink)}
+
+/* items gained fly from where they happened to the bag icon */
+.fly-emb{position:fixed;top:0;left:0;width:40px;height:40px;pointer-events:none;
+  z-index:200;opacity:1;transition:transform .825s cubic-bezier(.3,.5,.4,1),
+  opacity .75s ease-in .15s;will-change:transform,opacity}
+
+/* (the old .deckstrip under the hand is gone — the count now lives
+   in the header's deck button, see .hdr-deck) */
+.streak{margin-top:5px;height:16px;font-size:11px;color:var(--ink-3);flex-shrink:0}
+.streak b{color:var(--warn);font-weight:600}
+.tap-hint{margin-top:8px;font-size:12px;color:var(--accent);height:16px;
+  text-align:center;font-weight:500;flex-shrink:0}
+.tap-hint.dim{color:var(--ink-3);font-weight:400}
+
+/* ---------- rows ---------- */
+.row{display:flex;align-items:center;gap:11px;background:var(--card);
+  border:1px solid var(--line);border-radius:var(--r);padding:11px;margin-bottom:7px}
+.row.stalled{border-color:var(--bad)}
+.row-body{flex:1;min-width:0}
+.row-nm{font-size:13px;font-weight:500;margin-bottom:2px}
+.row-sub{font-size:11px;color:var(--ink-3);line-height:1.4}
+.row-n{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;
+  min-width:34px;text-align:right}
+.btn-col{display:flex;flex-direction:column;gap:5px}
+.row.selected{border-color:var(--accent)}
+
+/* ---------- inventory cards (Bag page, Carried) ----------
+   Playing-card-style grid — big centered art, name below, qty badge
+   in the corner. Tap the card for the full item-detail sheet
+   (UI.showItemDetail); the small corner checkbox is the only other
+   interactive bit, for Donate's bulk selection. Modeled on .farm-grid/
+   .farm-plot, the existing "grid of square-ish tiles" pattern. */
+.inv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
+.inv-card{position:relative;border-width:2px;border-style:solid;border-color:var(--line-2);
+  border-radius:var(--r);background:var(--card);aspect-ratio:3/4;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:4px;padding:8px 6px;text-align:center;cursor:pointer}
+.inv-card-emb svg{width:40px;height:40px}
+.inv-card-nm{font-size:10px;font-weight:600;line-height:1.25;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.inv-card-qty{position:absolute;bottom:5px;right:6px;font-size:11px;font-weight:700;
+  background:var(--sunk);border-radius:999px;padding:1px 6px;font-variant-numeric:tabular-nums}
+.inv-card-select{position:absolute;top:5px;left:5px;width:16px;height:16px;
+  border:1.5px solid var(--line);border-radius:5px;background:var(--card)}
+.inv-card-select.on{border-color:var(--accent);background:var(--accent)}
+.inv-card.tint-stone{border-color:#5c6570;background:#eef0f2}
+.inv-card.tint-wood{border-color:#7a5a22;background:#f6efe4}
+.inv-card.tint-plant{border-color:#3f7d52;background:#eef5ee}
+.inv-card.tint-blood{border-color:#a8443a;background:#fbeeec}
+.inv-card.tint-range{border-color:#3f7a8a;background:#e9f3f5}
+.inv-card.tint-cloth{border-color:#8a7a52;background:#f6f2e8}
+.inv-card.tint-spirit{border-color:#7a68a6;background:#f1eef7}
+.inv-card.tint-ember{border-color:#c25a2e;background:#fbeee6}
+.inv-card.tint-gold{border-color:#a67a1e;background:#f9f1de}
+.inv-card.tint-bone{border-color:#9a9484;background:#f3f1ea}
+.inv-card.tint-meat{border-color:#a8624a;background:#f9ece6}
+.deck-card-pill{position:relative;display:flex;align-items:center;justify-content:center;
+  width:28px;height:28px;flex:none;border-radius:9px;background:var(--sunk);
+  border:1px solid var(--line);overflow:hidden}
+.deck-card-pill svg,.deck-card-pill img{position:relative;z-index:1}
+.deck-card-pill.foil,.deck-card-pill.prismatic{border-color:#b48a3e;box-shadow:0 0 0 1px rgba(180,138,62,.18)}
+.deck-card-pill.foil::after,.deck-card-pill.prismatic::after{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background-image:linear-gradient(120deg,
+    rgba(255,255,255,0) 10%, rgba(255,215,120,.28) 30%, rgba(255,255,255,.18) 50%,
+    rgba(255,190,90,.26) 70%, rgba(255,255,255,0) 90%);
+  background-size:220% 220%;animation:holo 3.2s ease-in-out infinite}
+.deck-card-pill.foil::before,.deck-card-pill.prismatic::before{
+  content:'✦';position:absolute;top:1px;right:4px;font-size:8px;z-index:2;color:#b48a3e}
+.deck-card-pill.prismatic{border-color:#8a5fd0;box-shadow:0 0 0 1px rgba(138,95,208,.24)}
+.deck-card-pill.prismatic::before{content:'✸';color:#8a5fd0}
+.empty{padding:24px 14px;text-align:center;font-size:12px;line-height:1.7;
+  color:var(--ink-3);border:1px dashed var(--line-2);border-radius:var(--r)}
+
+/* ---------- skills ---------- */
+.skill-card{background:var(--card);border:1px solid var(--line);
+  border-radius:var(--r);padding:12px;margin-bottom:8px}
+.skill-card.tapable{cursor:pointer}
+.skill-hd{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.skill-nm{flex:1;font-size:13px;font-weight:500}
+.skill-lv{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.skill-lv i{font-style:normal;font-size:11px;color:var(--ink-3);margin-right:4px;font-weight:400}
+.seg-bar{display:flex;gap:2px;height:6px;border-radius:3px;overflow:hidden;background:var(--line)}
+.seg{flex:1;background:transparent}
+.seg.on{background:var(--accent)}
+.skill-card[data-tint=blood] .seg.on{background:var(--bad)}
+.skill-card[data-tint=spirit] .seg.on{background:var(--spirit)}
+.skill-card[data-tint=ember] .seg.on{background:var(--warn)}
+.skill-foot{display:flex;justify-content:space-between;gap:10px;margin-top:8px;
+  font-size:11px;color:var(--ink-3)}
+.skill-extra{margin-top:6px;font-size:11px;color:var(--accent)}
+.skill-card.up{animation:pulse .5s ease-out}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:18px}
+.statbox{background:var(--card);border:1px solid var(--line);
+  border-radius:var(--r);padding:11px}
+.statbox .label{margin-bottom:3px;font-size:10px}
+.statbox .num{font-size:19px}
+
+/* ---------- deck ---------- */
+.prayer-panel{background:#f4f1fa;border:1px solid #e2dcf0;
+  border-radius:var(--r);padding:14px;margin-bottom:14px}
+.prayer-top{display:flex;align-items:center;gap:12px}
+.prayer-panel .num{color:var(--spirit)}
+.prayer-note{font-size:11px;line-height:1.6;color:var(--ink-2);margin-top:10px;
+  padding-top:10px;border-top:1px solid #e2dcf0}
+.deck-slots{display:flex;flex-direction:column;gap:8px;margin:0 0 14px}
+.deck-active-box{width:100%;display:flex;align-items:center;gap:10px;background:var(--card);
+  border:1px solid var(--line);border-radius:var(--r);padding:10px 12px}
+.deck-active-box.open{border-color:var(--spirit);background:#faf7ff}
+.deck-active-caret{flex:none;font-size:11px;color:var(--spirit);font-weight:600}
+.deck-rename-btn,.deck-change-btn{font:inherit;background:none;border:none;padding:0;margin:0}
+.deck-rename-btn{flex:1;min-width:0;text-align:left;cursor:pointer;color:inherit}
+.deck-change-btn{cursor:pointer;color:var(--spirit)}
+.deck-rename-btn:focus-visible,.deck-change-btn:focus-visible{outline:2px solid var(--spirit);outline-offset:2px;border-radius:6px}
+.deck-slot-picker{display:flex;flex-direction:column;gap:8px}
+.deck-slot-row{display:flex;align-items:center;gap:10px;background:var(--card);
+  border:1px solid var(--line);border-radius:var(--r);padding:10px 12px}
+.deck-slot-row.locked{opacity:.6}
+.deck-slot-badge{width:28px;height:28px;border-radius:999px;background:var(--sunk);
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:none}
+.deck-slot-meta{flex:1;min-width:0}
+.deck-slot-name{font-size:12px;font-weight:600}
+.deck-slot-sub{font-size:11px;color:var(--ink-3);margin-top:2px}
+.deck-slot-actions{display:flex;gap:6px;flex:none}
+.move-row{display:flex;gap:6px;flex-wrap:wrap}
+.deck-card-actions .px-btn{flex:1}
+.card-move-picker{margin-top:6px}
+.card-yields{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:7px}
+.card-yields.tight{margin-top:5px;justify-content:flex-start}
+.yc{display:flex;align-items:center;gap:3px;background:var(--sunk);
+  border-radius:20px;padding:2px 8px 2px 5px}
+.yc b{font-size:12px;font-weight:600;color:var(--good)}
+.yc i{font-style:normal;font-size:9px;color:var(--ink-3)}
+.yc.off{opacity:.5}
+.yc.small{padding:1px 7px 1px 4px}
+.yc.small b{font-size:11px;color:var(--ink-2)}
+
+/* ---------- craft ---------- */
+.station{background:var(--card);border:1px solid var(--line);
+  border-radius:var(--r);padding:13px 14px;margin-bottom:8px;box-shadow:var(--shadow)}
+.station.ready{border-color:var(--zone-line);background:var(--zone-soft)}
+.stcard{display:flex;align-items:center;gap:12px;padding-bottom:12px;
+  border-bottom:1px solid var(--line)}
+.stcard.clickable{cursor:pointer}
+.stcard.clickable:active{opacity:.75}
+/* the Level Up / Hire Villager menu that opens on tapping a built
+   station's header — same .recipe/.r-body row shape as the recipe
+   list below it, just visually set apart with a soft fill so it
+   reads as "options", not "things you're crafting" */
+.station-menu{background:var(--sunk);border-radius:var(--r);
+  padding:2px 10px;margin-bottom:6px}
+.station-menu .recipe:last-child{border-bottom:none}
+.recipe.stalled .r-nm{color:var(--bad)}
+.stcard-b{flex:1;min-width:0}
+.stcard-n{font-size:14px;font-weight:600;margin-bottom:2px}
+.stcard-s{font-size:11px;color:var(--ink-3)}
+.stcard-tag{font-size:11px;color:var(--ink-3);background:var(--sunk);
+  padding:3px 9px;border-radius:20px;white-space:nowrap}
+.station.ready .stcard-tag{color:var(--accent);background:var(--card)}
+.recipes{padding-top:2px}
+.recipe{position:relative;display:flex;align-items:center;gap:11px;padding:12px 0;
+  border-bottom:1px solid var(--line)}
+.recipe:last-child{border-bottom:none}
+.r-body{flex:1;min-width:0}
+.r-nm{font-size:13px;font-weight:500;margin-bottom:4px}
+.r-cost{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--ink-2)}
+.r-cost span{display:flex;align-items:center;gap:3px}
+.r-cost .ok{color:var(--good)}
+.r-cost .no{color:var(--bad)}
+.r-eff{font-size:11px;color:var(--ink-3);margin-top:4px;line-height:1.4}
+/* tap-craft progress — a thin fill along the bottom edge of the row
+   itself, same treatment as the zone xp bar on the header pill
+   (.hdr-zone-xp) rather than an inline bar in the content flow. */
+.r-progress{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--line-2)}
+.r-progress-fill{display:block;height:100%;width:100%;background:var(--accent);
+  transform:scaleX(0);transform-origin:left center;will-change:transform}
+@keyframes craftFill{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.pin-btn{font:inherit;font-size:11px;background:var(--card);
+  border:1px solid var(--line-2);border-radius:var(--r-sm);color:var(--ink-2);
+  padding:6px 9px;cursor:pointer}
+.pin-btn.on{border-color:var(--accent);color:var(--accent);background:var(--zone-soft)}
+.settle{background:var(--zone-soft);border:1px solid var(--zone-line);
+  border-radius:var(--r);padding:13px;margin-bottom:10px}
+.settle .st-row{display:flex;justify-content:space-between;align-items:baseline}
+.settle .st-l{font-size:13px;font-weight:600}
+.settle .st-v{font-size:14px;font-weight:600;color:var(--accent)}
+.settle .st-note{font-size:11px;color:var(--ink-2);margin-top:6px;line-height:1.5}
+.settle .st-note b{color:var(--accent)}
+.cap-info{background:var(--card);border:1px solid var(--line);
+  border-radius:var(--r);padding:14px;margin-bottom:16px}
+.cap-big{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums}
+.cap-big span{font-size:15px;color:var(--ink-3);font-weight:400}
+.cap-sub{font-size:11px;color:var(--ink-3);margin-top:5px}
+.cap-warn{font-size:11px;color:var(--bad);margin-top:5px}
+
+/* ---------- donate (Bag page) ---------- */
+.donate-box{background:var(--card);border:1px solid var(--line);
+  border-radius:var(--r);padding:14px;margin-bottom:16px}
+.donate-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.donate-title{font-size:13px;font-weight:600}
+.donate-sub{font-size:11px;color:var(--ink-3)}
+.donate-track{margin-top:9px;height:6px;border-radius:3px;background:var(--line-2);overflow:hidden}
+.donate-fill{display:block;height:100%;width:0;background:var(--accent);transition:width .3s ease}
+.donate-btn-row{margin-top:11px}
+.donate-btn-row .px-btn{width:100%}
+.row-select{width:18px;height:18px;flex:none;border:1.5px solid var(--line);
+  border-radius:5px;cursor:pointer}
+.row-select.on{border-color:var(--accent);background:var(--accent)}
+
+/* ---------- world ---------- */
+.zone{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:14px;margin-bottom:9px;box-shadow:var(--shadow)}
+.zone.here{border-color:var(--accent);background:var(--zone-soft)}
+.zone.locked{opacity:.6}
+.zone-top{display:flex;justify-content:space-between;align-items:baseline;gap:9px;margin-bottom:5px}
+.zone-top-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.zone-n{font-size:15px;font-weight:600}
+.zone-lv{font-size:11px;font-weight:500;color:var(--ink-3)}
+.zone-k{font-size:11px;color:var(--ink-3);white-space:nowrap}
+.zone.here .zone-k{color:var(--accent);font-weight:500}
+.zone-deck-badge{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:26px;
+  padding:0 8px;border-radius:999px;border:1px solid var(--line);background:var(--sunk);
+  color:var(--ink);font-size:11px;font-weight:700;cursor:pointer}
+.zone-deck-badge.open,.zone-deck-badge:active{border-color:var(--accent);background:var(--zone-soft);color:var(--accent)}
+.zone-b{font-size:12px;line-height:1.6;color:var(--ink-2)}
+.zone-lock{font-size:11px;color:var(--warn);margin-top:7px}
+.zone-deck-picker{margin-top:10px}
+.zone-deck-picker .px-btn{margin-top:0}
+.zone .px-btn{margin-top:11px;width:100%}
+
+
+.xp-dock{display:flex;flex-direction:column;gap:6px;padding:8px 12px 0;flex-shrink:0}
+.xp-chip{background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:14px;
+  padding:7px 10px 8px;box-shadow:0 7px 18px rgba(38,30,22,.06)}
+.xp-chip-top{display:flex;justify-content:space-between;gap:10px;font-size:10px;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-bottom:5px}
+.xp-chip-name,.xp-chip-gain{font-weight:700}
+.xp-chip-bar{height:6px;border-radius:999px;background:var(--sunk);overflow:hidden}
+.xp-chip-fill{display:block;height:100%;background:var(--accent);border-radius:999px}
+.xp-chip[data-tint=blood] .xp-chip-fill{background:var(--bad)}
+.xp-chip[data-tint=spirit] .xp-chip-fill{background:var(--spirit)}
+.xp-chip[data-tint=ember] .xp-chip-fill{background:var(--warn)}
+
+/* ---------- pins ---------- */
+.pinbar{display:flex;gap:7px;padding:6px 12px;background:var(--card);
+  border-top:1px solid var(--line);flex-shrink:0;overflow-x:auto}
+.pinb{flex:1;min-width:0;background:var(--sunk);border:1px solid var(--line);
+  border-radius:var(--r-sm);padding:5px 9px;display:flex;flex-direction:column;
+  gap:3px;cursor:pointer}
+.pinb.ready{border-color:var(--accent);background:var(--zone-soft)}
+.pinb.done{opacity:.5}
+.pinb .pb-n{font-size:10px;color:var(--ink-2);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.pinb.ready .pb-n{color:var(--accent);font-weight:500}
+.pinb .pb-v{font-size:15px;font-weight:600}
+.pinb .pb-reqs{display:flex;flex-wrap:wrap;gap:7px}
+.pinb .pb-r{display:flex;align-items:center;gap:3px;font-size:11px;color:var(--ink-3);
+  font-variant-numeric:tabular-nums}
+.pinb .pb-r.met{color:var(--good)}
+
+/* ---------- nav ---------- */
+.nav{display:flex;background:var(--card);border-top:1px solid var(--line);
+  flex-shrink:0;padding-bottom:env(safe-area-inset-bottom)}
+.nav button{flex:1;background:none;border:none;padding:7px 2px 9px;cursor:pointer;
+  position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;
+  font:inherit;font-size:10px;color:var(--ink-3);transition:color .12s}
+.nav button.attn{border-top:2px solid var(--good);box-shadow:inset 0 0 0 1px rgba(98,140,74,.28);
+  background:linear-gradient(180deg, rgba(233,241,221,.95), rgba(255,255,255,0))}
+.nav button .emb{opacity:.45;transition:opacity .12s}
+.nav button.active{color:var(--accent);font-weight:500}
+.nav button.active .emb{opacity:1}
+.nav .dot{position:absolute;top:6px;right:calc(50% - 16px);width:7px;height:7px;
+  border-radius:50%;background:var(--accent);border:1.5px solid var(--card)}
+.nav .dot.red{background:var(--bad)}
+.nav .dot.spirit{background:var(--spirit)}
+
+/* ---------- overlays ---------- */
+.banner{position:absolute;left:0;right:0;top:32%;text-align:center;z-index:150;
+  pointer-events:none;opacity:0}
+.banner.go{animation:bann 1.8s ease-out}
+@keyframes bann{0%{opacity:0;transform:translateY(10px) scale(.97)}
+  12%{opacity:1;transform:none}75%{opacity:1}100%{opacity:0;transform:translateY(-10px)}}
+.banner .b-eye{font-size:11px;font-weight:600;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--accent)}
+.banner .b-main{font-size:24px;font-weight:600;margin-top:6px}
+.banner .b-sub{font-size:13px;color:var(--ink-2);margin-top:4px}
+.banner.blood .b-eye{color:var(--bad)}
+.banner.spirit .b-eye{color:var(--spirit)}
+.toast{position:absolute;left:12px;right:12px;bottom:70px;z-index:160;
+  background:var(--ink);color:#fff;border-radius:var(--r);padding:12px 14px;
+  opacity:0;pointer-events:none;box-shadow:0 4px 16px rgba(35,31,26,.18)}
+.toast.go{animation:tst 3.2s ease-out}
+@keyframes tst{0%{opacity:0;transform:translateY(10px)}8%{opacity:1;transform:none}
+  90%{opacity:1}100%{opacity:0}}
+.toast .t-eye{font-size:10px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;opacity:.65;margin-bottom:3px}
+.toast .t-msg{font-size:13px;line-height:1.5}
+.saveflash{position:absolute;top:14px;right:14px;z-index:120;font-size:11px;
+  color:var(--good);opacity:0}
+.saveflash.go{animation:sf 1.4s ease-out}
+@keyframes sf{0%{opacity:0}15%{opacity:1}70%{opacity:1}100%{opacity:0}}
+.lvlup{position:absolute;inset:0;z-index:250;background:rgba(35,31,26,.5);
+  display:none;align-items:center;justify-content:center;cursor:pointer}
+.lvlup.show{display:flex}
+.lvlup canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.lvlup-card{position:relative;z-index:2;text-align:center;background:var(--card);
+  border-radius:18px;padding:30px 32px;box-shadow:0 14px 44px rgba(35,31,26,.35);
+  animation:lvlpop .5s cubic-bezier(.22,1.4,.36,1);max-width:78%}
+@keyframes lvlpop{0%{transform:scale(.4) rotate(-6deg);opacity:0}
+  60%{transform:scale(1.08) rotate(2deg);opacity:1}100%{transform:scale(1) rotate(0)}}
+.lvlup-eye{font-size:12px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--accent)}
+.lvlup-skill{font-size:24px;font-weight:700;margin-top:8px}
+.lvlup-lv{font-size:46px;font-weight:800;color:var(--accent);margin-top:2px;line-height:1}
+.lvlup-perk{font-size:13px;color:var(--ink-2);margin-top:10px;line-height:1.5;max-width:230px}
+.lvlup-tap{font-size:11px;color:var(--ink-3);margin-top:18px;
+  text-transform:uppercase;letter-spacing:.06em}
+
+/* zone level-up — vampire-survivors-style loot wheel: three reels,
+   match all three to win. Same overlay language as .lvlup. */
+.zonewheel{position:absolute;inset:0;z-index:250;background:rgba(35,31,26,.5);
+  display:none;align-items:center;justify-content:center;cursor:pointer}
+.zonewheel.show{display:flex}
+.zw-card{position:relative;text-align:center;background:var(--card);
+  border-radius:18px;padding:26px 26px 22px;box-shadow:0 14px 44px rgba(35,31,26,.35);
+  animation:lvlpop .5s cubic-bezier(.22,1.4,.36,1);max-width:88%}
+.zw-eye{font-size:12px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--accent)}
+.zw-zone{font-size:20px;font-weight:700;margin-top:6px}
+.zw-lv{font-size:12px;color:var(--ink-2);margin-bottom:16px}
+.zw-reels{display:flex;gap:10px;justify-content:center}
+.zw-reel{width:56px;height:56px;border-radius:10px;background:var(--sunk);
+  overflow:hidden;position:relative;border:2px solid var(--line-2)}
+.zw-strip{display:flex;flex-direction:column;position:absolute;left:0;top:0;width:100%}
+.zw-icon{width:56px;height:56px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.zw-result{margin-top:16px;font-size:14px;font-weight:600;min-height:20px;color:var(--ink-2)}
+.zw-result.win{color:var(--good)}
+.zw-result.rare{color:#b48a3e}
+.zw-result.ultra{color:#8a5fd0;font-weight:700;letter-spacing:.02em}
+.zw-tap{font-size:11px;color:var(--ink-3);margin-top:14px;
+  text-transform:uppercase;letter-spacing:.06em}
+.modal{position:absolute;inset:0;z-index:180;background:rgba(35,31,26,.35);
+  display:none;align-items:flex-end;justify-content:center}
+.modal.show{display:flex}
+.sheet{width:100%;max-height:88vh;overflow-y:auto;background:var(--bg);
+  border-radius:16px 16px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom));
+  animation:up .25s ease-out}
+@keyframes up{0%{transform:translateY(24px);opacity:.6}100%{transform:none;opacity:1}}
+.sheet .s-eye{font-size:11px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--accent)}
+.sheet h2{font-size:20px;font-weight:600;margin:6px 0 4px}
+.sheet .s-sub{font-size:12px;color:var(--ink-3);margin-bottom:14px;line-height:1.5}
+.sheet .s-note{font-size:12px;color:var(--ink-2);line-height:1.6;margin:14px 0;
+  padding-top:12px;border-top:1px solid var(--line)}
+.sheet .s-note b{color:var(--accent)}
+.loot-row{display:flex;justify-content:space-between;align-items:center;
+  padding:10px 12px;background:var(--card);border:1px solid var(--line);
+  border-radius:var(--r-sm);margin-bottom:6px}
+.loot-row .l-n{font-size:13px;display:flex;align-items:center;gap:9px}
+.loot-row .l-v{font-size:15px;font-weight:600;color:var(--good)}
+.catch-hero{display:flex;align-items:center;gap:14px;background:linear-gradient(180deg,#f7f3eb,#fff);
+  border:1px solid var(--line);border-radius:18px;padding:16px 14px;margin:10px 0 2px;
+  box-shadow:0 10px 24px rgba(35,31,26,.10);animation:lvlpop .45s cubic-bezier(.22,1.4,.36,1)}
+.catch-hero.rare{background:linear-gradient(180deg,#fff6dc,#fffdf4);border-color:#e7c870}
+.catch-hero-icon{width:68px;height:68px;border-radius:16px;background:var(--sunk);
+  display:flex;align-items:center;justify-content:center;flex:none}
+.catch-hero-copy{flex:1;min-width:0}
+.catch-hero-name{font-size:20px;font-weight:700;line-height:1.1}
+.catch-hero-sub{font-size:12px;color:var(--ink-2);margin-top:6px;text-transform:uppercase;letter-spacing:.08em}
+.catch-hero-qty{font-size:24px;font-weight:800;color:var(--accent);flex:none}
+.sheet .px-btn{width:100%;padding:13px;font-size:14px}
+.fslots{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:12px 0}
+
+@media (prefers-reduced-motion:reduce){
+  .deck-card-pill.foil::after,.deck-card-pill.prismatic::after{animation:none;background-position:60% 50%}
+  *{animation-duration:.01ms!important;transition-duration:.01ms!important}
+}

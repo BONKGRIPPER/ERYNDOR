@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Leatheron — Content Editor</title>
+<link rel="stylesheet" href="editor.css">
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar">
+    <div class="topbar-title">Leatheron <span>content editor</span></div>
+    <div class="topbar-actions">
+      <span class="status" id="status"></span>
+      <button class="btn" id="back-btn">Back to game</button>
+      <button class="btn" id="test-btn">Run tests</button>
+      <button class="btn acc" id="save-btn">Save</button>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="sidebar" id="tabs"></div>
+    <div class="content" id="content"></div>
+  </div>
+
+  <div class="test-panel" id="test-panel" style="display:none">
+    <div class="test-panel-hd">
+      <span id="test-panel-title">Test output</span>
+      <button class="btn" id="test-close">close</button>
+    </div>
+    <pre id="test-output"></pre>
+  </div>
+
+</div>
+
+<!-- Same load order as the game, so Game.* is the live merged state
+     (base data + anything already saved through this editor). -->
+<script src="../js/data.js"></script>
+<script src="../js/sprites.js"></script>
+<script src="../js/custom-content.js"></script>
+<script src="../js/custom-sprites.js"></script>
+<script src="../js/assets.js"></script>
+<script src="../js/custom-assets.js"></script>
+<script src="editor.js"></script>
+</body>
+</html>

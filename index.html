@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Leatheron</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#3f7d52">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-512.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Leatheron">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <div class="saveflash" id="saveflash">saved</div>
+
+  <!-- ============ HEADER ============ -->
+  <div class="header">
+    <div class="hdr-top">
+      <button class="hdr-zone" id="zone-btn"><span id="zone-name">Aerendell</span><i id="zone-region">Leth-Eiren</i><b id="zone-lv" class="hdr-lv"></b>
+        <span class="hdr-zone-xp"><span class="hdr-zone-xp-fill" id="zone-xp-fill"></span></span>
+      </button>
+      <div class="hdr-actions">
+        <button class="hdr-deck" id="deck-btn">
+          <span class="hdr-deck-ico" id="deck-ico"></span>
+          <span class="hdr-deck-n"><b id="deck-left">30</b><i>/</i><span id="deck-total">30</span></span>
+          <span class="dot spirit" id="dot-deck" style="display:none"></span>
+        </button>
+        <button class="hdr-bag" id="bag-btn"></button>
+        <button class="hdr-bag" id="market-btn" style="display:none"></button>
+      </div>
+    </div>
+
+    <div class="hotbar" id="hotbar"></div>
+
+    <div class="vitals">
+      <span id="hp-ico"></span>
+      <div class="blocks" id="hp-blocks"></div>
+      <span class="vit-num" id="hp-num">10/10</span>
+    </div>
+    <div class="wt-row">
+      <span id="wt-ico"></span>
+      <div class="wt-bar" id="wt-bar"></div>
+      <span class="vit-num" id="wt-num">0/80</span>
+    </div>
+  </div>
+
+  <!-- ============ PAGES ============ -->
+  <div class="pages">
+
+    <!-- HOME -->
+    <div class="page" id="page-home">
+      <div class="pad">
+        <div class="sec"><span class="sec-l">The Known World</span>
+          <span class="hint">travel between zones</span></div>
+        <div id="world"></div>
+      </div>
+    </div>
+
+    <!-- PLAY -->
+    <div class="page active" id="page-play">
+      <div class="field" id="field">
+        <div class="warnbar" id="warnbar">
+          <span id="warn-emb"></span>
+          <span>OVER-ENCUMBERED — cards run at half speed and gather nothing.
+          Strikes still land. Drop items or craft to recover.</span>
+        </div>
+
+        <div class="statusbar" id="statusbar"></div>
+
+        <div class="field-strip" id="field-strip">
+          <div class="field-strip-lbl">The Field</div>
+          <div class="locfield" id="locfield"></div>
+          <div class="timing" id="timing">
+            <div class="timing-lbl" id="timing-lbl"></div>
+            <div class="track"><div class="hitzone" id="hitzone"></div></div>
+            <div class="needle" id="needle"></div>
+          </div>
+        </div>
+
+        <div class="hand" id="hand"></div>
+        <div class="tap-hint" id="tap-hint"></div>
+
+        <div class="streak" id="streak"></div>
+      </div>
+    </div>
+
+    <!-- SKILLS -->
+    <div class="page" id="page-skills">
+      <div class="pad">
+        <div class="sec"><span>Character</span></div>
+        <div class="stat-grid">
+          <div class="statbox"><div class="label">health</div><div class="num" id="stat-hp">10/10</div></div>
+          <div class="statbox"><div class="label">melee</div><div class="num" id="stat-melee">0</div></div>
+          <div class="statbox"><div class="label">ranged</div><div class="num" id="stat-ranged">0</div></div>
+          <div class="statbox"><div class="label">kills</div><div class="num" id="stat-kills">0</div></div>
+          <div class="statbox"><div class="label">clean</div><div class="num" id="stat-clean">—</div></div>
+          <div class="statbox"><div class="label">deck</div><div class="num" id="stat-deck">10</div></div>
+        </div>
+        <div class="sec"><span>Skills</span><span class="hint">xp to next level</span></div>
+        <div id="skill-list"></div>
+      </div>
+    </div>
+
+    <!-- DECK -->
+    <div class="page" id="page-deck">
+      <div class="pad">
+        <div class="prayer-panel">
+          <div class="prayer-top">
+            <span id="prayer-emb"></span>
+            <div><div class="label">prayer points</div>
+              <div class="num" id="pp-val">0</div></div>
+          </div>
+        <div class="prayer-note">
+          Bury bones at the Bone Altar to earn points. Spend them here to set
+            a card aside and shorten your cycle — it moves to your collection,
+            not gone for good.
+        </div>
+      </div>
+        <div id="deck-slots"></div>
+        <div class="sec"><span>Deck — <span id="deck-size">10</span> cards</span>
+          <span class="hint" id="purge-hint"></span></div>
+        <div id="card-list"></div>
+
+        <div class="sec"><span>Collection — <span id="collection-size">0</span> cards</span>
+          <span class="hint" id="restore-hint">set aside, not in your deck</span></div>
+        <div id="collection-list"></div>
+      </div>
+    </div>
+
+    <!-- BAG -->
+    <div class="page" id="page-bag">
+      <div class="pad">
+        <div id="donate-box"></div>
+        <div class="sec"><span class="sec-l">Carry weight</span></div>
+        <div class="cap-info" id="cap-info"></div>
+        <div id="storage-box"></div>
+
+        <div class="sec"><span>Equipment</span><span class="hint" id="gear-n">0/10</span></div>
+        <div id="gear"></div>
+        <div class="sec"><span>Carried</span><span class="hint" id="inv-n"></span></div>
+        <div id="inv"></div>
+        <div style="margin-top:16px"></div>
+        <div id="consumables"></div>
+      </div>
+    </div>
+
+    <!-- MARKET -->
+    <div class="page" id="page-market">
+      <div class="pad">
+        <div class="sec"><span class="sec-l">Gold</span></div>
+        <div class="cap-info" id="market-gold"></div>
+        <div class="sec"><span class="sec-l">Sell</span></div>
+        <div id="market-sell"></div>
+        <div class="sec" style="margin-top:16px"><span class="sec-l">Buy</span></div>
+        <div id="market-buy"></div>
+      </div>
+    </div>
+
+    <!-- CRAFT -->
+    <div class="page" id="page-craft">
+      <div class="pad">
+        <div class="sec"><span class="sec-l">Workshops</span>
+          <span class="hint">build &amp; craft below</span></div>
+        <div id="stations"></div>
+
+        <div class="sec" style="margin-top:16px"><span>Save</span></div>
+        <div class="row">
+          <div class="row-body"><div class="row-sub" id="save-info" style="text-transform:none"></div></div>
+          <button class="px-btn" id="editor-btn">editor</button>
+          <button class="px-btn warn" id="wipe-btn">wipe</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOWN -->
+    <div class="page" id="page-town">
+      <div class="pad">
+        <div class="sec"><span class="sec-l">Township</span><span class="hint" id="town-slots"></span></div>
+        <div id="township"></div>
+      </div>
+    </div>
+
+    <!-- FARM -->
+    <div class="page" id="page-farm">
+      <div class="pad">
+        <div class="sec"><span class="sec-l">Farm</span><span class="hint" id="farm-slots"></span></div>
+        <div id="farm"></div>
+        <div class="sec" style="margin-top:16px"><span class="sec-l">Cooking</span></div>
+        <div id="farm-stations"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============ NAV ============ -->
+  <div class="xp-dock" id="recent-xp"></div>
+  <div class="pinbar" id="pinbar"></div>
+
+  <div class="nav">
+    <button class="active" data-page="play" data-emb="cards">play<span class="dot red" id="dot-play" style="display:none"></span></button>
+    <button data-page="craft" data-emb="anvil">craft<span class="dot" id="dot-craft" style="display:none"></span></button>
+    <button data-page="town" data-emb="pack">town<span class="dot" id="dot-town" style="display:none"></span></button>
+    <button data-page="farm" data-emb="seedling">farm</button>
+    <button data-page="skills" data-emb="skills">skills</button>
+  </div>
+
+  <!-- ============ OVERLAYS ============ -->
+  <div class="banner" id="banner">
+    <div class="b-eye" id="b-eye"></div>
+    <div class="b-main" id="b-main"></div>
+    <div class="b-sub" id="b-sub"></div>
+  </div>
+
+  <div class="toast" id="toast">
+    <div class="t-eye" id="t-eye"></div>
+    <div class="t-msg" id="t-msg"></div>
+  </div>
+
+  <div class="lvlup" id="lvlup">
+    <canvas id="lvlup-canvas"></canvas>
+    <div class="lvlup-card">
+      <div class="lvlup-eye">Level Up</div>
+      <div class="lvlup-skill" id="lvlup-skill"></div>
+      <div class="lvlup-lv" id="lvlup-lv"></div>
+      <div class="lvlup-perk" id="lvlup-perk"></div>
+      <div class="lvlup-tap">tap to continue</div>
+    </div>
+  </div>
+
+  <div class="zonewheel" id="zonewheel">
+    <div class="zw-card">
+      <div class="zw-eye">Zone Level Up</div>
+      <div class="zw-zone" id="zw-zone"></div>
+      <div class="zw-lv" id="zw-lv"></div>
+      <div class="zw-reels" id="zw-reels">
+        <div class="zw-reel"><div class="zw-strip" id="zw-strip-0"></div></div>
+        <div class="zw-reel"><div class="zw-strip" id="zw-strip-1"></div></div>
+        <div class="zw-reel"><div class="zw-strip" id="zw-strip-2"></div></div>
+      </div>
+      <div class="zw-result" id="zw-result"></div>
+      <div class="zw-tap">tap to continue</div>
+    </div>
+  </div>
+
+  <div class="modal" id="modal">
+    <div class="sheet">
+      <div class="s-eye">your villagers worked</div>
+      <h2 id="m-title"></h2>
+      <div class="s-sub" id="m-sub"></div>
+      <div id="loot"></div>
+      <div class="s-note" id="m-note"></div>
+      <button class="px-btn" id="m-btn">collect</button>
+    </div>
+  </div>
+
+  <!-- generic item-detail sheet: view an item, or (for a seed) plant it.
+       Reuses the .modal/.sheet overlay pattern above. -->
+  <div class="modal" id="item-modal">
+    <div class="sheet">
+      <div id="item-sheet-body"></div>
+      <button class="px-btn" id="item-sheet-close">close</button>
+    </div>
+  </div>
+
+  <div class="modal" id="fish-modal">
+    <div class="sheet">
+      <div id="fish-sheet-body"></div>
+      <button class="px-btn" id="fish-sheet-close">close</button>
+    </div>
+  </div>
+
+  <div class="lvlup" id="deathscreen">
+    <div class="lvlup-card">
+      <div class="lvlup-eye">Defeated</div>
+      <div class="lvlup-skill" id="death-title"></div>
+      <div class="lvlup-perk" id="death-body"></div>
+      <button class="px-btn acc" id="death-continue" style="margin-top:18px">continue</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Load order matters: data -> core -> engine -> systems -> ui -> main -->
+<script src="js/data.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/custom-content.js"></script>
+<script src="js/custom-sprites.js"></script>
+<script src="js/assets.js"></script>
+<script src="js/custom-assets.js"></script>
+<script src="js/core.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/systems/cards.js"></script>
+<script src="js/systems/craft.js"></script>
+<script src="js/systems/food.js"></script>
+<script src="js/systems/township.js"></script>
+<script src="js/systems/farm.js"></script>
+<script src="js/systems/storage.js"></script>
+<script src="js/systems/market.js"></script>
+<script src="js/systems/consumables.js"></script>
+<script src="js/systems/world.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+<script>
+  /* PWA install/offline support — safe no-op if the browser has no
+     service worker support, or if served over file:// (registration
+     just fails silently there; the game still runs normally). */
+  if ('serviceWorker' in navigator && (location.protocol === 'http:' || location.protocol === 'https:')) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>

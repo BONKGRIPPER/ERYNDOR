@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "leatheron",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["tools/editor_server.py", "8020"],
+      "port": 8020
+    }
+  ]
+}
