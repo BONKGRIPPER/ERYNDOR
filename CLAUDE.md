@@ -17,6 +17,17 @@ includes a `localStorage` shim (falls back to an in-memory store when
 `localStorage` is blocked, e.g. `file://`) so the bundle always boots even
 somewhere storage doesn't persist.
 
+**GitHub Pages (the actual installable PWA)**: this repo's `main` branch is
+served live at `https://bonkgripper.github.io/ERYNDOR/` — GitHub Pages
+rebuilds automatically on every push, straight from the real source files
+(not the bundle). `git push` works non-interactively from here because the
+credential is cached in the macOS keychain from the user's first manual
+push. **Use the `/deploy` skill** (`.claude/skills/deploy/SKILL.md`) to ship
+a change: it runs the tests, bumps `sw.js`'s `CACHE_NAME` (required every
+deploy — that's what makes already-installed phones actually pick up the
+new version instead of serving a stale cached copy forever), commits, and
+pushes.
+
 **itch.io upload**: zip `leatheron-single.html` up as `index.html` at the
 zip root (no subfolder) and upload that zip as an HTML5 project, checking
 "This file will be played in the browser" on `index.html` in itch's file
