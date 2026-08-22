@@ -3,7 +3,15 @@
    the cached copy instantly, then quietly fetch+cache the latest in
    the background for next time). Bump CACHE_NAME on any deploy that
    changes one of the precached files — that's what forces old clients
-   to pick up the new version instead of serving a stale cache forever. */
+   to pick up the new version instead of serving a stale cache forever.
+
+   ALSO bump the matching ?v= on the registration call in index.html
+   (`navigator.serviceWorker.register('sw.js?v=N', ...)`) to the same
+   N. GitHub Pages serves this file itself with cache-control:
+   max-age=600 — without a fresh query string, a client's own browser
+   cache (or GitHub's CDN) can keep answering the update check with
+   the OLD sw.js for up to 10 minutes after a deploy, so bumping just
+   CACHE_NAME in here isn't sufficient on its own. */
 const CACHE_NAME = 'leatheron-v2';
 const PRECACHE = [
   './',

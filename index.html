@@ -308,10 +308,22 @@
 <script>
   /* PWA install/offline support — safe no-op if the browser has no
      service worker support, or if served over file:// (registration
-     just fails silently there; the game still runs normally). */
+     just fails silently there; the game still runs normally).
+
+     GitHub Pages serves sw.js itself with cache-control: max-age=600
+     (confirmed via response headers) — a plain 'sw.js' registration
+     can keep re-checking a stale cached copy of the WORKER SCRIPT
+     ITSELF for up to 10 minutes and never notice a new deploy.
+     The ?v= query string is a cache-buster: bump it (keep it equal
+     to sw.js's CACHE_NAME suffix) on every deploy that changes a
+     precached file, same trigger as bumping CACHE_NAME — a URL that
+     was never fetched before is never a cache hit, at the browser or
+     at GitHub's CDN. updateViaCache:'none' additionally stops the
+     browser from ever satisfying its own update checks from HTTP
+     cache, belt-and-braces alongside the query bust. */
   if ('serviceWorker' in navigator && (location.protocol === 'http:' || location.protocol === 'https:')) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
+      navigator.serviceWorker.register('sw.js?v=2', { updateViaCache: 'none' }).catch(() => {});
     });
   }
 </script>

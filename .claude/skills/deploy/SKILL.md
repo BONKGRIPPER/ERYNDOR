@@ -36,15 +36,21 @@ the cached credential, then retry.
 2. **If this deploy changes any file the service worker precaches**
    (`index.html`, `css/style.css`, any `js/**/*.js`, `manifest.json`, or an
    icon — i.e. basically anything except docs like `CLAUDE.md` or files
-   under `.claude/`), **bump the cache version** so phones that already
-   installed the PWA actually fetch the new files instead of serving a
-   stale cached copy forever. Open `sw.js`, find:
-   ```js
-   const CACHE_NAME = 'leatheron-vN';
-   ```
-   and increment `N` by one. Also add/remove entries in `sw.js`'s
-   `PRECACHE` list if this deploy added, removed, or renamed a source file
-   (check against the `<script src="...">` tags in `index.html`).
+   under `.claude/`), **bump the cache version in BOTH places it lives**:
+   - `sw.js`: `const CACHE_NAME = 'leatheron-vN';` — increment `N`.
+   - `index.html`: `navigator.serviceWorker.register('sw.js?v=N', ...)` —
+     increment the same `N` here too. This one matters more than it looks:
+     GitHub Pages serves `sw.js` itself with `cache-control: max-age=600`
+     (confirmed via response headers), so without a fresh query string a
+     client's browser cache (or GitHub's CDN) can keep answering the
+     service worker's own update check with the OLD `sw.js` for up to 10
+     minutes after a deploy — bumping only `CACHE_NAME` inside a file the
+     browser never re-fetches accomplishes nothing. Forgetting this step
+     is the most likely reason a user reports "I deployed but my phone/
+     browser still isn't showing the update."
+   Also add/remove entries in `sw.js`'s `PRECACHE` list if this deploy
+   added, removed, or renamed a source file (check against the
+   `<script src="...">` tags in `index.html`).
 
 3. **Commit and push**:
    ```bash
