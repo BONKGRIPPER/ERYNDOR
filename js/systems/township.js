@@ -14,15 +14,18 @@
    zones can flag more recipes per station as villager-craftable;
    nothing here assumes there's only ever one.
 
-   A station-hired villager works entirely off ITS OWN ZONE's
-   storage crate (G.crateFor/G.zoneSpend/G.zoneGrant, storage.js) —
-   both what it consumes and what it produces — never the player's
-   carried inventory, and never gated by G.storageReady()'s one-
-   deposit-per-cycle rule (that's a player action limit, not a
-   passive-production one). This is what makes offline progress
-   correct regardless of which zone the player is standing in, or
-   whether the app is even open: the villager's own zone crate is
-   its whole world.
+   A station-hired villager produces into ITS OWN ZONE's storage
+   crate (G.zoneGrant, storage.js) — never the player's carried
+   inventory. What it CONSUMES draws on the same three tiers the
+   player's own G.spendCraftCost does, just zone-scoped: its own
+   zone's crate first, then the player's carried inventory, then —
+   if its own zone has a bank — the shared bank (G.zoneSpend/
+   G.zoneCanAfford, storage.js). Never gated by G.storageReady()'s
+   one-deposit-per-cycle rule (that's a player action limit, not a
+   passive-production one). Carried inventory and the bank are both
+   global state, not tied to S.zone, so this stays correct for a
+   villager working while the player stands elsewhere or the app is
+   closed — nothing here depends on where the player currently is.
 
    Homes unlock how MANY villagers you can hire (3 free slots per
    zone, +3 per home built there — see G.villagerSlots, data.js),
@@ -139,8 +142,9 @@
   };
   /* Live "can this villager work right now" check — independent of
      the tick clock, so the station menu can show a stalled state
-     even between ticks. Checked against the villager's OWN zone
-     crate, not the player's current inventory. */
+     even between ticks. Checked with G.zoneCanAfford, which covers
+     the villager's own zone crate, the player's carried inventory,
+     and (if that zone has a bank) the shared bank. */
   G.villagerStalled = function (stationId, zone) {
     zone = zone || S.zone;
     if (!G.isStationHired(stationId, zone)) return false;

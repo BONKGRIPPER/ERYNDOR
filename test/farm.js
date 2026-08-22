@@ -50,15 +50,11 @@ console.log('\n== elapsed real time (not a live interval) advances a stage ==');
 S.farmPlots[0].wateredAt = Date.now() - S.farmPlots[0].stageMs - 1000; // pretend it's overdue
 const r = G.collectFarmWork();
 console.log('  stage advanced:', r.advanced.includes(0) && S.farmPlots[0].stage === 1);
-console.log('  plot needs watering again (flax has 2 stages):',
-  S.farmPlots[0].wateredAt === null && !G.plotReady(S.farmPlots[0]));
-
-console.log('\n== multi-stage crop needs every stage watered before it is ready ==');
-G.waterPlot(0);
-S.farmPlots[0].wateredAt = Date.now() - S.farmPlots[0].stageMs - 1000;
-G.collectFarmWork();
-console.log('  stage 2 of 2 reached:', S.farmPlots[0].stage === 2);
-console.log('  now ready to harvest:', G.plotReady(S.farmPlots[0]) === true);
+/* flax/berries are single-stage crops now (G.CROPS[...].stages === 1)
+   — one watering is the whole growth cycle, no "water it again"
+   second pass required. */
+console.log('  flax has exactly 1 stage:', G.CROPS.flaxSeed.stages === 1);
+console.log('  one watering is enough — already ready to harvest:', G.plotReady(S.farmPlots[0]) === true);
 console.log('  watering a mature plot does nothing:', G.waterPlot(0) === false);
 
 console.log('\n== harvesting grants yield + xp and clears the plot ==');
@@ -107,6 +103,18 @@ try { UI.renderFarm(); } catch (e) { threw = true; console.log('  ', e.stack); }
 console.log('  no crash with empty/needs-water/growing plots:', !threw);
 const gridEl = document.getElementById('farm').children[0];
 console.log('  grid has one cell per unlocked plot:', gridEl.children.length === G.farmPlotCount());
+
+console.log('\n== a small status pip marks needs-water/ready, but not growing/empty ==');
+const needsWaterCell = gridEl.children[0];
+console.log('  needs-water plot shows a red pip:',
+  needsWaterCell.children.some(c => c.className === 'dot needs-water'));
+const growingCellNoPip = gridEl.children[1];
+console.log('  growing plot shows no pip (the ring already covers it):',
+  !growingCellNoPip.children.some(c => c.className && c.className.indexOf('dot') === 0));
+const emptyCell = gridEl.children[2];
+console.log('  empty plot shows no pip either:',
+  !emptyCell.children.some(c => c.className && c.className.indexOf('dot') === 0));
+
 const growingCell = gridEl.children[1];
 console.log('  growing cell has a ring with track+fill circles:',
   growingCell.children[0].children.length === 2);
@@ -115,11 +123,7 @@ console.log('  growing cell\'s ring fill has a live transition set:',
 
 S.farmPlots[1].wateredAt = Date.now() - S.farmPlots[1].stageMs - 1000;
 G.collectFarmWork();
-S.farmPlots[1].wateredAt = Date.now() - S.farmPlots[1].stageMs - 1000;
-G.collectFarmWork();
-S.farmPlots[1].wateredAt = Date.now() - S.farmPlots[1].stageMs - 1000;
-G.collectFarmWork();
-console.log('  berry plot now ready:', G.plotReady(S.farmPlots[1]));
+console.log('  berries are also single-stage now — ready after one watering:', G.plotReady(S.farmPlots[1]));
 threw = false;
 try { UI.renderFarm(); } catch (e) { threw = true; console.log('  ', e.stack); }
 console.log('  no crash rendering a ready plot:', !threw);

@@ -314,7 +314,8 @@
     "atk": 2,
     "durability": 12,
     "xp": 10,
-    "tint": "blood"
+    "tint": "blood",
+    "tier": 1
   },
   "strikeBronze": {
     "kind": "melee",
@@ -324,7 +325,8 @@
     "atk": 4,
     "durability": 24,
     "xp": 30,
-    "tint": "blood"
+    "tint": "blood",
+    "tier": 3
   },
   "shoot": {
     "kind": "ranged",
@@ -334,7 +336,8 @@
     "atk": 1,
     "durability": 12,
     "tint": "range",
-    "xp": 5
+    "xp": 5,
+    "tier": 1
   },
   "pickFlint": {
     "kind": "mine",
@@ -344,7 +347,8 @@
     "atk": 1,
     "durability": 6,
     "xp": 5,
-    "tint": "stone"
+    "tint": "stone",
+    "tier": 0
   },
   "pickStone": {
     "kind": "mine",
@@ -354,7 +358,8 @@
     "atk": 2,
     "durability": 12,
     "xp": 10,
-    "tint": "stone"
+    "tint": "stone",
+    "tier": 1
   },
   "pickScrap": {
     "kind": "mine",
@@ -364,7 +369,8 @@
     "atk": 4,
     "durability": 18,
     "xp": 20,
-    "tint": "stone"
+    "tint": "stone",
+    "tier": 2
   },
   "axeScrap": {
     "kind": "axe",
@@ -374,7 +380,8 @@
     "atk": 3,
     "durability": 18,
     "xp": 20,
-    "tint": "wood"
+    "tint": "wood",
+    "tier": 2
   },
   "axeFlint": {
     "kind": "axe",
@@ -384,7 +391,8 @@
     "atk": 1,
     "durability": 6,
     "xp": 5,
-    "tint": "wood"
+    "tint": "wood",
+    "tier": 0
   },
   "axeStone": {
     "kind": "axe",
@@ -394,7 +402,8 @@
     "atk": 2,
     "durability": 12,
     "xp": 10,
-    "tint": "wood"
+    "tint": "wood",
+    "tier": 1
   },
   "woodenClub": {
     "kind": "melee",
@@ -404,7 +413,8 @@
     "tint": "Blood",
     "atk": 1,
     "durability": 5,
-    "xp": 5
+    "xp": 5,
+    "tier": 0
   },
   "strikeScrap": {
     "kind": "melee",
@@ -414,7 +424,8 @@
     "atk": 3,
     "durability": 18,
     "xp": 20,
-    "tint": "blood"
+    "tint": "blood",
+    "tier": 2
   },
   "fishingNet": {
     "kind": "fishing",
@@ -424,7 +435,8 @@
     "atk": 1,
     "durability": 8,
     "xp": 9,
-    "tint": "range"
+    "tint": "range",
+    "tier": 0
   },
   "fishingRod": {
     "kind": "fishing",
@@ -434,7 +446,8 @@
     "atk": 2,
     "durability": 14,
     "xp": 11,
-    "tint": "range"
+    "tint": "range",
+    "tier": 1
   }
 });
 
@@ -443,7 +456,7 @@
   "boulder": {
     "name": "Boulder",
     "hp": 4,
-    "sprite": "stone",
+    "sprite": "boulder",
     "requires": "mine",
     "dropTable": [
       {
@@ -467,7 +480,7 @@
   "pineTree": {
     "name": "Pine Tree",
     "hp": 4,
-    "sprite": "wood",
+    "sprite": "tree",
     "requires": "axe",
     "dropTable": [
       {
@@ -526,6 +539,20 @@
         "key": "stick",
         "min": 2,
         "max": 3
+      }
+    ]
+  },
+  "birchTree": {
+    "name": "Birch Tree",
+    "hp": 6,
+    "sprite": "tree",
+    "requires": "axe",
+    "requiresCard": "axeBronze",
+    "dropTable": [
+      {
+        "key": "birchLog",
+        "min": 5,
+        "max": 7
       }
     ]
   },
@@ -1361,7 +1388,8 @@
       {
         "oakTree": 4,
         "fallenOak": 3,
-        "brushlineOak": 3
+        "brushlineOak": 3,
+        "birchTree": 2
       },
       {
         "goblin": 4,
@@ -1779,15 +1807,22 @@
         "id": "fishingRod",
         "name": "Fishing Rod",
         "cost": {
-          "planks": 6,
+          "birchPlanks": 4,
           "string": 2,
           "bone": 2
         },
         "repeatable": true,
+        "zones": [
+          "forestRoad",
+          "stillTidePass",
+          "kharBarak",
+          "duunVaelBridge",
+          "riverhold"
+        ],
         "grantsCard": "fishingRod",
         "skill": "crafting",
         "xp": 8,
-        "effect": "adds a stronger fishing card"
+        "effect": "adds a stronger fishing card — needs Birch Planks"
       }
     ]
   },

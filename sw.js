@@ -4,7 +4,7 @@
    the background for next time). Bump CACHE_NAME on any deploy that
    changes one of the precached files — that's what forces old clients
    to pick up the new version instead of serving a stale cache forever. */
-const CACHE_NAME = 'leatheron-v1';
+const CACHE_NAME = 'leatheron-v2';
 const PRECACHE = [
   './',
   'index.html',

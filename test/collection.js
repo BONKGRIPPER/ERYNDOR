@@ -161,10 +161,11 @@ G.purgeCard('flint');
 UI.go('deck');
 const row = store['collection-list'].children[0];
 const addBtn = row.children[0];
-console.log('  row has an Add button:', addBtn && addBtn._html === 'Add');
+console.log('  row has an Add button showing its (untiered) cost:',
+  addBtn && addBtn._html === 'Add (' + G.purgeCost('flint') + 'pt)');
 console.log('  Add button is enabled:', addBtn && addBtn.disabled === false);
-console.log('  restore-hint shows the prayer cost:',
-  store['restore-hint'].textContent === G.purgeCost() + ' pt each');
+console.log('  restore-hint notes cost scales with tier:',
+  store['restore-hint'].textContent === 'cost scales with tier');
 
 console.log('\n== restore-hint reports the deck as full once the cap is hit ==');
 G.wipe();

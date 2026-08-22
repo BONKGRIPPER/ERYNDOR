@@ -69,7 +69,6 @@ the shim above is only a fallback, not the itch.io path. Regenerate with
     node test/donate.js      Bag page Donate: batch removal, worth banking, +1 zone xp on fill
     node test/farm.js        farm plots: growth timers, region lock, xp, farm grid UI
     node test/itemdetail.js  Bag item-detail sheet: view + region-gated Plant action
-    node test/market.js      Market page (Khar-Barak unlock): sell/buy pricing, icon gating
     node test/locationdecks.js  field slots: 3 independent per-slot decks, not one shared pile
     node test/fishing.js     fishing card kind, water locations, S.fishCaught, fish journal
     node test/kharbarak.js   Khar-Barak reworked into a bank City: mine/river/timber lanes, no hostiles
@@ -82,6 +81,14 @@ the shim above is only a fallback, not the itch.io path. Regenerate with
     node test/invgrid.js     Bag Carried list renders as a card grid, tap-to-open, corner donate-checkbox
     node test/sawmill.js     Sawmill refining, Wood->Logs rename, wood->planks cost conversion, doubled tapCraftMs
     node test/deckcap.js     5/5/5 starting deck, max 5 copies of one card per deck slot (collection is unlimited)
+    node test/firstboot.js   a genuinely fresh install (no save) populates the location field and deck on its own
+    node test/emblems.js     new Boulder/Pine Tree/Flint/Logs emblems resolve and render distinctly
+    node test/refiningskills.js  Wood Cutting (Sawmill) / Stone Cutting (Stone Cutter) grant their own xp, not Crafting's
+    node test/market.js      Market page: sell/buy pricing, trade gated on Khar-Barak/Riverhold only being Cities
+    node test/tierpips.js    equipment tier -> star-pip count, foil inheritance, hand/deck rendering
+    node test/birchchain.js  Pine/Birch Planks chain, Birch Tree (Still-tide Pass, Bronze Axe gated), Fishing Rod rework
+    node test/villagerbar.js hired-villager progress bar (looping, stalled=no bar), crate->inventory->bank spend order
+    node test/tieredprayer.js purge/restore/move prayer cost scales 2x per gear tier, Donate bar's 10x xp-per-fill
 
 Run **all of them** after any change. `smoke.js` also does two static checks
 that have caught real bugs: DOM ids referenced in JS but missing from
@@ -312,6 +319,165 @@ editor's next Save.
   pattern. The rejoin modal lists what each station-villager made,
   which zone's crate it landed in, and flags any that stalled. See
   `test/villagers.js`.
+- **A genuinely fresh install (no prior save at all) now populates the
+  Play page's field slots on its own** (fixed — `js/main.js`'s cold-boot
+  `!had` branch now runs the same `G.buildLocationDecks()` + shuffle +
+  `G.fillLocationField()` sequence `G.wipe()` always did; before this fix
+  a first-ever load left `S.locationField` stuck at `freshState()`'s
+  `[null, null, null]` forever, since nothing else on the cold-boot path
+  populated it — `G.load()`'s own migration branch only runs when an
+  existing save is found, and `UI.renderLocationField()` is render-only
+  with no self-heal, per the project's own "never render from a system"
+  rule). No test previously caught this because every test calls
+  `G.wipe()` before asserting on the field; `test/firstboot.js` now
+  boots with no `G.wipe()` call at all, exercising the real path.
+- **Four emblems got real, distinct art** (`js/sprites.js`): Boulder
+  (`G.SPRITES.boulder`) is a bulkier rock filling nearly the full 24×24
+  viewBox — since every location card renders its emblem at a fixed
+  `sp(want, 30)` regardless of content (`UI.renderLocationField`), "look
+  bigger than Stone" has to come from the silhouette itself, not a size
+  argument. Pine Tree (`G.SPRITES.tree`) is an actual 3-tier pine
+  silhouette + trunk, replacing the raw-log `wood` art it used to borrow.
+  Logs/`wood` now draws three stacked log-ends (bark ring + lighter cut
+  face each) instead of one plank block — Planks still reuses this same
+  art via the existing `ALIAS.planks = 'wood'`, unaffected. Flint
+  (`G.SPRITES.flint`) is a new slim knapped-flake shape — it previously
+  had no sprite entry at all and was silently falling back to the literal
+  Stone icon via `G.resSprite`'s default. See `test/emblems.js`.
+- **The two raw-refining stations have their own skills now.** Sawmill's
+  Planks recipe grants **Wood Cutting** (`G.SKILLS.sawmilling`) xp;
+  Stone Cutter's Stone Block *and* Basalt Block recipes both grant
+  **Stone Cutting** (`G.SKILLS.stonecutting`) xp — both used to grant
+  generic Crafting xp instead, same "moved off Crafting onto its own
+  skill" precedent Tanning followed earlier (see the comment on
+  `crafting` in `G.SKILLS`, data.js). Deliberately distinct from the
+  pre-existing `woodcut`/"Logging" and `mining` skills, which track
+  swinging an axe/pick out in the field, not milling the result at the
+  station. Neither new skill has milestone perks yet (`perks: {}`,
+  same as `farming`) — not asked for, so none were invented. See
+  `test/refiningskills.js`.
+- **The bottom nav bar's `env(safe-area-inset-bottom)` padding was
+  silently dead on every iPhone** until now — `<meta name="viewport">`
+  never had `viewport-fit=cover`, and without that the browser doesn't
+  extend the layout under the home-indicator/rounded-corner area at
+  all, so every `env(safe-area-inset-*)` read as `0px` regardless of
+  what CSS asked for. Fixed (`index.html`), plus the nav bar itself
+  grew ~20% (button padding, label size, and the 18px→22px icon size
+  in `main.js`'s nav-icon injection) with a fixed `+6px` minimum
+  cushion stacked on top of the real device inset
+  (`calc(env(safe-area-inset-bottom) + 6px)`) so there's a comfortable
+  margin even on a device reporting a small/zero inset.
+- **The press-hold-drag-drop way of playing a hand card is gone —
+  tap-to-choose is the only way to play a card now.** It was removed
+  outright (not just fixed) after a real playtest bug: dragging a card
+  more than 10px and releasing anywhere inside `#field` silently
+  auto-played it with no reflex window at all (`G.playCardAt`, engine.js
+  — deleted). Since `#hand` is a DOM child of `#field`, and 10px is
+  well within normal thumb jitter from fast repeated tapping (grinding/
+  "farming" a resource), ordinary taps were routinely misread as a
+  completed drag-drop, which felt exactly like "a card auto-chooses
+  itself every hand." `wireCardDrag`/`onDragMove`/`onDragEnd`/
+  `abortDrag`/the ghost-card CSS (`.hcard-ghost` and friends) are all
+  gone from `js/ui.js`/`css/style.css`. `G.resolveCard`'s `targetIndex`
+  parameter and `ctx.target` (read by melee/ranged/mine/axe/fishing in
+  `systems/cards.js` via `G.activeLocation`/`G.damageLocation`'s
+  optional forceIndex) were deliberately left in place — always
+  `undefined` now, gracefully falls through to the normal lowest-hp
+  auto-pick, and isn't exclusively drag-feature plumbing, so ripping it
+  out wasn't part of this fix.
+
+- **Equipment cards show one star pip per gear tier, reusing the exact
+  glyph the foil-card corner star already uses.** `card.tier` (a numeric
+  0-3 field, previously an unused string on a few axe cards only) is set
+  on every equipment card: Flint tier = 0, Stone/basic-bow tier = 1,
+  Scrap tier = 2, Bronze tier = 3; Fishing Net stays 0, Fishing Rod is 1.
+  `tierPipsHTML(tier)` (js/ui.js) builds an N-star `.tier-pips` div,
+  positioned top-left (`css/style.css`) so it can coexist with the
+  existing top-right foil star — used in the hand (`.hc-art`), the deck
+  list, and the collection list (`.deck-card-pill`). Foil variants
+  inherit `tier` automatically through `G.cardDef`'s existing
+  `Object.assign({}, base, {...})` foil construction (js/core.js) — no
+  extra plumbing needed. `tier` had to be added to BOTH `js/data.js` and
+  `js/custom-content.js`, since custom-content.js redeclares essentially
+  every gear card and its version is what's actually live (see the
+  Architecture callout above). See `test/tierpips.js`.
+- **A second Planks tier — Birch Planks — sits above the original
+  Planks, which is renamed Pine Planks.** `G.RESOURCES.planks.name` is
+  now `'Pine Planks'` (key unchanged, no migration needed, same
+  display-rename pattern as the earlier Wood→Logs rename). New
+  resources `birchLog`/`birchPlanks` (data.js only — neither override
+  file touches these keys); both reuse the existing wood/log sprite art
+  via `ALIAS` (js/sprites.js), no bespoke shape. A new `birchTree`
+  location (custom-content.js) drops Birch Logs, requires an axe, and
+  specifically gates on the Bronze Axe via `requiresCard: 'axeBronze'`
+  (enforced only at swing-resolution time — see `locationMatchesCard`,
+  js/engine.js — not as a blanket reachability check); it's mixed into
+  **Still-tide Pass's** tree slot only (`stillTidePass.locationDecks[1]`),
+  not Forest Road. The Sawmill's new `birchPlanks` recipe costs
+  `{birchLog: 3, planks: 2}` — a raw new material plus the previous
+  tier's refined good, the same pattern the Stone Cutter/Sawmill
+  established earlier — and is deliberately not `villagerRecipe: true`,
+  so a hired villager still defaults to the cheaper Pine Planks recipe.
+  **The Fishing Rod recipe now costs Birch Planks instead of Pine
+  Planks**, and gained a `zones` allowlist (every zone except Aerendell)
+  — it's no longer craftable in the starting zone at all, matching the
+  removal of Fishing Rod from Aerendell's starting content. Birch Planks
+  are also earmarked for future tier-4 recipes, none of which exist yet.
+  See `test/birchchain.js`.
+- **Berries and Flax now mature in a single watering, and farm plots
+  show a small status pip.** `G.CROPS.flaxSeed.stages` and `berrySeed.
+  stages` both dropped to `1` (data.js) — `G.plotReady` (systems/farm.js)
+  already just compares `plot.stage >= crop.stages`, so no other logic
+  needed to change. `UI.renderFarm` (js/ui.js) now appends a small
+  `.dot` span (`css/style.css`) to each non-empty, non-growing plot: red
+  `dot.needs-water` (freshly planted, not yet watered) or green
+  `dot.ready` (matured, needs harvest) — a `growing` plot shows only its
+  existing progress ring (no dot layered on top, since the ring already
+  communicates that state), and an empty plot keeps its own "tap to
+  plant" hint with no dot either. Same small-indicator visual language
+  as the existing crafting-station pip. See `test/farm.js`.
+
+- **A hired villager's station menu row now shows a looping progress
+  bar**, the same `.r-progress`/`.r-progress-fill` markup the
+  player's own tap-craft row uses (js/ui.js, `renderStationsInto`).
+  Unlike a player job it has no single end, so the bar loops forever
+  (`animation: craftFill <period>ms linear <negDelay>ms infinite
+  both`) instead of running once — synced with a negative delay onto
+  `elapsed mod period` (`S.villagerLast[zone:stationId]`, `G.
+  villagerInterval`) so re-rendering mid-cycle never restarts it. A
+  stalled villager shows a static, unanimated bar instead, since it
+  isn't actually progressing.
+- **What a villager consumes now draws on the same three tiers the
+  player's own crafting does, not the zone crate alone.** `G.
+  zoneSpend`/`G.zoneCanAfford` (systems/storage.js) now check the
+  villager's own zone crate first, then the player's carried
+  inventory, then — if that zone has a bank — the shared bank, same
+  order as `G.spendCraftCost`. What a villager PRODUCES still lands
+  only in its own zone's crate (`G.zoneGrant`, unchanged) — this
+  only widened what it can spend, not where its output goes. Carried
+  inventory and the bank are both global state (not tied to
+  `S.zone`), so offline/away-from-zone correctness is unaffected —
+  see `test/villagerbar.js`.
+- **Moving a card into or out of the active deck now costs 2x prayer
+  points per gear tier the card carries.** `G.cardTierMult(key)`
+  (core.js) reads the same `card.tier` field the star pips use and
+  returns `2^tier` (Flint x1, Stone x2, Scrap x4, Bronze x8); `G.
+  purgeCost`/`G.deckMoveCost` both take an optional `key` and
+  multiply their existing flat, prayer-level-scaled rate by it.
+  Non-equipment cards (no `tier` field) are unaffected. The Deck/
+  Collection pages now show each card's own scaled cost right on its
+  Remove/Move/Add button (`'Remove (Npt)'` etc.) instead of one flat
+  hint at the top of the page; the nav-bar deck-tab dot
+  (`G.canAffordAnyDeckWork`, systems/craft.js) now checks whether
+  the player can afford at least one actually-available action
+  (cheapest purge in the current deck, or cheapest restore from the
+  collection) rather than a single flat threshold. See `test/
+  tieredprayer.js`.
+- **The Donate bar's zone-xp payout is 10x what it used to be.**
+  `TUNE.donateXpPerFill` (data.js) is 10, replacing the old flat +1
+  per crossing of `TUNE.donateWorthPerXp` — `G.donateItems` (systems/
+  craft.js) grants `G.grantZoneXp(S.zone, TUNE.donateXpPerFill)`
+  per threshold crossing instead. See `test/tieredprayer.js`.
 
 ## Known open questions
 
@@ -366,11 +532,12 @@ editor's next Save.
   — Aerendell and Forest Road both share `leth-eiren`, so a Leth-Eiren seed
   now plants in either. The Bag/item-detail wording changed to "Grows
   anywhere in `<Region>`" accordingly.
-- The Market's zone gate changed from a one-time Khar-Barak unlock to a
-  live check on the CURRENT zone being a City (`G.zoneHasMarket`) — trade
-  works in any City (Aerendell from the start; Khar-Barak/Riverhold once
-  visited) and is blocked again the moment you leave one, including
-  auto-kicking you off the Market page on a stale page switch.
+- The Market's zone gate is a live check on the CURRENT zone being a City
+  (`G.zoneHasMarket`, systems/market.js) — trade is blocked the moment you
+  leave a City, including auto-kicking you off the Market page on a stale
+  page switch. Only Khar-Barak and Riverhold are Cities; Aerendell is a
+  Town (fixed — it used to incorrectly count as a trade city too, see
+  `test/market.js`).
 - `G.durabilityEnabled()` (core.js) now gates the whole durability system
   and appears to default to **off** (`test/prayerdecks.js` asserts
   `S.durability.pickFlint` stays unset after crafting) — `test/
@@ -397,6 +564,12 @@ editor's next Save.
 - Only Aerendell has anything to grow (`flaxSeed`/`berrySeed`, both
   region-locked there) — the farm system supports other regions the
   moment a zone-exclusive seed exists, nothing else to build.
+- `test/fishing.js`'s "catching fish increments lifetime journal" now
+  fails (`G.damageLocation(2, 'fishing', 1)` on a pond doesn't grow
+  `S.fishCaught`) — confirmed unrelated to the tier-pip/birch-chain/farm
+  batch (no diff touches `S.fishCaught`, `damageLocation`, or fishing
+  card logic); newly noticed while re-running the full suite, not yet
+  root-caused.
 - The Market's Buy/Sell lists are flat — every resource, no
   categorization or search. Worth revisiting once the resource count
   grows further; fine for now at ~30 resources.

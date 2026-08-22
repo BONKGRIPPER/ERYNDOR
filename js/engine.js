@@ -578,24 +578,6 @@
     }
   };
 
-  /* Press-and-hold-drag-drop alternative to the tap flow: skips the
-     reflex window entirely (a drag is a deliberate, unhurried motion,
-     so it always resolves as a plain, non-critical hit) in exchange
-     for landing squarely on a location the player chose by hand.
-     targetIndex is a locationField slot index, or undefined to fall
-     back to the usual lowest-hp auto-pick. */
-  G.playCardAt = function (i, targetIndex) {
-    if (G.rt.paused || G.phase !== 'choose') return false;
-    if (i < 0 || i >= G.hand.length) return false;
-    G.current = { key: G.hand[i], index: i };
-    G.emit('card:chosen', { index: i, key: G.hand[i] });
-    G.phase = 'window';
-    G.rt.windowOpen = true;
-    G.rt.tapped = true;
-    G.resolveCard(false, targetIndex);
-    return true;
-  };
-
   G.resolveCard = function (hit, targetIndex) {
     if (!G.rt.windowOpen) return;
     G.rt.windowOpen = false;

@@ -18,22 +18,51 @@
   /* Zone-scoped crate access, for anything that needs a SPECIFIC
      zone's crate regardless of where the player currently stands
      (S.zone) — station-hired villagers (systems/township.js) work
-     entirely off their own zone's crate, since they run while the
-     player may be elsewhere or the app may be closed entirely. */
+     off their own zone's crate, since they run while the player may
+     be elsewhere or the app may be closed entirely. */
   G.crateFor = function (zone) {
     if (!S.zoneStorage) S.zoneStorage = {};
     return ensureStore(S.zoneStorage, zone);
   };
+  /* A villager checks its own zone crate first (the pool it's
+     actually restocking), then falls back to the player's carried
+     inventory, then — if its own zone has a bank — the shared bank,
+     same three-tier order as the player's own G.spendCraftCost
+     below. Carried inventory and the bank are both global (not tied
+     to S.zone), so this stays correct for a villager working while
+     the player stands elsewhere or the app is closed. */
+  G.zoneAvailableCraftCount = function (zone, key) {
+    let n = (S[key] || 0) + (G.crateFor(zone)[key] || 0);
+    if (G.zoneHasBank(zone)) n += G.currentBank()[key] || 0;
+    return n;
+  };
   G.zoneCanAfford = function (zone, cost) {
-    const crate = G.crateFor(zone);
-    return Object.keys(cost).every(k => (crate[k] || 0) >= cost[k]);
+    return Object.keys(cost).every(k => G.zoneAvailableCraftCount(zone, k) >= cost[k]);
   };
   G.zoneSpend = function (zone, cost) {
     if (!G.zoneCanAfford(zone, cost)) return false;
-    const crate = G.crateFor(zone);
-    Object.keys(cost).forEach(k => {
-      crate[k] -= cost[k];
-      if (crate[k] <= 0) delete crate[k];
+    Object.keys(cost).forEach(key => {
+      let need = cost[key];
+      const crate = G.crateFor(zone);
+      const fromCrate = Math.min(need, crate[key] || 0);
+      if (fromCrate > 0) {
+        crate[key] -= fromCrate;
+        if (crate[key] <= 0) delete crate[key];
+        need -= fromCrate;
+      }
+      if (need > 0) {
+        const fromInv = Math.min(need, S[key] || 0);
+        if (fromInv > 0) { G.removeRes(key, fromInv); need -= fromInv; }
+      }
+      if (need > 0 && G.zoneHasBank(zone)) {
+        const bank = G.currentBank();
+        const fromBank = Math.min(need, bank[key] || 0);
+        if (fromBank > 0) {
+          bank[key] -= fromBank;
+          if (bank[key] <= 0) delete bank[key];
+          need -= fromBank;
+        }
+      }
     });
     return true;
   };

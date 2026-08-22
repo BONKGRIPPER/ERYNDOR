@@ -264,7 +264,7 @@
      (see S.collection in core.js). The deck editor (batch 13b) is
      what lets you bring a collection card back into the deck. */
   G.purgeCard = function (key) {
-    const cost = G.purgeCost();
+    const cost = G.purgeCost(key);
     if (S.prayerPoints < cost || S.deck.length <= 1) return false;
     const i = S.deck.lastIndexOf(key);
     if (i < 0) return false;
@@ -287,7 +287,7 @@
      copies of that one key — the collection itself has no such limit,
      only what's actively in a deck. */
   G.restoreCard = function (key) {
-    const cost = G.purgeCost();
+    const cost = G.purgeCost(key);
     if (S.prayerPoints < cost) return false;
     if (!S.collection || !S.collection[key]) return false;
     if (S.deck.length >= G.TUNE.deckCap) return false;
@@ -324,11 +324,25 @@
       S.drawnCount = slot.drawnCount;
     }
   }
+  /* Whether the player can currently afford at least one deck-editor
+     action (a purge or a restore) right now — cost is per-card since
+     G.purgeCost scales with gear tier, so this can no longer be a
+     single flat prayer-point check. Drives the deck-tab nav dot. */
+  G.canAffordAnyDeckWork = function () {
+    const canPurge = S.deck.length > 1 &&
+      S.deck.some(k => S.prayerPoints >= G.purgeCost(k));
+    const atCap = S.deck.length >= G.TUNE.deckCap;
+    const canRestore = !atCap && Object.keys(S.collection || {})
+      .filter(k => S.collection[k] > 0)
+      .some(k => S.prayerPoints >= G.purgeCost(k) && G.cardCountIn(S.deck, k) < G.TUNE.maxCardCopies);
+    return canPurge || canRestore;
+  };
+
   G.moveCardToDeckSlot = function (key, toIdx) {
     G.ensureDeckSlots();
     if (toIdx === S.activeDeckSlot) return false;
     if (toIdx < 0 || toIdx >= G.unlockedDeckSlots()) return false;
-    const cost = G.deckMoveCost();
+    const cost = G.deckMoveCost(key);
     if (S.prayerPoints < cost) return false;
     const from = G.ensureDeckSlotExists(S.activeDeckSlot);
     if ((from.deck || []).filter(k => k === key).length < 1) return false;
@@ -410,9 +424,10 @@
   /* Donate (Bag page): bulk-remove up to TUNE.donateBatchSize of each
      selected resource at once. Worth (G.RESOURCES[key].worth, see
      data.js) accumulates in S.donateProgress; every time it crosses
-     TUNE.donateWorthPerXp it grants the CURRENT zone +1 xp (via
-     G.grantZoneXp) and carries the remainder — a big enough donation
-     can cross the threshold more than once in a single tap. */
+     TUNE.donateWorthPerXp it grants the CURRENT zone +TUNE.
+     donateXpPerFill xp (via G.grantZoneXp, 10x the original +1) and
+     carries the remainder — a big enough donation can cross the
+     threshold more than once in a single tap. */
   G.donateItems = function (keys) {
     function tagForResource(key) {
       if (['diamond', 'ruby', 'emerald'].indexOf(key) >= 0) return 'gem';
@@ -471,8 +486,8 @@
     let xpGranted = 0;
     while (S.donateProgress >= G.TUNE.donateWorthPerXp) {
       S.donateProgress -= G.TUNE.donateWorthPerXp;
-      G.grantZoneXp(S.zone, 1);
-      xpGranted++;
+      G.grantZoneXp(S.zone, G.TUNE.donateXpPerFill);
+      xpGranted += G.TUNE.donateXpPerFill;
     }
     G.emit('inventory:donated',
       { donated, totalWorth, totalInfluence, factionId, xpGranted, recovered: was && !G.isEncumbered() });

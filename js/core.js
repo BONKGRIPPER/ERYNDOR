@@ -213,15 +213,28 @@
   G.xpBonusMult = () => (G.hasHighlandSet() && G.inLethEiren()) ? G.TUNE.highlandSetXpMult : 1;
   G.maxHp = () => G.TUNE.baseHp;
   G.isEncumbered = () => S.weight >= G.carryCap();
-  G.purgeCost = () =>
-    Math.max(1, G.TUNE.purgeCost - Math.floor((S.skills.prayer.lv - 1) / 4));
+  /* A card's gear tier doubles what it costs to move in or out of a
+     deck — tier 0 (Flint) x1, tier 1 (Stone) x2, tier 2 (Scrap) x4,
+     tier 3 (Bronze) x8 — same `card.tier` field the star pips read
+     (js/ui.js). Non-equipment cards (gather/forage/etc, no `tier`
+     field at all) are unaffected, same as tier 0. `key` is optional
+     so every other caller of purgeCost/deckMoveCost that doesn't
+     have one specific card in mind (pin-bar cost previews, etc.)
+     keeps working unchanged at the flat rate. */
+  G.cardTierMult = function (key) {
+    if (!key) return 1;
+    const c = G.cardDef(key);
+    return Math.pow(2, (c && c.tier) || 0);
+  };
+  G.purgeCost = key =>
+    Math.max(1, G.TUNE.purgeCost - Math.floor((S.skills.prayer.lv - 1) / 4)) * G.cardTierMult(key);
   G.prayerMilestones = () => [5, 25, 50, 75, 100];
   G.prayerTierCount = () => G.prayerMilestones()
     .filter(n => (S.skills.prayer ? S.skills.prayer.lv : 1) >= n).length;
   G.prayerPointMult = () => Math.pow(2, G.prayerTierCount());
   G.zoneXpNeedForLevel = () => G.TUNE.zoneXpNeed;
   G.unlockedDeckSlots = () => Math.max(1, 1 + Math.floor(((S.skills.prayer && S.skills.prayer.lv) || 1) / 10));
-  G.deckMoveCost = () => Math.max(0, 5 - G.prayerTierCount());
+  G.deckMoveCost = key => Math.max(0, 5 - G.prayerTierCount()) * G.cardTierMult(key);
   G.durabilityEnabled = () => false;
   /* Not consumed anywhere yet — the hub city's markets and crafting
      taxes will read this once that zone exists. A zone's own level

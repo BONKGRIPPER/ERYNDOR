@@ -21,15 +21,16 @@ console.log('  total worth matches resource data:', r.totalWorth === expectedWor
 console.log('\n== worth accumulates in S.donateProgress ==');
 console.log('  progress banked:', S.donateProgress === expectedWorth);
 
-console.log('\n== crossing donateWorthPerXp grants the CURRENT zone +1 xp, and carries the remainder ==');
+console.log('\n== crossing donateWorthPerXp grants the CURRENT zone +donateXpPerFill xp (10x the original +1), and carries the remainder ==');
 G.wipe(); S.zone = 'forestRoad'; S.weight = 0;
 give('diamond', 15);       // worth 25 each -> one donate batch (5) = 125 worth
 const before = S.zoneXp.forestRoad.xp, beforeLv = S.zoneXp.forestRoad.lv;
 const r2 = G.donateItems(['diamond']);
 const need = G.TUNE.donateWorthPerXp;
-const expectedXpGrants = Math.floor(125 / need);
-console.log('  xpGranted matches worth/threshold:', r2.xpGranted === expectedXpGrants);
-console.log('  remainder carried in donateProgress:', S.donateProgress === 125 - expectedXpGrants * need);
+const fills = Math.floor(125 / need);
+const expectedXpGrants = fills * G.TUNE.donateXpPerFill;
+console.log('  xpGranted matches worth/threshold x donateXpPerFill:', r2.xpGranted === expectedXpGrants);
+console.log('  remainder carried in donateProgress:', S.donateProgress === 125 - fills * need);
 console.log('  zone xp actually moved (lv or xp changed):',
   S.zoneXp.forestRoad.lv !== beforeLv || S.zoneXp.forestRoad.xp !== before);
 

@@ -49,7 +49,8 @@
     zoneDiscountMax: 0.5,
     highlandSetXpMult: 1.25, // full Highland Robes set: +25% xp while in Leth-Eiren
     donateBatchSize: 5,      // Bag page Donate button: donates up to this many of each selected stack
-    donateWorthPerXp: 50,    // cumulative worth donated before the Donate bar fills and grants +1 zone xp
+    donateWorthPerXp: 50,    // cumulative worth donated before the Donate bar fills
+    donateXpPerFill: 10,     // zone xp granted each time the Donate bar fills (was a flat +1)
     farmPlotsBase: 2,           // farm plots before any farming levels
     farmGrowSpeedPerLv: 0.02,   // -2% stage duration per farming level above 1
     farmGrowSpeedFloor: 0.4,    // stage duration never drops below this fraction of base
@@ -70,6 +71,12 @@
                 perks: { 3: 'Stone yield +1', 5: 'Stone yield +1' } },
     woodcut:  { name: 'Woodcutting', tint: 'wood',   need: 24,
                 perks: { 3: 'Logs yield +1', 5: 'Logs yield +1' } },
+    /* Refining skills for the two raw-material stations (Sawmill,
+       Stone Cutter) — separate from woodcut/mining above, which track
+       actually swinging an axe/pick out in the field, not milling the
+       result into blocks/planks at the station. */
+    sawmilling:  { name: 'Wood Cutting',  tint: 'wood',  need: 24, perks: {} },
+    stonecutting:{ name: 'Stone Cutting', tint: 'stone', need: 24, perks: {} },
     /* Attack used to be one skill covering both weapon types — split
        into melee and archery so a dedicated archer and a dedicated
        brawler actually level differently. Same shape, same curve. */
@@ -185,7 +192,9 @@
     basalt:      { name: 'Basalt',       wt: 1, tint: 'stone', worth: 0.5 },
     stoneBlock:  { name: 'Stone Block',  wt: 2, tint: 'stone', worth: 2 },
     basaltBlock: { name: 'Basalt Block', wt: 2, tint: 'stone', worth: 3 },
-    planks:      { name: 'Planks',       wt: 1, tint: 'wood',  worth: 2 },
+    planks:      { name: 'Pine Planks',  wt: 1, tint: 'wood',  worth: 2 },
+    birchLog:    { name: 'Birch Log',    wt: 0.5, tint: 'wood', worth: 1.5 },
+    birchPlanks: { name: 'Birch Planks', wt: 1, tint: 'wood',  worth: 4 },
   };
 
   /* ---- CROPS -----------------------------------------------------
@@ -198,9 +207,9 @@
      drop table, the same shape G.rollDrops already consumes for
      G.LOCATIONS (plain string or {key,min,max,chance}). */
   G.CROPS = {
-    flaxSeed:  { name: 'Flax',        region: 'leth-eiren', stages: 2,
+    flaxSeed:  { name: 'Flax',        region: 'leth-eiren', stages: 1,
                  stageMs: 5 * 60 * 1000, yield: [{ key: 'flax', min: 5, max: 5 }] },
-    berrySeed: { name: 'Red Berries', region: 'leth-eiren', stages: 3,
+    berrySeed: { name: 'Red Berries', region: 'leth-eiren', stages: 1,
                  stageMs: 4 * 60 * 1000, yield: [{ key: 'berries', min: 5, max: 5 }] },
   };
 
@@ -351,31 +360,31 @@
        to fully clear one hp-6 location card) — stone/wood tier is
        2x, scrap 3x, bronze 4x. Same base across every tool line. */
     strikeStone:  { kind: 'melee', name: 'Strike', type: 'Melee',
-                    skill: 'melee', atk: 2, durability: 12, xp: 9, tint: 'blood' },
+                    skill: 'melee', atk: 2, durability: 12, xp: 9, tint: 'blood', tier: 1 },
     strikeScrap:  { kind: 'melee', name: 'Strike', type: 'Melee',
-                    skill: 'melee', atk: 3, durability: 18, xp: 9, tint: 'blood' },
+                    skill: 'melee', atk: 3, durability: 18, xp: 9, tint: 'blood', tier: 2 },
     strikeBronze: { kind: 'melee', name: 'Strike', type: 'Melee',
-                    skill: 'melee', atk: 4, durability: 24, xp: 9, tint: 'blood' },
+                    skill: 'melee', atk: 4, durability: 24, xp: 9, tint: 'blood', tier: 3 },
     shoot:  { kind: 'ranged', name: 'Loose Arrow', type: 'Ranged',
-              skill: 'archery', atk: 1, durability: 12, xp: 7, tint: 'range' },
+              skill: 'archery', atk: 1, durability: 12, xp: 7, tint: 'range', tier: 1 },
 
     pickFlint: { kind: 'mine', name: 'Swing Pick', type: 'Tool',
-                 skill: 'mining', atk: 1, durability: 6, xp: 9, tint: 'stone' },
+                 skill: 'mining', atk: 1, durability: 6, xp: 9, tint: 'stone', tier: 0 },
     pickStone: { kind: 'mine', name: 'Swing Pick', type: 'Tool',
-                 skill: 'mining', atk: 2, durability: 12, xp: 9, tint: 'stone' },
+                 skill: 'mining', atk: 2, durability: 12, xp: 9, tint: 'stone', tier: 1 },
     pickScrap: { kind: 'mine', name: 'Swing Pick', type: 'Tool',
-                 skill: 'mining', atk: 3, durability: 18, xp: 9, tint: 'stone' },
+                 skill: 'mining', atk: 3, durability: 18, xp: 9, tint: 'stone', tier: 2 },
     oreVein:   { kind: 'mine', name: 'Ore Vein', type: 'Gathering',
                  skill: 'mining', atk: 1, xp: 7, tint: 'stone' },
 
     axeFlint: { kind: 'axe', name: 'Fell Tree', type: 'Tool',
-                skill: 'woodcut', atk: 1, durability: 6, xp: 11, tint: 'wood', tier: 'flint' },
+                skill: 'woodcut', atk: 1, durability: 6, xp: 11, tint: 'wood', tier: 0 },
     axeStone: { kind: 'axe', name: 'Fell Tree', type: 'Tool',
-                skill: 'woodcut', atk: 2, durability: 12, xp: 11, tint: 'wood', tier: 'stone' },
+                skill: 'woodcut', atk: 2, durability: 12, xp: 11, tint: 'wood', tier: 1 },
     axeScrap: { kind: 'axe', name: 'Fell Tree', type: 'Tool',
-                skill: 'woodcut', atk: 3, durability: 18, xp: 11, tint: 'wood', tier: 'scrap' },
+                skill: 'woodcut', atk: 3, durability: 18, xp: 11, tint: 'wood', tier: 2 },
     axeBronze:{ kind: 'axe', name: 'Fell Tree', type: 'Tool',
-                skill: 'woodcut', atk: 4, durability: 24, xp: 20, tint: 'wood', tier: 'bronze' },
+                skill: 'woodcut', atk: 4, durability: 24, xp: 20, tint: 'wood', tier: 3 },
   };
 
   /* ---- EVENTS ------------------------------------------------------
@@ -422,14 +431,14 @@
        by weighting entries 3:1 rather than a weighted-pick feature
        (G.rollDrops has none, see engine.js); each sub-entry needs its
        own min/max since the outer entry has none once oneOf is set. */
-    boulder: { name: 'Boulder', hp: 4, sprite: 'stone', requires: 'mine',
+    boulder: { name: 'Boulder', hp: 4, sprite: 'boulder', requires: 'mine',
                dropTable: [{ oneOf: [
                  { key: 'stone', min: 6, max: 6 },
                  { key: 'stone', min: 6, max: 6 },
                  { key: 'stone', min: 6, max: 6 },
                  { key: 'basalt', min: 6, max: 6 },
                ] }] },
-    pineTree: { name: 'Pine Tree', hp: 4, sprite: 'wood', requires: 'axe',
+    pineTree: { name: 'Pine Tree', hp: 4, sprite: 'tree', requires: 'axe',
                dropTable: ['wood'] },
     oreVeinRoad: { name: 'Ore Vein', hp: 6, sprite: 'stone', requires: 'mine', requiresCard: 'pickScrap',
                dropTable: [
@@ -577,24 +586,33 @@
       villagerHireCost: { stone: 15, wood: 10 },
       recipes: [
         { id: 'stoneBlock', name: 'Stone Block', cost: { stone: 3 }, villagerRecipe: true,
-          repeatable: true, gives: { stoneBlock: 1 }, skill: 'crafting', xp: 4,
+          repeatable: true, gives: { stoneBlock: 1 }, skill: 'stonecutting', xp: 4,
           effect: 'refined from raw stone' },
         { id: 'basaltBlock', name: 'Basalt Block', cost: { basalt: 3, stoneBlock: 1 },
-          repeatable: true, gives: { basaltBlock: 1 }, skill: 'crafting', xp: 6,
+          repeatable: true, gives: { basaltBlock: 1 }, skill: 'stonecutting', xp: 6,
           effect: 'refined from raw basalt, set with a stone block' },
       ] },
     /* Mirrors the Stone Cutter exactly, one raw material instead of
-       two: raw Logs -> Planks, the real cost of most bench/building
-       recipes now (see the wood -> planks conversion throughout this
-       file). Costed in raw logs/stone only — never Planks — so it's
-       never blocked on its own output. */
+       two: raw Logs -> Pine Planks, the real cost of most bench/
+       building recipes now (see the wood -> planks conversion
+       throughout this file). Costed in raw logs/stone only — never
+       Planks — so it's never blocked on its own output.
+       Birch Planks is the second wood-plank tier — Birch Logs only
+       come from Birch Trees (Still-tide Pass, requires a Bronze Axe
+       to damage — see G.LOCATIONS.birchTree, custom-content.js) plus
+       Pine Planks, so it's gated well behind the base recipe. Not
+       flagged villagerRecipe — the villager default for this station
+       stays the cheap, always-available Pine Planks recipe. */
     { id: 'sawmill', name: 'Sawmill', sub: 'Mill raw logs into planks',
       buildCost: { wood: 15, stone: 10 }, zones: ['aerendell'],
       villagerHireCost: { wood: 15, stone: 10 },
       recipes: [
-        { id: 'planks', name: 'Planks', cost: { wood: 3 }, villagerRecipe: true,
-          repeatable: true, gives: { planks: 1 }, skill: 'crafting', xp: 4,
+        { id: 'planks', name: 'Pine Planks', cost: { wood: 3 }, villagerRecipe: true,
+          repeatable: true, gives: { planks: 1 }, skill: 'sawmilling', xp: 4,
           effect: 'milled from raw logs' },
+        { id: 'birchPlanks', name: 'Birch Planks', cost: { birchLog: 3, planks: 2 },
+          repeatable: true, gives: { birchPlanks: 1 }, skill: 'sawmilling', xp: 8,
+          effect: 'milled from birch logs, backed with pine planks' },
       ] },
     { id: 'loom', name: 'Loom', sub: 'Weave string into cloth',
       buildCost: { planks: 10, stick: 14 }, zones: ['aerendell', 'forestRoad'],
@@ -758,8 +776,8 @@
      what you actually win comes from G.ZONE_LOOT above. */
   G.ZONES = {
     aerendell: {
-      name: 'Aerendell', kind: 'City', region: 'leth-eiren', order: 1,
-      blurb: 'Walled market city on the river. Stone, timber and livestock.',
+      name: 'Aerendell', kind: 'Town', region: 'leth-eiren', order: 1,
+      blurb: 'Walled settlement on the river. Stone, timber and livestock.',
       deck: { flint: 5, stick: 5, forage: 5 },
       slotLabels: ['Quarry', 'Forest', 'Grasslands'],
       /* 3 independent field-slot decks, not one shared pile — slot 0

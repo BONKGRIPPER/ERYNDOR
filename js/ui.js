@@ -279,8 +279,19 @@
             </div>`;
   }
 
+  /* One star per equipment tier (Flint 0, Stone 1, Scrap 2, Bronze 3;
+     Fishing Net 0, Fishing Rod 1 — see card.tier). Empty string for
+     anything with no tier field (gather/forage, Ore Vein) — 0 stars
+     and "no tier at all" render identically, which is correct, both
+     mean nothing to show. */
+  function tierPipsHTML(tier) {
+    if (!tier) return '';
+    let stars = '';
+    for (let i = 0; i < tier; i++) stars += '<span>&#10022;</span>';
+    return `<div class="tier-pips" title="${tier === 1 ? 'Tier 1' : 'Tier ' + tier}">${stars}</div>`;
+  }
+
   UI.dealHand = function ({ hand }) {
-    abortDrag();     // a new hand invalidates any card mid-drag
     const wrap = $('hand'); wrap.innerHTML = '';
     hand.forEach(h => {
       const c = h.card;
@@ -306,7 +317,7 @@
          framed in the card's own tint colour, distinct from the
          amber location cards and the red enemy panel above. */
       el2.innerHTML =
-        `<div class="hc-art">${sp(G.cardSprite(h.key), 34)}</div>
+        `<div class="hc-art">${sp(G.cardSprite(h.key), 34)}${tierPipsHTML(c.tier)}</div>
          <div class="hc-type">${c.type || ''}</div>
          <div class="hc-body">
            <div class="hc-name">${c.name}</div>
@@ -315,12 +326,8 @@
          </div>`;
       el2.onclick = (ev) => {
         ev.stopPropagation();
-        if (dragSuppressClick) { dragSuppressClick = false; return; }
         G.chooseCard(h.index);
       };
-      /* Gather/forage cards have nothing to aim at, so the press-hold
-         lift is skipped entirely for them — plain tap only. */
-      if (!NO_DRAG_KINDS[c.kind]) wireCardDrag(el2, h);
       wrap.appendChild(el2);
     });
     $('tap-hint').textContent = '';
@@ -388,123 +395,6 @@
       box.appendChild(chip);
     });
   };
-
-  /* ---------- press-and-hold-drag-drop -----------------------
-     An alternative to tap-to-choose: hold a hand card, drag it, and
-     drop it anywhere on the field to play it — same auto-pick target
-     a plain tap always used. Purely a pointer-tracked visual "ghost" —
-     the real hand card element stays put (invisible) so the hand
-     never reflows mid-drag; the actual play commits through
-     G.playCardAt only once a drop lands. A short press or a release
-     with no real movement is left alone and falls through to the
-     plain click-to-choose flow above. */
-  const NO_DRAG_KINDS = { gather: 1, forage: 1 };
-  const DRAG_THRESHOLD = 10; // px of movement before a hold becomes a drag
-  let drag = null;           // { index, card, origEl, ghost, offX, offY, pointerId, moved }
-  let dragSuppressClick = false;
-
-  /* move/up/cancel are bound once, on window, rather than per-card —
-     binding them on the card itself stopped delivering events the
-     instant the finger dragged off that (small) element's own box,
-     which is immediate since dragging off it is the entire point,
-     leaving the ghost stuck lifted forever with no pointerup ever
-     arriving to clean it up. window always sees the event bubble up
-     no matter what the pointer is physically over when it fires. */
-  window.addEventListener('pointermove', onDragMove);
-  window.addEventListener('pointerup', onDragEnd);
-  window.addEventListener('pointercancel', onDragEnd);
-
-  /* Force-clear whatever drag is in flight — used when a new drag
-     starts before the old one ever got a pointerup (a stray second
-     touch, or a platform that drops the up event), so its ghost
-     never gets orphaned with no pointerId left to match it to. */
-  function abortDrag() {
-    if (!drag) return;
-    if (drag.ghost) drag.ghost.remove();
-    if (drag.origEl) drag.origEl.style.opacity = '';
-    drag = null;
-  }
-
-  function wireCardDrag(el2, h) {
-    el2.addEventListener('pointerdown', (ev) => {
-      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
-      if (G.phase !== 'choose') return;
-      ev.stopPropagation();
-      abortDrag();
-      /* Belt-and-suspenders: also try native capture so hover/other
-         handlers on whatever's underneath don't fight the drag. */
-      try { el2.setPointerCapture(ev.pointerId); } catch (e) { /* unsupported — window listeners still cover it */ }
-      drag = {
-        index: h.index, card: h.card, origEl: el2,
-        ghost: null, pointerId: ev.pointerId, moved: false,
-        startX: ev.clientX, startY: ev.clientY, offX: 0, offY: 0,
-      };
-    });
-  }
-
-  function startGhost(ev) {
-    const rect = drag.origEl.getBoundingClientRect();
-    drag.offX = drag.startX - rect.left;
-    drag.offY = drag.startY - rect.top;
-    const g = drag.origEl.cloneNode(true);
-    g.className = 'hcard hcard-ghost tint-' + (drag.card.tint || 'stone').toLowerCase();
-    g.style.width = rect.width + 'px';
-    g.style.height = rect.height + 'px';
-    g.style.left = rect.left + 'px';
-    g.style.top = rect.top + 'px';
-    document.body.appendChild(g);
-    void g.offsetWidth;
-    g.classList.add('lifted');
-    drag.ghost = g;
-    drag.origEl.style.opacity = '0';
-  }
-
-  function positionGhost(x, y) {
-    drag.ghost.style.left = (x - drag.offX) + 'px';
-    drag.ghost.style.top = (y - drag.offY) + 'px';
-  }
-
-  function onDragMove(ev) {
-    if (!drag || ev.pointerId !== drag.pointerId) return;
-    if (!drag.moved) {
-      const dx = ev.clientX - drag.startX, dy = ev.clientY - drag.startY;
-      if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-      drag.moved = true;
-      startGhost(ev);
-    }
-    positionGhost(ev.clientX, ev.clientY);
-  }
-
-  function onDragEnd(ev) {
-    if (!drag || ev.pointerId !== drag.pointerId) return;
-    const d = drag; drag = null;
-    if (!d.moved) return;                 // simple tap — let onclick handle it
-    dragSuppressClick = true;
-
-    const field = $('field');
-    const valid = field && field.contains(document.elementFromPoint(ev.clientX, ev.clientY));
-
-    if (valid) {
-      const dest = field.getBoundingClientRect();
-      d.ghost.classList.remove('lifted');
-      d.ghost.classList.add('falling');
-      d.ghost.style.left = (dest.left + dest.width / 2 - d.ghost.offsetWidth / 2) + 'px';
-      d.ghost.style.top = (dest.top + dest.height / 2 - d.ghost.offsetHeight / 2) + 'px';
-      d.ghost.style.transform = 'scale(.8)';
-      d.ghost.style.opacity = '0';
-      G.playCardAt(d.index);
-      setTimeout(() => { d.ghost.remove(); if (d.origEl) d.origEl.style.opacity = ''; }, 240);
-    } else {
-      const rect = d.origEl.getBoundingClientRect();
-      d.ghost.classList.remove('lifted');
-      d.ghost.classList.add('snapback');
-      d.ghost.style.left = rect.left + 'px';
-      d.ghost.style.top = rect.top + 'px';
-      d.ghost.style.width = rect.width + 'px';
-      d.ghost.style.height = rect.height + 'px';
-      setTimeout(() => { d.ghost.remove(); if (d.origEl) d.origEl.style.opacity = ''; }, 220);
-    }
-  }
 
   /* No retaliation preview here — you only learn what an animal
      hits back for once you actually swing at it (see the
@@ -676,13 +566,13 @@
     if (pi && !pi.innerHTML) pi.innerHTML = sp('altar', 26);
     $('pp-val').textContent = S.prayerPoints;
     $('deck-size').textContent = S.deck.length;
-    const cost = G.purgeCost();
-    $('purge-hint').textContent = cost + ' pt each';
+    $('purge-hint').textContent = 'cost scales with tier';
     UI.renderDeckSlots();
     const list = $('card-list'); list.innerHTML = '';
     const counts = G.deckCounts();
     Object.keys(counts).forEach(k => {
       const c = G.cardDef(k);
+      const cost = G.purgeCost(k);
       const can = S.prayerPoints >= cost && S.deck.length > 1;
       const kind = G.cardKinds[c.kind];
       const f = kind && kind.face ? kind.face(c, k) : {};
@@ -692,7 +582,7 @@
       const pillCls = 'deck-card-pill' + (c.foil ? ' foil' : '') + (G.finishCount(S.prismatic, G.baseCardKey(k)) ? ' prismatic' : '');
       const row = el('div', 'row');
       row.innerHTML =
-        `<span class="${pillCls}">${sp(G.cardSprite(k), 22)}</span>
+        `<span class="${pillCls}">${sp(G.cardSprite(k), 22)}${tierPipsHTML(c.tier)}</span>
          <div class="row-body"><div class="row-nm">${c.name}</div>
            <div class="row-sub">${c.type}${(G.durabilityEnabled() && dur != null) ? ' · ' + dur + ' use' + (dur === 1 ? '' : 's') + ' left' : ''}</div>
            ${durabilityGaugeHTML(k, c)}
@@ -700,15 +590,17 @@
          <div class="row-n">${counts[k]}</div>`;
       const btns = el('div', 'btn-col');
       const actionRow = el('div', 'move-row deck-card-actions');
-      const b = el('button', 'px-btn spirit', 'Remove');
+      const b = el('button', 'px-btn spirit', 'Remove (' + cost + 'pt)');
       b.disabled = !can;
       b.onclick = () => G.purgeCard(k);
       actionRow.appendChild(b);
       const moveTargets = [];
       for (let i = 0; i < G.unlockedDeckSlots(); i++) if (i !== S.activeDeckSlot) moveTargets.push(i);
       if (moveTargets.length) {
-        const canMove = (S.prayerPoints >= G.deckMoveCost()) && S.deck.length > 1;
-        const moveBtn = el('button', 'px-btn', openMovePickerKey === k ? 'Cancel' : 'Move');
+        const moveCost = G.deckMoveCost(k);
+        const canMove = (S.prayerPoints >= moveCost) && S.deck.length > 1;
+        const moveBtn = el('button', 'px-btn',
+          openMovePickerKey === k ? 'Cancel' : 'Move (' + moveCost + 'pt)');
         moveBtn.disabled = !canMove;
         moveBtn.onclick = () => {
           openMovePickerKey = openMovePickerKey === k ? null : k;
@@ -734,7 +626,7 @@
       list.appendChild(row);
     });
     $('dot-deck').style.display =
-      (S.prayerPoints >= cost && S.page !== 'deck') ? 'block' : 'none';
+      (G.canAffordAnyDeckWork() && S.page !== 'deck') ? 'block' : 'none';
     UI.renderCollection();
   };
 
@@ -779,7 +671,7 @@
       row.innerHTML =
         `<div class="deck-slot-badge">D${i + 1}</div>
          <div class="deck-slot-meta"><div class="deck-slot-name">${G.deckSlotName(i)}</div>
-           <div class="deck-slot-sub">${unlocked ? (cards ? cards + ' cards · move cost ' + (G.deckMoveCost() ? G.deckMoveCost() + ' pt' : 'free') : 'empty slot') : 'Unlocks at Prayer ' + (i * 10)}</div></div>`;
+           <div class="deck-slot-sub">${unlocked ? (cards ? cards + ' cards · move cost scales with tier' : 'empty slot') : 'Unlocks at Prayer ' + (i * 10)}</div></div>`;
       const actions = el('div', 'deck-slot-actions');
       const btn = el('button', 'px-btn' + (i === S.activeDeckSlot ? ' acc' : ''), i === S.activeDeckSlot ? 'Using' : 'Use');
       btn.disabled = !unlocked || i === S.activeDeckSlot || !cards;
@@ -806,11 +698,10 @@
     const keys = Object.keys(counts).filter(k => counts[k] > 0);
     const total = keys.reduce((sum, k) => sum + counts[k], 0);
     if (sizeEl) sizeEl.textContent = total;
-    const cost = G.purgeCost();
     const atCap = S.deck.length >= G.TUNE.deckCap;
     const hint = $('restore-hint');
     if (hint) {
-      hint.textContent = atCap ? 'deck full (' + G.TUNE.deckCap + ')' : cost + ' pt each';
+      hint.textContent = atCap ? 'deck full (' + G.TUNE.deckCap + ')' : 'cost scales with tier';
     }
     list.innerHTML = '';
     if (!keys.length) {
@@ -821,6 +712,7 @@
     keys.forEach(k => {
       const c = G.cardDef(k);
       if (!c) return;                     // a card type that no longer exists
+      const cost = G.purgeCost(k);
       /* the deck can hold at most TUNE.maxCardCopies of this one key —
          the collection stack itself has no limit, only what's already
          active in the deck blocks adding more */
@@ -829,11 +721,11 @@
       const pillCls = 'deck-card-pill' + (c.foil ? ' foil' : '') + (G.finishCount(S.prismatic, G.baseCardKey(k)) ? ' prismatic' : '');
       const row = el('div', 'row');
       row.innerHTML =
-        `<span class="${pillCls}">${sp(G.cardSprite(k), 22)}</span>
+        `<span class="${pillCls}">${sp(G.cardSprite(k), 22)}${tierPipsHTML(c.tier)}</span>
          <div class="row-body"><div class="row-nm">${c.name}</div>
            <div class="row-sub">${atCardCap ? G.TUNE.maxCardCopies + ' already in deck' : c.type}</div></div>
          <div class="row-n">${counts[k]}</div>`;
-      const b = el('button', 'px-btn spirit', 'Add');
+      const b = el('button', 'px-btn spirit', 'Add (' + cost + 'pt)');
       b.disabled = !can;
       b.onclick = () => G.restoreCard(k);
       row.appendChild(b);
@@ -1652,6 +1544,28 @@
                <div class="r-eff">auto-crafts ${r.name} into this zone's crate — ${free}/${G.villagerSlots()} slots free</div>`;
           const line = el('div', 'recipe' + (stalled ? ' stalled' : ''));
           line.appendChild(rBody);
+          /* Same .r-progress/.r-progress-fill bar the player's own
+             tap-craft row uses, except a villager has no single job
+             to finish — it cycles forever on G.villagerInterval, so
+             the bar loops instead of running once. Synced the same
+             way as the tap-craft/campfire bars: a negative animation
+             delay drops it onto the true elapsed point in its
+             current cycle (elapsed mod period), so re-rendering
+             mid-cycle (or resuming after being away) never restarts
+             it from zero. A stalled villager gets a static empty bar
+             — no animation — since it isn't actually progressing. */
+          if (hired && !stalled) {
+            const track = el('div', 'r-progress');
+            const fill = el('div', 'r-progress-fill');
+            track.appendChild(fill);
+            line.appendChild(track);
+            const period = G.villagerInterval(st.id);
+            const last = (S.villagerLast && S.villagerLast[S.zone + ':' + st.id]) || Date.now();
+            const elapsed = (Date.now() - last) % period;
+            fill.style.animation = 'none';
+            void fill.offsetWidth;
+            fill.style.animation = 'craftFill ' + period + 'ms linear ' + (-elapsed) + 'ms infinite both';
+          }
           const b = el('button', 'px-btn' + (hired ? ' warn' : ' acc'), hired ? 'Dismiss' : 'Hire');
           if (!hired) b.disabled = !G.canAffordCraft(st.villagerHireCost) || free <= 0;
           b.onclick = () => { (hired ? G.dismissVillagerAt(st.id) : G.hireVillagerAt(st.id)); UI.renderCraft(); };
@@ -1939,10 +1853,8 @@
      too, so opening the page after being away shows the true state
      immediately, not just once the ticker's next 5s poll lands. */
 
-  /* Minimal time-based long-press: no existing helper to reuse (the
-     shipped "press-hold" card-drag gesture is distance-based and
-     hardcoded to hand cards, see wireCardDrag above). Cancels on
-     early release or any real pointer movement. */
+  /* Minimal time-based long-press helper. Cancels on early release or
+     any real pointer movement. */
   UI.onHold = function (el2, ms, fn) {
     let timer = null, sx = 0, sy = 0;
     const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
@@ -2030,6 +1942,12 @@
       fill.setAttribute('stroke-dasharray', C);
       svg.appendChild(track); svg.appendChild(fill);
       cell.appendChild(svg);
+      /* small status pip — needs-water/ready only; growing already
+         has the ring, empty already has its own "tap to plant" hint,
+         so neither needs a second indicator on top. */
+      if (!growing) {
+        cell.appendChild(el('span', 'dot ' + (ready ? 'ready' : 'needs-water')));
+      }
       cell.appendChild(el('span', null, sp(G.resSprite(plot.seedKey), 24)));
       cell.appendChild(el('div', 'farm-plot-name', crop.name));
       cell.appendChild(el('div', 'farm-plot-hint',
@@ -2302,7 +2220,7 @@
     if (S.page !== 'craft') UI.craftBadge();
     if (S.page !== 'town') UI.townBadge();
     if (S.page !== 'deck') {
-      $('dot-deck').style.display = S.prayerPoints >= G.purgeCost() ? 'block' : 'none';
+      $('dot-deck').style.display = G.canAffordAnyDeckWork() ? 'block' : 'none';
     }
     /* Market is only usable while the current zone is a city. */
     const marketBtn = $('market-btn');

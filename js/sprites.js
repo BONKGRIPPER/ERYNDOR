@@ -34,12 +34,36 @@
     stone: S(C.stone,
       '<path d="M5 15l3-7 5-2 6 4-2 7-8 1z" fill="$1"/>' +
       '<path d="M8 8l5-2 6 4-6 1z" fill="$2"/>'),
+    /* A single bigger, bulkier rock — fills nearly the whole viewBox
+       (vs. stone's small angular shard) so it reads as heavier/larger
+       at the same render size, since callers never size location
+       cards differently by content (see UI.renderLocationField). */
+    boulder: S(C.stone,
+      '<path d="M3 17l1-8 6-6 8-1 5 7-1 9-6 4H8z" fill="$1"/>' +
+      '<path d="M4 9l6-6 6 1-6 6-4 3z" fill="$2"/>'),
+    /* A slim, angular knapped flake — distinct from stone's blocky
+       rock silhouette, with two notch facets suggesting a chipped
+       edge. Same stone tint (flint's tint is 'stone' already). */
+    flint: S(C.stone,
+      '<path d="M12 2l4 7-1.5 12-2.5 3-2.5-3-1.5-12z" fill="$1"/>' +
+      '<path d="M12 2l2.2 7-1 4-1.2-4z" fill="$2"/>' +
+      '<path d="M9.5 10l1.5 1.5-1.5 1.5M14.5 10l-1.5 1.5 1.5 1.5" stroke="$2" stroke-width="0.9" fill="none"/>'),
     stick: S(C.wood,
       '<rect x="3" y="11" width="18" height="2.6" rx="1.3" fill="$1" transform="rotate(-18 12 12)"/>' +
       '<rect x="7" y="7" width="7" height="2.2" rx="1.1" fill="$2" transform="rotate(28 12 12)"/>'),
+    /* Three log ends stacked (two back, one front-center), each with
+       a bark ring and a lighter cut-face center — was a single log
+       block before; also what Planks reuses via ALIAS below. */
     wood: S(C.wood,
-      '<rect x="3.5" y="7" width="17" height="10" rx="3" fill="$1"/>' +
-      '<ellipse cx="6.5" cy="12" rx="3" ry="5" fill="$2"/>'),
+      '<circle cx="7" cy="15" r="5" fill="$1"/><circle cx="17" cy="15" r="5" fill="$1"/><circle cx="12" cy="9" r="5" fill="$1"/>' +
+      '<circle cx="7" cy="15" r="2.1" fill="$2"/><circle cx="17" cy="15" r="2.1" fill="$2"/><circle cx="12" cy="9" r="2.1" fill="$2"/>'),
+    /* Actual pine-tree silhouette (3-tier canopy + trunk) for the
+       Pine Tree location card — was reusing the raw-log 'wood' art
+       before, which read as a resource icon, not a gatherable tree. */
+    tree: S(C.leaf,
+      '<path d="M12 2l5 7h-3l4 6h-4l4 7H6l4-7H6l4-6H7z" fill="$1"/>' +
+      '<rect x="10.5" y="21" width="3" height="2" fill="$1"/>' +
+      '<path d="M12 2l2.5 7h-1.5l2 6h-1.5l2 7h-3.5V2z" fill="$2"/>'),
     flax: S(C.leaf,
       '<path d="M12 21V9" stroke="$1" stroke-width="2" stroke-linecap="round"/>' +
       '<path d="M12 10c0-3 2-5 5-6 0 3-2 5-5 6zM12 12c0-3-2-5-5-6 0 3 2 5 5 6z" fill="$2"/>'),
@@ -438,6 +462,7 @@
     riverTrout: 'fish', grayling: 'fish', pike: 'fish', silverSalmon: 'fish',
     bass: 'fish', catfish: 'fish', whitefish: 'fish', moonfin: 'fish',
     smoothStone: 'stone', pebble: 'stone', driftwood: 'wood', planks: 'wood',
+    birchLog: 'wood', birchPlanks: 'wood',
     moss: 'forage', lakeweed: 'pondweed',
   };
   G.ALIAS = ALIAS;      // exposed so custom-sprites.js can extend it

@@ -265,7 +265,7 @@
 
   document.querySelectorAll('.nav button').forEach(b => {
     if (b.dataset.emb) {
-      b.insertAdjacentHTML('afterbegin', G.sprite(b.dataset.emb, 18));
+      b.insertAdjacentHTML('afterbegin', G.sprite(b.dataset.emb, 22));
     }
     b.onclick = () => goToggle(b.dataset.page);
   });
@@ -347,7 +347,17 @@
   window.S = G.S = G.freshState();
   const had = G.load();
   if (!S.deck.length) G.buildDeck();
-  if (!had) G.shuffle(S.deck);
+  if (!had) {
+    G.shuffle(S.deck);
+    /* a genuinely fresh install has no save to migrate through
+       G.load()'s locationDecks/locationField backfill (core.js) —
+       do the same build+shuffle+fill G.wipe() does, or the Play
+       page's field stays stuck on freshState()'s [null,null,null]
+       forever, showing no cards until the player manually wipes. */
+    G.buildLocationDecks();
+    S.locationDecks.forEach(sd => G.shuffle(sd.deck));
+    G.fillLocationField();
+  }
 
   UI.go(S.page && document.getElementById('page-' + S.page) ? S.page : 'play');
   UI.renderAll();

@@ -7,10 +7,15 @@
    marketBuyMult. The markup is what stops a pointless sell-then-
    rebuy loop; no separate price table needed.
 
-   Trade is now tied to the CURRENT zone being a city, not merely
-   having discovered one earlier. Both the UI and these functions
-   enforce that so a stale page switch or old save cannot bypass it.
-   ========================================================= */
+   Trade is tied to the CURRENT zone being a city (G.ZONES[id].kind
+   === 'City'), not merely having discovered one earlier — leave a
+   trade city and the Market gate closes immediately, same save or
+   not. Both the UI and these functions enforce that so a stale page
+   switch or old save cannot bypass it. Only Khar-Barak and Riverhold
+   are trade cities right now — Aerendell is a Town (a real settlement,
+   just not one with a market), Forest Road is Wilds, Duun-Vael Bridge
+   is a Gauntlet. Making a new zone tradeable is exactly one field:
+   set its G.ZONES entry's `kind: 'City'`. */
 (function (G) {
   'use strict';
 
