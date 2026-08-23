@@ -43,7 +43,7 @@ the shim above is only a fallback, not the itch.io path. Regenerate with
     node test/smoke.js       boot, every page, every station, every card kind
     node test/hand.js        hand-of-three loop
     node test/combat.js      damage, retaliation, drops, spawn weights
-    node test/zones.js       per-zone decks, travel gating
+    node test/zones.js       GLOBAL deck (travel adds no cards), zone gating
     node test/mining.js      zone mining tables, the metal chain
     node test/settlement.js  homes -> global villager slots, cross-zone material loop
     node test/weight.js      carry weight never drifts from true inventory
@@ -80,7 +80,7 @@ the shim above is only a fallback, not the itch.io path. Regenerate with
     node test/stonecutter.js Boulder stone/basalt split, Stone Cutter refining, block-costed recipes/buildings
     node test/invgrid.js     Bag Carried list renders as a card grid, tap-to-open, corner donate-checkbox
     node test/sawmill.js     Sawmill refining, Wood->Logs rename, wood->planks cost conversion, doubled tapCraftMs
-    node test/deckcap.js     5/5/5 starting deck, max 5 copies of one card per deck slot (collection is unlimited)
+    node test/deckcap.js     3/3/3+berry starting deck, 30-card cap, max 3 copies, overflow banks to collection
     node test/firstboot.js   a genuinely fresh install (no save) populates the location field and deck on its own
     node test/emblems.js     new Boulder/Pine Tree/Flint/Logs emblems resolve and render distinctly
     node test/refiningskills.js  Wood Cutting (Sawmill) / Stone Cutting (Stone Cutter) grant their own xp, not Crafting's
@@ -89,6 +89,10 @@ the shim above is only a fallback, not the itch.io path. Regenerate with
     node test/birchchain.js  Pine/Birch Planks chain, Birch Tree (Still-tide Pass, Bronze Axe gated), Fishing Rod rework
     node test/villagerbar.js hired-villager progress bar (looping, stalled=no bar), crate->inventory->bank spend order
     node test/tieredprayer.js purge/restore/move prayer cost scales 2x per gear tier, Donate bar's 10x xp-per-fill
+    node test/villagerslowdown.js villagerCraftMult 25x (was 5x), Forage's halved flax/berries yield (seeds untouched)
+    node test/deckaltar.js   Bone Altar renders on the Deck page (not Craft), craft-tab dot ignores off-page stations
+    node test/foodcards.js   food-as-cards, fuel points, anyOf costs, eat-on-play consumption
+    node test/damagetypes.js blunt/pierce/slash/ranged typing, weak/resist multipliers, ships inert
 
 Run **all of them** after any change. `smoke.js` also does two static checks
 that have caught real bugs: DOM ids referenced in JS but missing from
@@ -479,7 +483,192 @@ editor's next Save.
   craft.js) grants `G.grantZoneXp(S.zone, TUNE.donateXpPerFill)`
   per threshold crossing instead. See `test/tieredprayer.js`.
 
+- **Villagers are 25x slower than a player's own tap now, not 5x.**
+  `G.villagerCraftMult` (data.js) is 25 — a further 5x on top of the
+  original 5x figure. `G.villagerInterval` (systems/township.js)
+  reads it unchanged, so every other rule (station-upgrade speedup,
+  `G.timeScale()` hook, offline catch-up math) still applies exactly
+  as before, just against a much longer base period. See `test/
+  villagerslowdown.js`.
+- **Forage's flax/berries yield is halved; its seed drops are not.**
+  `TUNE.forageHerbMult` (0.5, data.js) is applied to `roll.flax`/
+  `roll.berries` in `systems/cards.js`'s `forage` kind, AFTER crit-
+  doubling and the foraging-skill/foil multiplier have already
+  compounded, floored with a minimum of 1 (`forageHerbQty`, a local
+  helper) so a forage can never round all the way down to zero.
+  `flaxSeed`/`berrySeed` — both their 15% chance and their quantity —
+  are completely untouched; only the guaranteed flax-or-berries pick
+  was nerfed. Applies identically to the live-play, offline-catchup,
+  and card-face-preview paths. See `test/villagerslowdown.js`.
+- **Building past the free starting farm plots now costs Pine Planks
+  and Basalt Blocks, doubling each time, capped at 12 total.** The
+  old "auto-unlock a plot every 5 farming levels" formula
+  (`G.farmPlotCount`, systems/farm.js) is gone — plot count is now
+  `TUNE.farmPlotsBase` (3, from custom-content.js's TUNE override)
+  plus `S.farmPlotsBuilt`, capped at `TUNE.farmPlotsMax` (12 — 3 base
+  + 9 buyable). `G.nextFarmPlotCost()` returns `{planks: N,
+  basaltBlock: N}` where `N = 2 * 2^S.farmPlotsBuilt` (2, 4, 8, 16,
+  … up to the 9th purchase), or `null` once at the cap.
+  `G.buildFarmPlot()` spends that cost via the normal `G.
+  spendCraftCost` inventory→crate→bank order and increments
+  `S.farmPlotsBuilt` (global, not zone-tied — matches
+  `farmPlotCount`'s own non-zone-scoped nature; only Aerendell has
+  anything to grow anyway). The Farm page's grid renders one more
+  tile after the real plots — same `.farm-plot` visual register, a
+  solid accent border instead of empty's dashed one — showing the
+  next cost and disabled until affordable; it disappears entirely
+  once `nextFarmPlotCost()` returns `null`. See `test/farm.js`.
+- **A farm plot's status pip now covers all three non-growing
+  states, not just needs-water/ready.** An empty plot now also gets
+  a `.dot.empty` pip (`UI.renderFarm`, js/ui.js) alongside the
+  existing red needs-water / green ready pips — `growing` is the one
+  state left with no pip, since its progress ring already
+  communicates that. See `test/farm.js`.
+
+- **The Bone Altar renders on the Deck page, not the Craft page.**
+  The station carries `page: 'deck'` (set in **both** data.js and
+  custom-content.js, since the altar is one of the 5 stations
+  custom-content.js fully redeclares) — the same `stationPage(st)`
+  mechanism the Campfire already used for `page: 'farm'`, so no new
+  routing was needed. It renders into a new `#deck-stations`
+  container placed directly beneath the prayer-point panel, via the
+  shared `renderStationsInto('deck-stations', 'deck', ...)` helper
+  called from `UI.renderDeck`. The point of the placement: `#pp-val`
+  sits immediately above, and already re-renders on `state:changed`,
+  so the counter visibly ticks up as each bone goes in — verified
+  live (0 → 1 without leaving the page).
+  **Also fixed alongside it:** `UI.craftBadge` iterated *every*
+  station with no page filter, so the Craft tab's dot lit up for
+  stations that render on other pages — the Campfire (`page:
+  'farm'`) has been doing this all along, and moving the altar would
+  have added a second case. It now skips any station whose
+  `stationPage()` isn't `'craft'`. See `test/deckaltar.js`.
+
+- **The deck is GLOBAL now — zones no longer own decks, and travel
+  never hands you cards.** This was a real playtest bug: every zone
+  defined its own `deck` block (Forest Road's was 8 flint / 8 stick /
+  10 forage), and `world.js`'s `restore()` called `G.buildDeck()` on
+  first arrival, which built a whole fresh starter pile from that
+  block *and* re-added a copy of every card ever crafted from
+  lifetime `S.made` counts. Fixed by deleting all 7 zone `deck`
+  blocks (3 in data.js, 4 in custom-content.js) and removing
+  `deck`/`drawnCount`/`deckSlots`/`activeDeckSlot` from `stash()`/
+  `restore()` entirely. `G.buildDeck` now always reads
+  `G.STARTING_DECK` and is only called for a brand-new game or to
+  recover an empty deck — never on travel. Still zone-tied:
+  `locationDecks`, `locationField`, `built`, `farmPlots`. Deck slots
+  are global too, so D1/D2/D3 loadouts are available everywhere, and
+  a zone's preferred-slot auto-equip (`preferredDecks`) survives as
+  a pure convenience switch between loadouts you built yourself.
+  Note `G.pruneZoneDeckCards` is now dead code — nothing calls it,
+  and its `zone.deck.oreVein` gate can never be true.
+- **Deck limits are 30 total / 3 copies of one key, and 30 is a
+  MAXIMUM, not a required size.** `TUNE.deckCap` 60 → 30,
+  `TUNE.maxCardCopies` 5 → 3, `G.STARTING_DECK` 5/5/5 → **3/3/3**
+  (9 cards; a Red Berry card joins it in the food batch). The small
+  opening deck is deliberate — it grows toward the cap as you craft
+  variety, which is what makes later food/utility cards worth deck
+  space instead of needing ever-bigger heal numbers. Removing cards
+  to the collection still works and you may sit below the cap, so
+  prayer pricing is unchanged (still tier-scaled).
+  **A craft that can't fit now goes to the collection instead of
+  vanishing** — `G.addCardToDiscard` (engine.js) used to `break` and
+  silently destroy the copy once a key hit the cap; it now banks the
+  overflow in `S.collection` and emits `collection:changed`. New
+  `G.enforceDeckLimits()` (core.js) trims any deck slot back inside
+  both limits, moving the excess to the collection rather than
+  deleting it, and runs as a save migration on load (older saves were
+  built under 60/5). See `test/deckcap.js` and `test/zones.js`.
+- **Boulders share Forest Road's "Forest" slot with the pine trees**
+  (`locationDecks[0]` is `{pineTree: 5, boulder: 5}`, slot label now
+  "Forest & Rock") so stone is obtainable in the second zone — but
+  only one card is face-up per slot, so you must clear whichever is
+  showing to reach the next. See `test/mining.js`.
+
+- **Food is CARDS ONLY — there is no eat-from-the-bag path.**
+  `G.eat`/`G.canEat` are deleted; raw food (berries, poultry, pork,
+  steak, every fish) is now purely an INGREDIENT. Healing happens by
+  playing a `kind:'food'` card, which **consumes the card** — it
+  leaves the deck permanently (`G.consumeCardFromDeck`, engine.js,
+  which removes exactly ONE copy, unlike `drainDurability` which
+  yanks them all). That's what makes food a recurring cost the farm/
+  cooking economy has to keep supplying rather than a one-time craft
+  that heals forever. A clean tap doubles the heal like everything
+  else; playing at full health refuses WITHOUT burning the card.
+  Four cards: Red Berry (1), Cooked Meat (3), Cooked Fish (3),
+  Cooked Rare Fish (5). The starting deck is 3/3/3 + **1 Red Berry**
+  (10 cards). A food card is an ordinary card in every other respect —
+  dealt into the hand, played from it, and showing `+N hp` on its face
+  via `combatLine` (which would otherwise leave it blank, since food
+  grants no resources to list).
+  **The header hotbar is gone entirely** — `UI.renderHotbar`,
+  `UI.healingItems`, `TUNE.hotbarSlots`, `#hotbar` and the whole
+  `.hot*` CSS block are all deleted. It existed to tap-to-eat from
+  inventory, which no longer means anything. `G.USABLES` is still
+  declared but now has nothing that would surface it.
+  See `test/foodcards.js`.
+- **Cooking makes cards, via two new recipe cost shapes.** The 20
+  per-item cook recipes (`cookPoultry`, `cook_<fish>` x16, …) are
+  gone; the Campfire has 4 card recipes plus Burn Charcoal. Two
+  fields extend the flat `cost` object (systems/craft.js):
+  `fuel: N` spends N FUEL POINTS from any burnable (stick 1, wood 4,
+  charcoal 8 — `G.fuelAvailable`/`G.spendFuel`, which burns the
+  CHEAPEST fuel first so charcoal isn't wasted, and lets the last
+  item overshoot since fuel burns whole); `anyOf: {keys, qty}` spends
+  N of any ONE key in the list (`G.anyOfChoice` picks the biggest
+  qualifying stack), which is why 16 near-identical fish recipes
+  collapse into one Cooked Fish card. Both are enforced in
+  `canStartRecipe` and spent in `spendRecipeCost`, the single gate
+  and single spend both `G.craft` and `G.startCraftJob` already ran
+  through. `UI.recipeCostHtml` renders all three shapes.
+  The Campfire also lost its bespoke "pick a food, pick a fuel" panel
+  and renders like any other station — `renderCampfireStation`,
+  `G.campfireRecipes`, `G.startCampfireCook` and `S.campfireJob` are
+  now dead code.
+- **`G.FISH` now exists — it never did.** `G.isFish` read an
+  undefined `G.FISH` and so always returned false, meaning
+  `S.fishCaught` never recorded anything and the Fish Journal was
+  permanently empty. That was the long-standing `test/fishing.js`
+  failure, now fixed. The table also marks the one `rare: true` catch
+  each water location hides (goldenKoi / glassEel / silverSalmon /
+  moonfin — one per fishing region), which is what separates the
+  Cooked Fish and Cooked Rare Fish recipes. `G.isRareFish` and
+  `G.fishKeys(rare)` read it. bass/catfish/whitefish/moonfin belong
+  to the orphaned `lake` location and aren't obtainable yet.
+
+- **Damage types are wired but deliberately unassigned.** Every
+  attack card carries a `damageType` — blunt (Wooden Club), pierce
+  (all Picks, Ore Vein), slash (all Swords and Axes), ranged (every
+  bow, per its own weapon class). Fishing gear is untyped on purpose:
+  it damages water locations, never a resistant enemy. A location can
+  answer with `weak`/`resist` in either shape — array shorthand
+  (`weak: ['pierce']`, using `TUNE.weakMult` 2 / `TUNE.resistMult`
+  0.5) or explicit per-type numbers (`resist: {blunt: 0.25}`).
+  `G.damageMult` (engine.js) combines them and `G.damageLocation`
+  applies it. A resisted hit floors at 1 so nothing becomes
+  accidentally unkillable, but an explicit `0` is honored as true
+  immunity. **No location declares weak/resist yet**, so every
+  multiplier is currently 1 and the system has zero balance impact —
+  `test/damagetypes.js` asserts that inertness directly.
+  One subtlety worth preserving: the damage type is read from
+  `G.current` (the card being played), NOT from `damageLocation`'s
+  `cardKey` argument. `cardKey` is also what `locationMatchesCard`
+  uses to enforce a location's `requiresCard` gate, and only the axe
+  passes it — routing damage typing through it silently made picks
+  unable to hit Khar-Barak's Scrap-Pick-gated ore vein. Keep the two
+  separate.
+
 ## Known open questions
+
+- `requiresCard` is only actually enforced for AXE cards, because
+  `G.damageLocation`'s `cardKey` argument is only passed by the axe
+  handler (systems/cards.js). Melee/ranged/mine/fishing all pass
+  `undefined`, so `locationMatchesCard` skips the check for them —
+  meaning a Flint Pick can currently mine `oreVeinGate`, which is
+  supposed to require a Scrap Pick. Found while wiring damage types;
+  deliberately NOT fixed there, since enforcing it is a real balance
+  change rather than a bug-fix-in-passing. Decide whether the gate
+  should bind for every card kind.
 
 - The bow is strictly better than melee now (same retaliation, more damage).
   They need differentiating.

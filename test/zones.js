@@ -1,39 +1,56 @@
-/* Per-zone decks, gating, goblins. Run: node test/zones.js */
+/* Zone gating, goblins, and the GLOBAL deck. Zones used to each
+   define their own `deck` block, so first arrival built a fresh
+   starter pile and silently handed you cards you never picked —
+   that's gone; the deck travels with you.
+   Run: node test/zones.js */
 const { boot } = require('./harness');
 const { G } = boot();
 
-console.log('== each zone has its own deck ==');
-Object.keys(G.ZONES).forEach(z => {
-  const d = G.ZONES[z].deck;
-  const total = Object.values(d).reduce((a, b) => a + b, 0);
-  console.log('  ' + G.ZONES[z].name.padEnd(24), total, 'cards',
-    JSON.stringify(d));
-});
+console.log('== no zone defines a deck of its own any more ==');
+const offenders = Object.keys(G.ZONES).filter(z => G.ZONES[z].deck);
+console.log('  zones still carrying a `deck` block:',
+  offenders.length ? offenders.join(', ') : 'none');
+console.log('  none of them do:', offenders.length === 0);
 
-console.log('\n== starting zone deck ==');
+console.log('\n== the starting deck is the one global STARTING_DECK ==');
 G.wipe();
 console.log('  zone', G.zoneName(), '| deck', S.deck.length, JSON.stringify(G.deckCounts()));
+const startTotal = Object.values(G.STARTING_DECK).reduce((a, b) => a + b, 0);
+console.log('  deck size matches STARTING_DECK exactly:', S.deck.length === startTotal);
 
-console.log('\n== travelling builds a new deck, inventory carries ==');
+console.log('\n== travelling does NOT hand you new cards ==');
 G.addRes('stone', 30); G.addRes('stick', 30); G.addRes('wood', 20);
 S.kills = 5;
 const invBefore = { stone: S.stone, stick: S.stick, wood: S.wood };
-S.drawnCount = 9;
+const deckSig = JSON.stringify(G.deckCounts());
+const sizeBefore = S.deck.length;
 G.travel('forestRoad');
 console.log('  now in', G.zoneName());
 console.log('  deck', S.deck.length, JSON.stringify(G.deckCounts()));
-console.log('  drawnCount reset to', S.drawnCount);
+console.log('  deck size unchanged by travel:', S.deck.length === sizeBefore);
+console.log('  deck contents unchanged by travel:', JSON.stringify(G.deckCounts()) === deckSig);
 console.log('  inventory carried:',
   S.stone === invBefore.stone && S.stick === invBefore.stick && S.wood === invBefore.wood);
 
-console.log('\n== each zone remembers its own progress ==');
-S.drawnCount = 12;
+console.log('\n== the same deck follows you back and forth ==');
 G.travel('aerendell');
-console.log('  back in Aerendell: deck', S.deck.length, '| drawn', S.drawnCount,
-            '(was 9)');
+console.log('  back in Aerendell: deck', S.deck.length, '| same:',
+  JSON.stringify(G.deckCounts()) === deckSig);
 G.travel('forestRoad');
-console.log('  back on the Road:  deck', S.deck.length, '| drawn', S.drawnCount,
-            '(was 12)');
+console.log('  back on the Road:  deck', S.deck.length, '| same:',
+  JSON.stringify(G.deckCounts()) === deckSig);
+
+console.log('\n== a card crafted in one zone is still there in the next ==');
+G.travel('aerendell');
+S.weight = 0; S.stoneBlock = 5; S.planks = 40; S.basaltBlock = 10; S.wood = 40;
+G.buildStation('bench');
+const hadPick = G.deckCounts().pickStone || 0;
+const crafted = G.craft('stonePick');
+const nowPick = G.deckCounts().pickStone || 0;
+console.log('  Stone Pick crafted in Aerendell:', crafted && nowPick > hadPick);
+G.travel('forestRoad');
+console.log('  and it is still in the deck on the Road:',
+  (G.deckCounts().pickStone || 0) === nowPick);
 
 console.log('\n== goblins only on the road ==');
 /* density is entirely the zone's location decks now — no separate

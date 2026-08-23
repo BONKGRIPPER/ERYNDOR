@@ -25,40 +25,6 @@
   let openMovePickerKey = null;
   let openStationMenu = null;   // station id whose Level Up / Hire menu is expanded
 
-  /* ---------- header: consumable hotbar ---------------------
-     Auto-filled with the three strongest healing items you are
-     carrying. Tap to eat.                                      */
-  UI.healingItems = function () {
-    return Object.keys(G.FOODS)
-      .filter(k => !G.FOODS[k].needsCooking && G.FOODS[k].heal > 0 && (S[k] || 0) > 0)
-      .map(k => ({ key: k, name: G.RESOURCES[k].name,
-                   heal: G.FOODS[k].heal, have: S[k] }))
-      .sort((a, b) => b.heal - a.heal || b.have - a.have);
-  };
-
-  UI.renderHotbar = function () {
-    const wrap = $('hotbar'); wrap.innerHTML = '';
-    const items = UI.healingItems();
-    const full = S.hp >= G.maxHp();
-    for (let i = 0; i < G.TUNE.hotbarSlots; i++) {
-      const it = items[i];
-      const slot = el('div', 'hot');
-      if (!it) {
-        slot.className = 'hot empty';
-        slot.innerHTML = '<span class="hot-empty">empty</span>';
-      } else {
-        if (!full) slot.classList.add('ready');
-        slot.innerHTML =
-          `<div class="hot-top">${sp(G.resSprite(it.key), 20)}
-             <span class="hot-qty">${it.have}</span></div>
-           <div class="hot-name">${it.name}</div>
-           <div class="hot-heal">+${it.heal} hp</div>`;
-        slot.onclick = () => G.eat(it.key);
-      }
-      wrap.appendChild(slot);
-    }
-  };
-
   /* ---------- pinned recipes bar (above the tabs) ----------- */
   UI.renderPinBar = function () {
     const wrap = $('pinbar'); if (!wrap) return;
@@ -405,6 +371,9 @@
       const ammo = G.activeConsumable('ammo');
       return (c.atk + (ammo ? ammo.dmg : 0)) + ' dmg';
     }
+    /* food grants no resources, so it would otherwise fall through to
+       a blank card face — show what it restores instead */
+    if (c.kind === 'food') return '+' + (c.heal || 0) + ' hp';
     return '';
   }
 
@@ -567,6 +536,13 @@
     $('pp-val').textContent = S.prayerPoints;
     $('deck-size').textContent = S.deck.length;
     $('purge-hint').textContent = 'cost scales with tier';
+    /* The Bone Altar renders here rather than on the Craft page
+       (station `page: 'deck'`, same mechanism the Campfire uses for
+       'farm') — burying a bone is really a deck action, and sitting
+       it directly under #pp-val means the counter above visibly
+       ticks up as each bone goes in. */
+    renderStationsInto('deck-stations', 'deck',
+      'No altar here yet.<br>Build a Bone Altar to start earning prayer points.');
     UI.renderDeckSlots();
     const list = $('card-list'); list.innerHTML = '';
     const counts = G.deckCounts();
@@ -1024,21 +1000,16 @@
        UI.renderBag's .inv-card grid). Each closes the sheet and
        re-renders afterward, same as the Plant button above — correct
        since a fully-eaten/dropped/stored stack may no longer exist. */
-    const food = G.FOODS[key];
-    if (food) {
+    /* Food is never eaten from the bag any more — raw food is only an
+       ingredient for a Campfire food-card recipe, so the Eat button
+       is gone and the note points at cooking instead. */
+    if (G.isFoodItem && G.isFoodItem(key)) {
       const note = el('div', 's-note');
-      note.innerHTML = food.needsCooking
-        ? '<span style="color:var(--ember)">raw — must be cooked</span>'
-        : '<span style="color:var(--plant)">heals ' + food.heal + ' hp</span>';
+      note.innerHTML =
+        '<span style="color:var(--ember)">ingredient — cook it into a food card</span>';
       body.appendChild(note);
     }
     const afterAction = () => { UI.hideItemDetail(); UI.renderAll(); };
-    if (food && !food.needsCooking) {
-      const eatBtn = el('button', 'px-btn acc', 'Eat');
-      eatBtn.disabled = S.hp >= G.maxHp();
-      eatBtn.onclick = () => { G.eat(key); afterAction(); };
-      body.appendChild(eatBtn);
-    }
     const dropBtn = el('button', 'px-btn warn', '-1');
     dropBtn.onclick = () => { G.dropItem(key, 1); afterAction(); };
     body.appendChild(dropBtn);
@@ -1359,6 +1330,31 @@
     });
   };
 
+  /* Full cost line for a RECIPE — the flat `cost` object plus the two
+     shapes it can't express: `fuel` points (any burnable) and `anyOf`
+     ("N of any ONE of these"). For anyOf it shows whichever key you
+     have most of, since that's the one G.anyOfChoice would actually
+     spend. */
+  const recipeCostHtml = UI.recipeCostHtml = function (r) {
+    let html = costHtml(r.cost || {});
+    if (r.anyOf) {
+      const pick = G.anyOfChoice(r) || r.anyOf.keys.reduce(
+        (a, k) => (G.availableCraftCount(k) > G.availableCraftCount(a) ? k : a),
+        r.anyOf.keys[0]);
+      const have = G.availableCraftCount(pick);
+      const res = G.RESOURCES[pick];
+      html += `<span class="${have >= r.anyOf.qty ? 'ok' : 'no'}">` +
+        G.sprite(G.resSprite(pick), 12) + have + '/' + r.anyOf.qty + ' ' +
+        (res ? res.name : pick) + ' <i>(any one kind)</i></span>';
+    }
+    if (r.fuel) {
+      const have = G.fuelAvailable();
+      html += `<span class="${have >= r.fuel ? 'ok' : 'no'}">` +
+        G.sprite(G.resSprite('charcoal'), 12) + have + '/' + r.fuel + ' fuel</span>';
+    }
+    return html;
+  };
+
   /* cost line with an emblem per ingredient, green when affordable */
   const costHtml = UI.costHtml = function (cost) {
     return Object.keys(cost).map(k => {
@@ -1393,7 +1389,7 @@
       if (!G.costKnown(r.cost)) return;
       known++;
       const done = (S.made[r.id] || 0) > 0 && !r.repeatable;
-      if (!done && G.canAffordCraft(r.cost)) ready++;
+      if (!done && G.canStartRecipe(r, r.id)) ready++;
     });
     return { known: known > 0, ready: ready > 0, label: known + ' recipes', count: ready };
   }
@@ -1578,11 +1574,12 @@
         body.appendChild(menu);
       }
 
-      if (built && st.id === 'firepit') {
-        renderCampfireStation(body);
-        wrap.appendChild(card);
-        return;
-      }
+      /* The Campfire used to get a bespoke "pick a food, pick a fuel,
+         cook a batch" panel (renderCampfireStation). Its recipes are
+         ordinary tap-craft card recipes now — they just carry `fuel`
+         and `anyOf` costs — so it renders like every other station.
+         renderCampfireStation and the G.campfireRecipes/
+         startCampfireCook helpers are dead code as a result. */
 
       if (!built) {
         const ok = G.canAffordCraft(st.buildCost);
@@ -1607,7 +1604,7 @@
           shown++;
           const made = S.made[r.id] || 0;
           const done = made > 0 && !r.repeatable;
-          const ok = G.canAffordCraft(r.cost);
+          const ok = G.canStartRecipe(r, r.id);
           /* For a card-granting recipe (a tool/weapon), badge shows how
              many copies are in the deck RIGHT NOW, including zero —
              durability removes broken copies from the deck, so lifetime
@@ -1630,7 +1627,7 @@
           const rBody = el('div', 'r-body');
           rBody.innerHTML =
             `<div class="r-nm">${r.name}${badge}</div>
-             <div class="r-cost">${done ? '' : costHtml(r.cost)}</div>
+             <div class="r-cost">${done ? '' : recipeCostHtml(r)}</div>
              <div class="r-eff">${r.effect}</div>`;
           const line = el('div', 'recipe');
           line.appendChild(rBody);
@@ -1691,6 +1688,11 @@
     let any = false;
     const free = G.slotsFree();
     G.STATIONS.forEach(st => {
+      /* Only stations that actually render on the Craft page count
+         toward its dot — the Campfire (page 'farm') and the Bone
+         Altar (page 'deck') live elsewhere, and lighting up the
+         Craft tab for them sends you to a page they aren't on. */
+      if (stationPage(st) !== 'craft') return;
       if (!G.inZone(st)) return;
       if (!S.built[st.id]) {
         if (G.costKnown(st.buildCost) && G.canAfford(st.buildCost)) any = true;
@@ -1910,7 +1912,8 @@
       const plot = S.farmPlots[i];
       const cell = el('div', 'farm-plot');
       if (!plot) {
-        cell.innerHTML = `<div class="farm-plot-hint">tap to<br>plant</div>`;
+        cell.appendChild(el('span', 'dot empty'));
+        cell.appendChild(el('div', 'farm-plot-hint', 'tap to<br>plant'));
         cell.onclick = () => UI.showSeedPicker(i);
         grid.appendChild(cell);
         continue;
@@ -1942,9 +1945,11 @@
       fill.setAttribute('stroke-dasharray', C);
       svg.appendChild(track); svg.appendChild(fill);
       cell.appendChild(svg);
-      /* small status pip — needs-water/ready only; growing already
-         has the ring, empty already has its own "tap to plant" hint,
-         so neither needs a second indicator on top. */
+      /* small status pip — needs-water/ready only here; growing
+         already has the ring as its own indicator. The empty case
+         gets the same dot treatment right above, in the !plot
+         branch, so all three non-growing states (empty, needs-water,
+         ready) carry a notification pip — only growing doesn't. */
       if (!growing) {
         cell.appendChild(el('span', 'dot ' + (ready ? 'ready' : 'needs-water')));
       }
@@ -1973,6 +1978,22 @@
         else if (!growing) G.waterPlot(i);
       };
       grid.appendChild(cell);
+    }
+    /* Buying another plot: doubling cost, capped at TUNE.farmPlotsMax
+       (G.nextFarmPlotCost returns null once there). Rendered as one
+       more tile in the same grid, same "empty slot" visual register
+       as an unplanted plot, so it reads as the next slot rather than
+       a separate control bolted on below. */
+    const nextCost = G.nextFarmPlotCost();
+    if (nextCost) {
+      const buildCell = el('div', 'farm-plot farm-plot-build');
+      const afford = G.canAffordCraft(nextCost);
+      buildCell.innerHTML =
+        `<div class="farm-plot-hint">+ new plot</div>
+         <div class="farm-plot-cost">${costHtml(nextCost)}</div>`;
+      if (!afford) buildCell.classList.add('disabled');
+      buildCell.onclick = () => { if (G.buildFarmPlot()) UI.renderFarm(); };
+      grid.appendChild(buildCell);
     }
     wrap.appendChild(grid);
     renderStationsInto('farm-stations', 'farm', 'No cooking stations available here yet.');
@@ -2201,7 +2222,7 @@
 
   /* ---------- full refresh ---------------------------------- */
   UI.renderAll = function () {
-    UI.renderHotbar(); UI.renderVitals(); UI.renderStatus(); UI.renderLocationField(); UI.renderPips();
+    UI.renderVitals(); UI.renderStatus(); UI.renderLocationField(); UI.renderPips();
     UI.renderPinBar();
     UI.renderStreak();
     UI.renderRecentXp();

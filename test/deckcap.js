@@ -1,79 +1,116 @@
-/* Starting deck is 5 Gather Flint / 5 Gather Sticks / 5 Forage, and a
-   deck slot can never hold more than TUNE.maxCardCopies (5) copies of
-   one card key — the collection itself has no such limit.
+/* Deck limits: the starting deck is 3 Gather Flint / 3 Gather Sticks
+   / 3 Forage, a deck slot holds at most TUNE.maxCardCopies (3) copies
+   of one key, and TUNE.deckCap (30) cards in total. The cap is a
+   MAXIMUM, not a required size — you may sit below it, and you may
+   still remove cards to the collection.
+
+   A craft that can't fit now lands in the COLLECTION instead of
+   vanishing, so nothing you earned is ever destroyed.
    Run: node test/deckcap.js */
 const { boot } = require('./harness');
 const { G } = boot();
 const give = (k, n) => { S[k] = (S[k] || 0) + n; S.weight = 0; };
+const benchStock = () => {
+  give('stone', 200); give('wood', 200); give('planks', 200);
+  give('basaltBlock', 50); give('stoneBlock', 50);
+};
 
-console.log('== a fresh Aerendell deck is 5/5/5 ==');
+console.log('== a fresh deck is 3/3/3 + 1 Red Berry ==');
 G.wipe();
 const counts = G.deckCounts();
-console.log('  5 flint:', counts.flint === 5);
-console.log('  5 stick:', counts.stick === 5);
-console.log('  5 forage:', counts.forage === 5);
-console.log('  15 cards total:', S.deck.length === 15);
-console.log('  G.STARTING_DECK fallback matches too:',
-  JSON.stringify(G.STARTING_DECK) === JSON.stringify({ flint: 5, stick: 5, forage: 5 }));
+console.log('  3 flint:', counts.flint === 3);
+console.log('  3 stick:', counts.stick === 3);
+console.log('  3 forage:', counts.forage === 3);
+console.log('  1 redBerry (your one starting heal):', counts.redBerry === 1);
+console.log('  10 cards total:', S.deck.length === 10);
+console.log('  STARTING_DECK matches:',
+  JSON.stringify(G.STARTING_DECK) === JSON.stringify({ flint: 3, stick: 3, forage: 3, redBerry: 1 }));
+console.log('  the deck starts well UNDER the cap — 30 is a ceiling, not a quota:',
+  S.deck.length < G.TUNE.deckCap);
 
-console.log('\n== crafting the same tool over and over caps out at 5 physical copies ==');
+console.log('\n== the limits themselves ==');
+console.log('  TUNE.maxCardCopies is 3:', G.TUNE.maxCardCopies === 3);
+console.log('  TUNE.deckCap is 30:', G.TUNE.deckCap === 30);
+
+console.log('\n== crafting past the copy cap banks the extra in the collection ==');
 G.wipe(); S.zone = 'aerendell'; S.weight = 0;
-give('stone', 200); give('wood', 200); give('planks', 200);
-give('basaltBlock', 50); give('stoneBlock', 50);
+benchStock();
 G.buildStation('bench');
-for (let i = 0; i < 8; i++) { give('planks', 10); give('stoneBlock', 5); G.craft('axe'); }
-console.log('  crafted 8 axes:', S.made.axe === 8);
-console.log('  only 5 axeStone cards ever land in the deck:', G.deckCounts().axeStone === 5);
+for (let i = 0; i < 5; i++) { give('planks', 10); give('stoneBlock', 5); G.craft('axe'); }
+console.log('  crafted 5 axes:', S.made.axe === 5);
+console.log('  only 3 axeStone cards in the deck:', G.deckCounts().axeStone === 3);
+console.log('  the other 2 went to the collection, not nowhere:',
+  (S.collection && S.collection.axeStone) === 2);
 console.log('  durability pool still tops up past the card cap (shared pool, not per-copy):',
   S.durability.axeStone === undefined || S.durability.axeStone > 0);
 
-console.log('\n== G.buildDeck (fresh zone visit) also respects the cap when recounting S.made ==');
-G.rebuildDeck();
-console.log('  still capped at 5 after a full rebuild from S.made:', G.deckCounts().axeStone === 5);
-
-console.log('\n== restoring a purged card from the collection refuses past the cap ==');
+console.log('\n== a full 30-card deck sends further crafts to the collection too ==');
 G.wipe(); S.zone = 'aerendell'; S.weight = 0;
-give('stone', 200); give('wood', 200); give('planks', 200);
-give('basaltBlock', 50); give('stoneBlock', 50);
+S.deck = new Array(G.TUNE.deckCap).fill('flint');   // at the cap, but 0 copies of 'stick'
+S.drawnCount = 0;
+G.syncActiveDeckSlot();
+S.collection = {};
+G.addCardToDiscard('stick', 1);
+console.log('  deck refused to grow past 30:', S.deck.length === G.TUNE.deckCap);
+console.log('  the card landed in the collection instead:', S.collection.stick === 1);
+
+console.log('\n== G.buildDeck respects both limits when recounting S.made ==');
+G.wipe(); S.zone = 'aerendell'; S.weight = 0;
+benchStock();
 G.buildStation('bench');
 for (let i = 0; i < 5; i++) { give('planks', 10); give('stoneBlock', 5); G.craft('axe'); }
-console.log('  5 axeStone cards in the deck:', G.deckCounts().axeStone === 5);
-give('flint', 10); give('stick', 10);
-G.craft('flintPick');   // any repeatable non-capped craft to bump prayer points isn't needed; purge uses prayerPoints
+G.rebuildDeck();
+console.log('  still capped at 3 after a full rebuild from S.made:', G.deckCounts().axeStone === 3);
+console.log('  rebuild never exceeds the deck cap:', S.deck.length <= G.TUNE.deckCap);
+
+console.log('\n== you can still remove cards, and drop below the cap ==');
+G.wipe(); S.zone = 'aerendell'; S.weight = 0;
 S.prayerPoints = 100;
-const purged = G.purgeCard('axeStone');
-console.log('  one copy purges out into the collection:', purged, '| deck now', G.deckCounts().axeStone || 0,
-  '| collection', S.collection.axeStone);
+const sizeBefore = S.deck.length;
+console.log('  purge succeeds:', G.purgeCard('flint'));
+console.log('  deck is now smaller than it was:', S.deck.length === sizeBefore - 1);
+console.log('  the card is in the collection:', (S.collection.flint || 0) === 1);
 S.prayerPoints = 100;
-console.log('  restoring it back is fine (deck is back under the cap):', G.restoreCard('axeStone'));
-console.log('  deck is at 5 again:', G.deckCounts().axeStone === 5);
+console.log('  restoring it puts it back:', G.restoreCard('flint'));
+console.log('  deck back to its original size:', S.deck.length === sizeBefore);
+
+console.log('\n== restoring from the collection refuses past the copy cap ==');
+G.wipe(); S.zone = 'aerendell'; S.weight = 0;
+benchStock();
+G.buildStation('bench');
+for (let i = 0; i < 5; i++) { give('planks', 10); give('stoneBlock', 5); G.craft('axe'); }
+console.log('  deck holds 3, collection holds 2:',
+  G.deckCounts().axeStone === 3 && S.collection.axeStone === 2);
 S.prayerPoints = 100;
-console.log('  purge another, but this time cap the deck artificially at 5 of a DIFFERENT source first');
-// simulate the deck already sitting at the cap for this key via a second purge+different craft cycle:
-give('planks', 10); give('stoneBlock', 5); G.craft('axe');  // 6th craft — still capped at 5 physically
-console.log('  deck stays at 5 even after a 6th craft:', G.deckCounts().axeStone === 5);
+console.log('  restoring a 4th copy is refused:', G.restoreCard('axeStone') === false);
 
 console.log('\n== moving a card between deck slots refuses once the destination is at the cap ==');
 G.wipe(); S.zone = 'aerendell'; S.weight = 0;
-give('stone', 200); give('wood', 200); give('planks', 200);
-give('basaltBlock', 50); give('stoneBlock', 50);
+benchStock();
 G.buildStation('bench');
 for (let i = 0; i < 5; i++) { give('planks', 10); give('stoneBlock', 5); G.craft('axe'); }
 S.skills.prayer.lv = 20; S.skills.prayer.xp = 0;   // unlock a 3rd deck slot (every 10 levels)
 console.log('  at least 2 deck slots unlocked:', G.unlockedDeckSlots() >= 2);
-S.prayerPoints = 100;
-console.log('  move 1 axeStone out to slot 1:', G.moveCardToDeckSlot('axeStone', 1));
-console.log('  move a 2nd one to the SAME destination is still fine (only 1 there so far):',
-  (() => { S.prayerPoints = 100; return G.moveCardToDeckSlot('axeStone', 1); })());
-// keep moving until slot 1 hits the cap, then confirm it refuses
-let moved = 2;
-while (moved < 5) {
-  give('planks', 10); give('stoneBlock', 5); G.craft('axe');
+let moved = 0;
+for (let i = 0; i < 3; i++) {
   S.prayerPoints = 100;
   if (G.moveCardToDeckSlot('axeStone', 1)) moved++;
-  else break;
 }
-console.log('  slot 1 reached exactly the cap:', moved === 5);
-give('planks', 10); give('stoneBlock', 5); G.craft('axe');
+console.log('  moved 3 copies into slot 1:', moved === 3);
 S.prayerPoints = 100;
-console.log('  a further move into the same (full) slot is refused:', G.moveCardToDeckSlot('axeStone', 1) === false);
+give('planks', 10); give('stoneBlock', 5); G.craft('axe');
+console.log('  a 4th move into the same (full) slot is refused:',
+  G.moveCardToDeckSlot('axeStone', 1) === false);
+
+console.log('\n== an old save built under the looser 60/5 limits gets trimmed, not robbed ==');
+G.wipe(); S.zone = 'aerendell'; S.weight = 0;
+S.collection = {};
+S.deck = ['flint', 'flint', 'flint', 'flint', 'flint', 'stick', 'stick'];  // 5 flint: legal before, not now
+S.drawnCount = 0;
+G.syncActiveDeckSlot();
+const trimmed = G.enforceDeckLimits();
+console.log('  2 excess cards were moved:', trimmed === 2);
+console.log('  deck trimmed to the 3-copy cap:', G.deckCounts().flint === 3);
+console.log('  sticks (already legal) untouched:', G.deckCounts().stick === 2);
+console.log('  the excess was banked in the collection, not destroyed:', S.collection.flint === 2);
+console.log('  a deck already inside the limits is left alone:', G.enforceDeckLimits() === 0);

@@ -39,25 +39,21 @@ console.log('  has a -1 (warn) button:',
 console.log('  has a Crate button:',
   body2.children.some(c => c._html === 'Crate'));
 
-console.log('\n== a food item shows a heal note and an Eat button ==');
+/* Food is never eaten from the bag now — raw food is only an
+   ingredient for a Campfire food-card recipe, so the sheet points at
+   cooking and offers no Eat button at all. */
+console.log('\n== a food item reads as an ingredient, with no Eat button ==');
 G.wipe(); S.zone = 'aerendell'; S.weight = 0;
 give('berries', 3);
-S.hp = Math.max(1, G.maxHp() - 3);   // leave room to eat — a fresh wipe starts at full hp
+S.hp = Math.max(1, G.maxHp() - 3);
 UI.showItemDetail('berries');
 const berryBody = document.getElementById('item-sheet-body');
 const healNote = berryBody.children.find(c => c.className === 's-note');
-console.log('  heal note present:', !!healNote && healNote._html.indexOf('heals') >= 0);
-console.log('  Eat button present and enabled:',
-  berryBody.children.some(c => c._html === 'Eat' && !c.disabled));
-
-console.log('\n== Eat actually eats, then closes the sheet ==');
-const hpBefore = S.hp; S.hp = Math.max(1, G.maxHp() - 3);
-UI.showItemDetail('berries');
-const eatBtn = document.getElementById('item-sheet-body').children.find(c => c._html === 'Eat');
-eatBtn.onclick();
-console.log('  berries eaten:', S.berries === 2);
-console.log('  sheet closed after eating:', !document.getElementById('item-modal').classList.contains('show'));
-S.hp = hpBefore;
+console.log('  ingredient note present:', !!healNote && healNote._html.indexOf('ingredient') >= 0);
+console.log('  no Eat button anywhere on the sheet:',
+  !berryBody.children.some(c => c._html === 'Eat'));
+console.log('  G.eat is gone entirely:', typeof G.eat === 'undefined');
+console.log('  berries are still flagged as a food ingredient:', G.isFoodItem('berries') === true);
 
 console.log('\n== -1 drops one, Crate deposits the stack, both close the sheet ==');
 G.wipe(); S.zone = 'aerendell'; S.weight = 0;

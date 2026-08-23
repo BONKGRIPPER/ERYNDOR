@@ -113,9 +113,75 @@
     if (!r.repeatable) unpin('recipe', id);
   }
 
+  /* ---------- fuel points and "any one of" costs -------------
+     Two cost shapes a flat `cost` object can't express, both needed
+     by the food-card recipes:
+
+       fuel: 10                       spend 10 FUEL POINTS drawn from
+                                      any burnable — stick 1, wood 4,
+                                      charcoal 8 (CAMPFIRE_FUELS)
+       anyOf: { keys:[…], qty: 15 }   spend 15 of ANY ONE key in the
+                                      list ("15 of the same fish")
+
+     Both ultimately call G.spendCraftCost, so they inherit the same
+     inventory -> crate -> bank draw order as every other cost. */
+  G.fuelValue = key => (CAMPFIRE_FUELS[key] || {}).units || 0;
+  G.fuelAvailable = function () {
+    return Object.keys(CAMPFIRE_FUELS)
+      .reduce((n, k) => n + G.availableCraftCount(k) * CAMPFIRE_FUELS[k].units, 0);
+  };
+  /* Burns the LOWEST-value fuel first, so a hard-won charcoal isn't
+     spent while sticks are sitting there. The final item may overshoot
+     the requirement — fuel burns whole, and that's the honest result of
+     throwing one charcoal on a fire that needed six points. */
+  G.spendFuel = function (points) {
+    if (!points) return true;
+    if (G.fuelAvailable() < points) return false;
+    let need = points;
+    Object.keys(CAMPFIRE_FUELS)
+      .sort((a, b) => CAMPFIRE_FUELS[a].units - CAMPFIRE_FUELS[b].units)
+      .forEach(k => {
+        if (need <= 0) return;
+        const unit = CAMPFIRE_FUELS[k].units;
+        const want = Math.min(G.availableCraftCount(k), Math.ceil(need / unit));
+        if (want > 0 && G.spendCraftCost({ [k]: want })) need -= want * unit;
+      });
+    return need <= 0;
+  };
+  /* Which key an anyOf recipe would actually consume: the biggest
+     qualifying stack, so it eats what you have most of rather than
+     making you pick. null when nothing in the list reaches qty. */
+  G.anyOfChoice = function (r) {
+    const a = r && r.anyOf;
+    if (!a) return null;
+    let best = null, bestN = 0;
+    a.keys.forEach(k => {
+      const n = G.availableCraftCount(k);
+      if (n >= a.qty && n > bestN) { best = k; bestN = n; }
+    });
+    return best;
+  };
+
   function canStartRecipe(r, id) {
-    return !!r && G.canAffordCraft(r.cost) && !(S.made[id] && !r.repeatable);
+    if (!r) return false;
+    if (S.made[id] && !r.repeatable) return false;
+    if (!G.canAffordCraft(r.cost || {})) return false;
+    if (r.fuel && G.fuelAvailable() < r.fuel) return false;
+    if (r.anyOf && !G.anyOfChoice(r)) return false;
+    return true;
   }
+  /* Spends a recipe's whole cost — flat, anyOf and fuel. Only ever
+     called after canStartRecipe has already cleared all three, so it
+     can't half-spend. */
+  function spendRecipeCost(r) {
+    const pick = r.anyOf ? G.anyOfChoice(r) : null;
+    if (r.anyOf && !pick) return false;
+    G.spendCraftCost(r.cost || {});
+    if (pick) G.spendCraftCost({ [pick]: r.anyOf.qty });
+    if (r.fuel) G.spendFuel(r.fuel);
+    return true;
+  }
+  G.canStartRecipe = canStartRecipe;
 
   G.campfireFuelOptions = function () {
     return Object.keys(CAMPFIRE_FUELS).map(key => Object.assign({ key }, CAMPFIRE_FUELS[key]));
@@ -183,7 +249,7 @@
     opts = opts || {};
     const r = G.findRecipe(id);
     if (!canStartRecipe(r, id)) return false;
-    G.spendCraftCost(r.cost);
+    spendRecipeCost(r);
     applyRecipeEffects(r, id);
     if (!opts.silent) G.emit('craft', { kind: 'recipe', id, name: r.name, count: S.made[id] });
     if (!opts.noSave) G.save(true);
@@ -205,7 +271,7 @@
     if (S.craftJobs[id]) return false;
     const r = G.findRecipe(id);
     if (!canStartRecipe(r, id)) return false;
-    G.spendCraftCost(r.cost);
+    spendRecipeCost(r);
     const st = G.stationForRecipe(id);
     const recipeMsMult = r.craftMsMult || (r.skill === 'cooking' ? 2 : 1);
     const ms = Math.round(G.TUNE.tapCraftMs * recipeMsMult * (st ? G.stationSpeedMult(st.id) : 1) * G.timeScale());

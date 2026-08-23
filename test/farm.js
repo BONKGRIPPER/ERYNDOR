@@ -7,15 +7,36 @@ const give = (k, n) => { S[k] = (S[k] || 0) + n; S.weight = 0; };
 console.log('== farming is a real skill ==');
 console.log('  G.SKILLS.farming exists:', !!G.SKILLS.farming);
 
-console.log('\n== plot count: base + 1 every 5 levels ==');
+console.log('\n== plot count: free base, then a doubling-cost purchase per extra plot ==');
 G.wipe();
-S.skills.farming.lv = 1;
-console.log('  lv1 ->', G.farmPlotCount(), '(expect', G.TUNE.farmPlotsBase + ')',
+console.log('  starts at exactly TUNE.farmPlotsBase, regardless of farming level:',
   G.farmPlotCount() === G.TUNE.farmPlotsBase);
-S.skills.farming.lv = 5;
-console.log('  lv5 -> still base (floor(5/5)=1, so +1):', G.farmPlotCount() === G.TUNE.farmPlotsBase + 1);
-S.skills.farming.lv = 11;
-console.log('  lv11 -> base+2:', G.farmPlotCount() === G.TUNE.farmPlotsBase + 2);
+console.log('  first extra plot costs 2 planks + 2 basaltBlock:',
+  JSON.stringify(G.nextFarmPlotCost()) === JSON.stringify({ planks: 2, basaltBlock: 2 }));
+console.log('  refuses with nothing in inventory/crate/bank:', G.buildFarmPlot() === false);
+give('planks', 2); give('basaltBlock', 2);
+console.log('  build succeeds once affordable:', G.buildFarmPlot());
+console.log('  plot count grew by exactly 1:', G.farmPlotCount() === G.TUNE.farmPlotsBase + 1);
+console.log('  next plot doubles to 4 + 4:',
+  JSON.stringify(G.nextFarmPlotCost()) === JSON.stringify({ planks: 4, basaltBlock: 4 }));
+give('planks', 4); give('basaltBlock', 4);
+G.buildFarmPlot();
+console.log('  cost doubles again to 8 + 8:',
+  JSON.stringify(G.nextFarmPlotCost()) === JSON.stringify({ planks: 8, basaltBlock: 8 }));
+console.log('  survives a save/load round trip:',
+  (() => {
+    G.save(false); window.S = G.S = G.freshState(); G.load();
+    return S.farmPlotsBuilt === 2 && G.farmPlotCount() === G.TUNE.farmPlotsBase + 2;
+  })());
+
+console.log('\n== plot count is hard-capped at TUNE.farmPlotsMax ==');
+G.wipe();
+S.farmPlotsBuilt = G.TUNE.farmPlotsMax - G.TUNE.farmPlotsBase;
+console.log('  already at the cap:', G.farmPlotCount() === G.TUNE.farmPlotsMax);
+console.log('  no further cost offered:', G.nextFarmPlotCost() === null);
+give('planks', 99999); give('basaltBlock', 99999);
+console.log('  build refuses once at the cap, even fully stocked:', G.buildFarmPlot() === false);
+console.log('  count never exceeds the cap:', G.farmPlotCount() === G.TUNE.farmPlotsMax);
 
 console.log('\n== planting validates region, ownership, empty slot, plot count ==');
 G.wipe(); S.zone = 'aerendell'; S.weight = 0;
@@ -102,9 +123,16 @@ let threw = false;
 try { UI.renderFarm(); } catch (e) { threw = true; console.log('  ', e.stack); }
 console.log('  no crash with empty/needs-water/growing plots:', !threw);
 const gridEl = document.getElementById('farm').children[0];
-console.log('  grid has one cell per unlocked plot:', gridEl.children.length === G.farmPlotCount());
+/* one cell per unlocked plot, plus one more "buy a plot" tile since
+   we're not at TUNE.farmPlotsMax — see the farm-plot-build branch,
+   UI.renderFarm. */
+console.log('  grid has one cell per unlocked plot, plus a buy-plot tile:',
+  gridEl.children.length === G.farmPlotCount() + 1);
+const buildTile = gridEl.children[gridEl.children.length - 1];
+console.log('  the extra tile really is the buy-plot tile:',
+  buildTile.className.indexOf('farm-plot-build') >= 0);
 
-console.log('\n== a small status pip marks needs-water/ready, but not growing/empty ==');
+console.log('\n== a small status pip marks empty/needs-water/ready, but not growing ==');
 const needsWaterCell = gridEl.children[0];
 console.log('  needs-water plot shows a red pip:',
   needsWaterCell.children.some(c => c.className === 'dot needs-water'));
@@ -112,8 +140,8 @@ const growingCellNoPip = gridEl.children[1];
 console.log('  growing plot shows no pip (the ring already covers it):',
   !growingCellNoPip.children.some(c => c.className && c.className.indexOf('dot') === 0));
 const emptyCell = gridEl.children[2];
-console.log('  empty plot shows no pip either:',
-  !emptyCell.children.some(c => c.className && c.className.indexOf('dot') === 0));
+console.log('  empty plot shows a neutral pip:',
+  emptyCell.children.some(c => c.className === 'dot empty'));
 
 const growingCell = gridEl.children[1];
 console.log('  growing cell has a ring with track+fill circles:',

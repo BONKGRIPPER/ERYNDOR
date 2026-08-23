@@ -26,7 +26,6 @@
     cookXp: 8,
     hireXp: 20,
     smeltMs: 2500,
-    hotbarSlots: 3,
     pinSlots: 3,
     baseCap: 100,
     encumberedMult: 2,       // card interval multiplier when over capacity
@@ -40,8 +39,8 @@
     prayerSpeedPerLv: 0.005,   // +0.5% rate per level
     maxSkillLevel: 100,
     purgeCost: 3,
-    deckCap: 60,           // hard ceiling on S.deck.length — collection cards can't be added past this
-    maxCardCopies: 5,      // hard ceiling on copies of ONE card key in a single deck slot — collection is unlimited
+    deckCap: 30,           // hard ceiling on S.deck.length — a MAXIMUM, not a required size; you may sit below it
+    maxCardCopies: 3,      // hard ceiling on copies of ONE card key in a single deck slot — collection is unlimited
     pinSlots: 3,
     zoneXpPerCard: 2,        // any card played grants the current zone this much xp
     zoneXpNeed: 20,          // flat xp needed for every zone level
@@ -51,12 +50,20 @@
     donateBatchSize: 5,      // Bag page Donate button: donates up to this many of each selected stack
     donateWorthPerXp: 50,    // cumulative worth donated before the Donate bar fills
     donateXpPerFill: 10,     // zone xp granted each time the Donate bar fills (was a flat +1)
-    farmPlotsBase: 2,           // farm plots before any farming levels
+    forageHerbMult: 0.5,     // Forage's flax/berries yield, applied after every other multiplier — seeds unaffected
+    farmPlotsBase: 2,           // farm plots for free, before buying any more
+    farmPlotsMax: 12,           // hard cap on total plots (base + bought)
     farmGrowSpeedPerLv: 0.02,   // -2% stage duration per farming level above 1
     farmGrowSpeedFloor: 0.4,    // stage duration never drops below this fraction of base
     farmWaterXp: 3,
     farmHarvestXp: 12,
     farmTickMs: 5000,           // how often the farmPlots ticker polls for stage completions
+    /* Damage-type multipliers, used when a location lists a `weak` or
+       `resist` entry as shorthand (an array of damage types) rather
+       than explicit per-type numbers. See G.damageMult, engine.js.
+       Nothing is assigned to any enemy yet — the system is inert. */
+    weakMult: 2,             // damage multiplier against a type the target is weak to
+    resistMult: 0.5,         // damage multiplier against a type the target resists
     marketBuyMult: 2,        // Market page: buy price = worth * this (sell is worth * 1)
     marketSellBatch: 5,      // Market page: Sell button moves up to this many of a stack per tap
   };
@@ -226,22 +233,52 @@
   G.CONSUMABLE_GROUPS = { ammo: { name: 'Arrows', usedBy: 'Loose Arrow cards' } };
 
   /* ---- USABLE ITEMS ---------------------------------------------
-     The header hotbar's instant-tap slots. Reserved for later zones'
-     non-food usables: G.USABLES.myItem = { use: G.someEffect }     */
+     Reserved for later zones' non-food usables:
+     G.USABLES.myItem = { use: G.someEffect }
+     Nothing reads this yet — the header hotbar that used to surface
+     them is gone (food is played as an ordinary card now).          */
   G.USABLES = {};
 
   /* ---- FOOD ----------------------------------------------------
      heal = hp restored. raw items list `needsCooking` and cannot
      be eaten until converted.                                     */
+  /* Food is not eaten from the bag any more — every one of these is
+     an INGREDIENT for a food CARD (see G.CARDS' kind:'food' entries
+     and the Campfire's card recipes). G.FOODS survives only as the
+     "this is edible raw material" tag; `heal` here is legacy and no
+     longer read by anything, since healing now lives on the card. */
   G.FOODS = {
     berries:       { heal: 1 },
-    cookedPoultry: { heal: 3 },
-    cookedSteak:   { heal: 5 },
-    cookedPork:    { heal: 4 },
     poultry:       { heal: 0, needsCooking: true },
     steak:         { heal: 0, needsCooking: true },
     pork:          { heal: 0, needsCooking: true },
   };
+
+  /* ---- FISH ----------------------------------------------------
+     The lookup G.isFish (core.js) reads to log catches into
+     S.fishCaught for the Fish Journal. This table did not exist
+     before — G.isFish was reading an undefined G.FISH and therefore
+     always returned false, so the journal could never record
+     anything (that's what test/fishing.js had been failing on).
+
+     `rare: true` marks the single low-chance (1–2%) catch each water
+     location hides — one per fishing region. Commons cook into a
+     Cooked Fish card, rares into the stronger Cooked Rare Fish card.
+     bass/catfish/whitefish/moonfin belong to `lake`, which no zone
+     currently uses (orphaned content, see Known open questions), so
+     they're listed for completeness but aren't obtainable yet. */
+  G.FISH = {
+    /* pond — Forest Road */
+    bluegill: {}, perch: {}, carp: {}, goldenKoi: { rare: true },
+    /* narrowStream / mossyBank / coldRunnel — Still-tide Pass */
+    brookTrout: {}, dace: {}, minnow: {}, glassEel: { rare: true },
+    /* riverbank / shallowFord / fishersStep — Khar-Barak */
+    riverTrout: {}, grayling: {}, pike: {}, silverSalmon: { rare: true },
+    /* lake — not wired into any zone yet */
+    bass: {}, catfish: {}, whitefish: {}, moonfin: { rare: true },
+  };
+  G.isRareFish = key => !!(G.FISH[key] && G.FISH[key].rare);
+  G.fishKeys = rare => Object.keys(G.FISH).filter(k => !!G.FISH[k].rare === !!rare);
 
   /* ---- VILLAGERS -----------------------------------------------
      Hired AT a specific built station now, not as a named role on
@@ -265,7 +302,9 @@
     zone = zone || S.zone;
     return 3 + 3 * G.homes(zone);
   };
-  G.villagerCraftMult = () => 5;
+  /* was 5x slower than a player's own tap; now 5x slower again on
+     top of that (25x total) — see G.villagerInterval, township.js */
+  G.villagerCraftMult = () => 25;
 
   /* ---- SETTLEMENT ----------------------------------------------
      Homes are built per zone and only unlock villager slots there.
@@ -356,35 +395,53 @@
     forage: { kind: 'forage', name: 'Forage',        type: 'Gathering',
               skill: 'foraging', xp: 5, tint: 'plant' },
 
+    /* Food cards — crafted at the Campfire from raw ingredients plus
+       fuel points, and EATEN when played (the card leaves the deck).
+       There is deliberately one generic card per ingredient family
+       rather than one per fish/meat: the recipe takes "N of any one
+       kind" (see `anyOf`, systems/craft.js), so 15 Bluegill and 15
+       Perch both become the same Cooked Fish card. With
+       TUNE.maxCardCopies at 3, stocking a deck with healing means
+       carrying VARIETY, which is what keeps later food tiers worth
+       crafting without inflating heal numbers. */
+    redBerry:       { kind: 'food', name: 'Red Berry',       type: 'Food',
+                      skill: 'cooking', heal: 1, xp: 4,  tint: 'blood' },
+    cookedMeat:     { kind: 'food', name: 'Cooked Meat',     type: 'Food',
+                      skill: 'cooking', heal: 3, xp: 10, tint: 'meat' },
+    cookedFish:     { kind: 'food', name: 'Cooked Fish',     type: 'Food',
+                      skill: 'cooking', heal: 3, xp: 10, tint: 'range' },
+    cookedRareFish: { kind: 'food', name: 'Cooked Rare Fish', type: 'Food',
+                      skill: 'cooking', heal: 5, xp: 22, tint: 'spirit' },
+
     /* Durability tiers scale off flint's base of 6 (exactly enough
        to fully clear one hp-6 location card) — stone/wood tier is
        2x, scrap 3x, bronze 4x. Same base across every tool line. */
     strikeStone:  { kind: 'melee', name: 'Strike', type: 'Melee',
-                    skill: 'melee', atk: 2, durability: 12, xp: 9, tint: 'blood', tier: 1 },
+                    skill: 'melee', atk: 2, durability: 12, xp: 9, tint: 'blood', tier: 1, damageType: 'slash' },
     strikeScrap:  { kind: 'melee', name: 'Strike', type: 'Melee',
-                    skill: 'melee', atk: 3, durability: 18, xp: 9, tint: 'blood', tier: 2 },
+                    skill: 'melee', atk: 3, durability: 18, xp: 9, tint: 'blood', tier: 2, damageType: 'slash' },
     strikeBronze: { kind: 'melee', name: 'Strike', type: 'Melee',
-                    skill: 'melee', atk: 4, durability: 24, xp: 9, tint: 'blood', tier: 3 },
+                    skill: 'melee', atk: 4, durability: 24, xp: 9, tint: 'blood', tier: 3, damageType: 'slash' },
     shoot:  { kind: 'ranged', name: 'Loose Arrow', type: 'Ranged',
-              skill: 'archery', atk: 1, durability: 12, xp: 7, tint: 'range', tier: 1 },
+              skill: 'archery', atk: 1, durability: 12, xp: 7, tint: 'range', tier: 1, damageType: 'ranged' },
 
     pickFlint: { kind: 'mine', name: 'Swing Pick', type: 'Tool',
-                 skill: 'mining', atk: 1, durability: 6, xp: 9, tint: 'stone', tier: 0 },
+                 skill: 'mining', atk: 1, durability: 6, xp: 9, tint: 'stone', tier: 0, damageType: 'pierce' },
     pickStone: { kind: 'mine', name: 'Swing Pick', type: 'Tool',
-                 skill: 'mining', atk: 2, durability: 12, xp: 9, tint: 'stone', tier: 1 },
+                 skill: 'mining', atk: 2, durability: 12, xp: 9, tint: 'stone', tier: 1, damageType: 'pierce' },
     pickScrap: { kind: 'mine', name: 'Swing Pick', type: 'Tool',
-                 skill: 'mining', atk: 3, durability: 18, xp: 9, tint: 'stone', tier: 2 },
+                 skill: 'mining', atk: 3, durability: 18, xp: 9, tint: 'stone', tier: 2, damageType: 'pierce' },
     oreVein:   { kind: 'mine', name: 'Ore Vein', type: 'Gathering',
-                 skill: 'mining', atk: 1, xp: 7, tint: 'stone' },
+                 skill: 'mining', atk: 1, xp: 7, tint: 'stone', damageType: 'pierce' },
 
     axeFlint: { kind: 'axe', name: 'Fell Tree', type: 'Tool',
-                skill: 'woodcut', atk: 1, durability: 6, xp: 11, tint: 'wood', tier: 0 },
+                skill: 'woodcut', atk: 1, durability: 6, xp: 11, tint: 'wood', tier: 0, damageType: 'slash' },
     axeStone: { kind: 'axe', name: 'Fell Tree', type: 'Tool',
-                skill: 'woodcut', atk: 2, durability: 12, xp: 11, tint: 'wood', tier: 1 },
+                skill: 'woodcut', atk: 2, durability: 12, xp: 11, tint: 'wood', tier: 1, damageType: 'slash' },
     axeScrap: { kind: 'axe', name: 'Fell Tree', type: 'Tool',
-                skill: 'woodcut', atk: 3, durability: 18, xp: 11, tint: 'wood', tier: 2 },
+                skill: 'woodcut', atk: 3, durability: 18, xp: 11, tint: 'wood', tier: 2, damageType: 'slash' },
     axeBronze:{ kind: 'axe', name: 'Fell Tree', type: 'Tool',
-                skill: 'woodcut', atk: 4, durability: 24, xp: 20, tint: 'wood', tier: 3 },
+                skill: 'woodcut', atk: 4, durability: 24, xp: 20, tint: 'wood', tier: 3, damageType: 'slash' },
   };
 
   /* ---- EVENTS ------------------------------------------------------
@@ -494,12 +551,14 @@
                dropTable: ['hide', 'bone', 'steak', 'animalFat'] },
   };
 
-  /* Starting deck composition — fallback for any zone with no deck
-     field of its own (every current zone defines one; this is the
-     dead-simple default a brand-new zone would get by omission).
-     Aerendell's actual starting deck lives on G.ZONES.aerendell.deck
-     below and must be kept in sync with this. */
-  G.STARTING_DECK = { flint: 5, stick: 5, forage: 5 };
+  /* The one and only starting deck — the deck is global now, so no
+     zone defines its own (they used to, which silently handed you a
+     fresh pile of starter cards on first arrival). 3 of each is the
+     per-key cap, so the opening deck is deliberately small: it grows
+     toward TUNE.deckCap as you craft variety, rather than starting
+     full. The single Red Berry is your one starting heal — eat it and
+     it's gone, so the Campfire has to replace it. */
+  G.STARTING_DECK = { flint: 3, stick: 3, forage: 3, redBerry: 1 };
 
   /* Stations pre-marked built from the start — no build step, so
      their recipes are always available. Backfilled onto old saves
@@ -649,7 +708,10 @@
           zones: ['aerendell'], equips: 'highlandCape',
           effect: 'completes the set — bonus xp while in Leth-Eiren' },
       ] },
-    { id: 'altar', name: 'Bone Altar', sub: 'Prayer — bury bones for points',
+    /* Lives on the Deck page, not Craft — burying a bone is a deck
+       action in practice, and sitting it next to the prayer-point
+       counter means you watch the number climb as you bury. */
+    { id: 'altar', name: 'Bone Altar', sub: 'Prayer — bury bones for points', page: 'deck',
       buildCost: { basaltBlock: 6, bone: 5 },
       villagerHireCost: { basaltBlock: 5, bone: 10 },
       upgrades: [{ cost: { basaltBlock: 12, bone: 12 }, speedMult: 0.65 }],
@@ -662,23 +724,32 @@
       buildCost: { stick: 12, flint: 8 },
       villagerHireCost: { stick: 15, flint: 10 },
       upgrades: [{ cost: { planks: 25, stick: 20 }, speedMult: 0.65 }],
-      /* fuel used to be a loaded, burnable pool (any of several
-         resources, at different burn values) shared across every
-         cook — now it's just 1 stick per recipe, folded straight
-         into the flat cost like any other ingredient. */
+      /* Cooking makes CARDS now, not cooked-item resources. Each
+         recipe burns raw ingredients plus `fuel` POINTS, drawn from
+         any burnable you're carrying (stick 1, wood 4, charcoal 8 —
+         see CAMPFIRE_FUELS/G.spendFuel, systems/craft.js), and the
+         `anyOf` costs take "N of any ONE key in the list", so every
+         common fish feeds the same Cooked Fish card instead of
+         needing 16 near-identical recipes. */
       recipes: [
-        { id: 'cookPoultry', name: 'Cook Poultry', cost: { poultry: 1, stick: 1 },
-          repeatable: true, gives: { cookedPoultry: 1 }, skill: 'cooking', xp: 8,
-          effect: 'turns raw poultry into food' },
+        { id: 'card_redBerry', name: 'Red Berry', cost: { berries: 10 }, fuel: 10,
+          repeatable: true, grantsCard: 'redBerry', skill: 'cooking', xp: 8,
+          effect: '10 Red Berries + 10 fuel — a card that heals 1' },
         { id: 'makeCharcoal', name: 'Burn Charcoal', cost: { planks: 1, stick: 1 }, villagerRecipe: true,
           repeatable: true, gives: { charcoal: 1 }, skill: 'cooking', xp: 6,
           effect: 'burns planks down to charcoal' },
-        { id: 'cookSteak', name: 'Cook Steak', cost: { steak: 1, stick: 1 },
-          repeatable: true, gives: { cookedSteak: 1 }, skill: 'cooking', xp: 12,
-          effect: 'turns raw steak into food' },
-        { id: 'cookPork', name: 'Cook Pork', cost: { pork: 1, stick: 1 },
-          repeatable: true, gives: { cookedPork: 1 }, skill: 'cooking', xp: 10,
-          effect: 'turns raw pork into food' },
+        { id: 'card_cookedMeat', name: 'Cooked Meat', cost: {}, fuel: 10,
+          anyOf: { keys: ['poultry', 'pork', 'steak'], qty: 10 },
+          repeatable: true, grantsCard: 'cookedMeat', skill: 'cooking', xp: 14,
+          effect: '10 of one raw meat + 10 fuel — a card that heals 3' },
+        { id: 'card_cookedFish', name: 'Cooked Fish', cost: {}, fuel: 10,
+          anyOf: { keys: G.fishKeys(false), qty: 15 },
+          repeatable: true, grantsCard: 'cookedFish', skill: 'cooking', xp: 14,
+          effect: '15 of one common fish + 10 fuel — a card that heals 3' },
+        { id: 'card_cookedRareFish', name: 'Cooked Rare Fish', cost: {}, fuel: 10,
+          anyOf: { keys: G.fishKeys(true), qty: 3 },
+          repeatable: true, grantsCard: 'cookedRareFish', skill: 'cooking', xp: 30,
+          effect: '3 of one rare fish + 10 fuel — a card that heals 5' },
       ] },
     { id: 'tannery', name: 'Tanning Station', sub: 'Turn raw hide into leather',
       buildCost: { planks: 16, stone: 10, string: 4 },
@@ -778,7 +849,6 @@
     aerendell: {
       name: 'Aerendell', kind: 'Town', region: 'leth-eiren', order: 1,
       blurb: 'Walled settlement on the river. Stone, timber and livestock.',
-      deck: { flint: 5, stick: 5, forage: 5 },
       slotLabels: ['Quarry', 'Forest', 'Grasslands'],
       /* 3 independent field-slot decks, not one shared pile — slot 0
          (rock), slot 1 (tree) and slot 2 (animal) each shuffle and
@@ -796,9 +866,13 @@
     forestRoad: {
       name: 'Aerendell Forest Road', kind: 'Wilds', region: 'leth-eiren', order: 2,
       blurb: 'The old road east. Goblins on the verge — a pond sits just off the ditch.',
-      deck: { flint: 8, stick: 8, forage: 10 },
-      slotLabels: ['Forest', 'Pond', 'Roadside'],
-      locationDecks: [{ pineTree: 5 }, { pond: 5 }, { goblin: 4, chicken: 2, pig: 2, cow: 2, deer: 2 }],
+      slotLabels: ['Forest & Rock', 'Pond', 'Roadside'],
+      /* Boulders share slot 0 with the pine trees rather than getting
+         a slot of their own — one field card is showing at a time, so
+         you have to clear whichever is up to reach the next. That
+         keeps stone available in the second zone without handing it
+         over on demand. */
+      locationDecks: [{ pineTree: 5, boulder: 5 }, { pond: 5 }, { goblin: 4, chicken: 2, pig: 2, cow: 2, deer: 2 }],
       lootPool: ['stick', 'stick', 'stick', 'wood', 'wood', 'stone', 'stone',
                  'scrapMetal', 'scrapMetal', 'leatherScrap', 'bone', 'coal', 'gold'],
       foilPool: ['axeFlint', 'pickFlint', 'woodenClub', 'fishingNet'],
@@ -808,7 +882,6 @@
       name: 'Khar-Barak', kind: 'Gate', region: 'khar', order: 3,
       blurb: 'The Breaking Gate. Something waits on the far side.',
       bank: true,
-      deck: { flint: 10, stick: 6 },
       /* no tree slot here either — rock (ore) in slot 0, animal in
          slot 2. This is exactly where a future "ore deposit" mix
          (Boulder/Copper/Tin cycling in slot 0) would go — content

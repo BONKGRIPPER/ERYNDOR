@@ -21,8 +21,35 @@
 (function (G) {
   'use strict';
 
+  /* Plot count used to auto-grow with the farming skill; it's now a
+     resource purchase instead — S.farmPlotsBuilt counts how many
+     extra plots have been bought on top of TUNE.farmPlotsBase, capped
+     at TUNE.farmPlotsMax (3 base + 9 buildable = 12 total). */
   G.farmPlotCount = () =>
-    G.TUNE.farmPlotsBase + Math.floor((S.skills.farming ? S.skills.farming.lv : 1) / 5);
+    Math.min(G.TUNE.farmPlotsMax, G.TUNE.farmPlotsBase + (S.farmPlotsBuilt || 0));
+
+  /* Each extra plot costs double the last, starting at 2 Pine Planks
+     + 2 Basalt Blocks for the first one — plot N (1-indexed, N=1 is
+     the first BUILT plot beyond the free starting ones) costs
+     2*2^(N-1) of each. Returns null once already at the cap. */
+  G.nextFarmPlotCost = function () {
+    if (G.farmPlotCount() >= G.TUNE.farmPlotsMax) return null;
+    const n = Math.pow(2, S.farmPlotsBuilt || 0) * 2;
+    return { planks: n, basaltBlock: n };
+  };
+
+  G.buildFarmPlot = function () {
+    const cost = G.nextFarmPlotCost();
+    if (!cost) { G.emit('farm:failed', { reason: 'plotsMax' }); return false; }
+    if (!G.canAffordCraft(cost)) { G.emit('farm:failed', { reason: 'cost' }); return false; }
+    if (!G.spendCraftCost(cost)) { G.emit('farm:failed', { reason: 'cost' }); return false; }
+    S.farmPlotsBuilt = (S.farmPlotsBuilt || 0) + 1;
+    G.ensureFarmPlots();
+    G.emit('farm:plotBuilt', { total: G.farmPlotCount() });
+    G.emit('state:changed');
+    G.save(true);
+    return true;
+  };
 
   /* Pad up to the current unlocked count — call before any read or
      render, same spirit as G.fillLocationField topping up a field. */

@@ -16,17 +16,22 @@
     for (let i = 0; i < arr.length; i++) if (arr[i] === key) n++;
     return n;
   };
+  /* Builds a deck FROM SCRATCH — only for a brand-new game, or to
+     recover from an empty deck (see core.js/main.js callers). It is
+     deliberately NOT part of travelling any more: zones used to
+     define their own `deck` and this ran on every first arrival,
+     which is what silently handed you a second pile of starter
+     cards when you reached Forest Road. The deck is global now and
+     simply comes with you. */
   G.buildDeck = function () {
-    const z = G.ZONES[S.zone] || {};
-    const base = z.deck || G.STARTING_DECK;
     S.deck = [];
-    Object.keys(base).forEach(k => {
-      for (let i = 0; i < base[k]; i++) S.deck.push(k);
+    Object.keys(G.STARTING_DECK).forEach(k => {
+      for (let i = 0; i < G.STARTING_DECK[k]; i++) S.deck.push(k);
     });
     G.STATIONS.forEach(st => st.recipes.forEach(r => {
       if (!r.grantsCard) return;
       const n = Math.min((S.made[r.id] || 0) * G.TUNE.cardsPerCraft, G.TUNE.maxCardCopies);
-      for (let i = 0; i < n; i++) S.deck.push(r.grantsCard);
+      for (let i = 0; i < n && S.deck.length < G.TUNE.deckCap; i++) S.deck.push(r.grantsCard);
     }));
     G.ensureDeckSlots();
     G.syncActiveDeckSlot();
@@ -40,17 +45,29 @@
   };
   /* New cards land in the DISCARD pile — the part of the deck
      already played — so they only come round after the current
-     deck runs out. Nothing is reshuffled mid-cycle. Silently stops
-     once this key hits TUNE.maxCardCopies in the active deck — the
-     craft/durability-pool top-up (see applyRecipeEffects, craft.js)
-     still happens even when the physical card is capped out, same
-     as any other extra copy sharing one durability pool. */
+     deck runs out. Nothing is reshuffled mid-cycle.
+
+     A card that CAN'T fit goes to the collection rather than being
+     thrown away: the deck holds at most TUNE.maxCardCopies of one
+     key and TUNE.deckCap cards in total, and early on there's room
+     for a craft to drop straight in. Once there isn't, you keep the
+     card and swap it in deliberately from the Deck page. (It used
+     to just `break` and the copy vanished.) The craft/durability-
+     pool top-up in applyRecipeEffects, craft.js is unaffected
+     either way. */
   G.addCardToDiscard = function (key, n) {
     n = n || 1;
+    let overflow = 0;
     for (let i = 0; i < n; i++) {
-      if (G.cardCountIn(S.deck, key) >= G.TUNE.maxCardCopies) break;
+      if (G.cardCountIn(S.deck, key) >= G.TUNE.maxCardCopies ||
+          S.deck.length >= G.TUNE.deckCap) { overflow++; continue; }
       S.deck.splice(0, 0, key);
       S.drawnCount++;                  // keep the draw pointer aligned
+    }
+    if (overflow) {
+      if (!S.collection) S.collection = {};
+      S.collection[key] = (S.collection[key] || 0) + overflow;
+      G.emit('collection:changed');
     }
     G.syncActiveDeckSlot();
     G.emit('deck:changed');
@@ -65,6 +82,29 @@
      copy — crafting another of the same tier tops the pool back up.
      Call after any card resolves; a no-op for keys with no pool. At
      zero, every remaining copy of the key leaves the deck at once. */
+  /* Removes exactly ONE copy of a key from the active deck — a food
+     card is eaten when you play it. Deliberately distinct from
+     G.drainDurability below, which yanks EVERY copy at once when a
+     shared durability pool bottoms out. Prefers a copy from the
+     already-drawn part of the deck, since that's the one that was
+     just played. */
+  G.consumeCardFromDeck = function (key) {
+    let i = -1;
+    for (let n = 0; n < S.drawnCount && n < S.deck.length; n++) {
+      if (S.deck[n] === key) { i = n; break; }
+    }
+    if (i < 0) i = S.deck.indexOf(key);
+    if (i < 0) return false;
+    S.deck.splice(i, 1);
+    if (i < S.drawnCount) S.drawnCount--;
+    if (S.drawnCount > S.deck.length) S.drawnCount = S.deck.length;
+    if (S.drawnCount < 0) S.drawnCount = 0;
+    G.syncActiveDeckSlot();
+    G.emit('deck:changed');
+    G.emit('card:eaten', { key });
+    return true;
+  };
+
   G.drainDurability = function (key) {
     if (!G.durabilityEnabled()) return;
     if (!(key in S.durability)) return;
@@ -440,12 +480,58 @@
     return best;
   };
 
+  /* ---------- damage types ----------------------------------
+     Every attack card carries a `damageType` (blunt / pierce / slash
+     / ranged — ranged being every bow, per its own weapon class). A
+     location may answer with `weak` or `resist`, in either of two
+     shapes:
+
+       weak:   ['pierce']            shorthand, uses TUNE.weakMult
+       resist: { blunt: 0.25 }       explicit per-type multiplier
+
+     NOTHING is assigned to any enemy yet, so every multiplier is
+     currently 1 and the system is completely inert — it's wiring
+     waiting on balance decisions. */
+  G.DAMAGE_TYPES = ['blunt', 'pierce', 'slash', 'ranged'];
+  G.damageTypeOf = function (cardKey) {
+    const c = cardKey && G.cardDef(cardKey);
+    return (c && c.damageType) || null;
+  };
+  G.damageMult = function (def, damageType) {
+    if (!def || !damageType) return 1;
+    const read = (tbl, dflt) => {
+      if (!tbl) return null;
+      if (Array.isArray(tbl)) return tbl.indexOf(damageType) >= 0 ? dflt : null;
+      return typeof tbl[damageType] === 'number' ? tbl[damageType] : null;
+    };
+    const w = read(def.weak, G.TUNE.weakMult);
+    const r = read(def.resist, G.TUNE.resistMult);
+    let m = 1;
+    if (w !== null) m *= w;
+    if (r !== null) m *= r;
+    return m;
+  };
+
   G.damageLocation = function (dmg, kind, forceIndex, cardKey) {
     const slot = G.activeLocation(kind, forceIndex, cardKey);
     if (!slot) return null;
     const i = S.locationField.indexOf(slot);
-    slot.hp -= dmg;
-    G.emit('location:hurt', { key: slot.key, index: i });
+    /* The damage type comes from the card being PLAYED (G.current),
+       not from `cardKey`. They're usually the same card, but cardKey
+       is also what `locationMatchesCard` uses to enforce a location's
+       `requiresCard` gate — and only the axe passes it. Reading
+       G.current here keeps damage typing independent of that gating,
+       so adding types changed no targeting rules. */
+    const typeKey = (G.current && G.current.key) || cardKey;
+    const mult = G.damageMult(G.LOCATIONS[slot.key], G.damageTypeOf(typeKey));
+    /* A resisted hit still lands for at least 1, so a target can never
+       become unkillable by accident. A location may still declare a
+       flat 0 for true immunity to one damage type — that's a
+       deliberate authoring choice (bring a different weapon), not a
+       rounding artifact. */
+    const applied = mult === 0 ? 0 : Math.max(1, Math.round(dmg * mult));
+    slot.hp -= applied;
+    G.emit('location:hurt', { key: slot.key, index: i, dmg: applied, mult });
     if (slot.hp <= 0) {
       const def = G.LOCATIONS[slot.key];
       const drops = G.rollDrops(def);

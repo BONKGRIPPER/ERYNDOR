@@ -126,19 +126,6 @@ body{
 /* the page you are on reads as pressed-in */
 .hdr-deck.active,.hdr-bag.active{background:var(--zone-soft);border-color:var(--zone-line)}
 
-/* hotbar */
-.hotbar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:7px}
-.hot{background:var(--sunk);border:1px solid var(--line);border-radius:var(--r);
-  padding:6px 8px;min-height:46px;display:flex;flex-direction:column;gap:2px;cursor:pointer}
-.hot.ready{background:var(--card);border-color:var(--zone-line)}
-.hot.ready:active{background:var(--zone-soft)}
-.hot.empty{border-style:dashed;opacity:.6;align-items:center;justify-content:center}
-.hot-empty{font-size:11px;color:var(--ink-3)}
-.hot-top{display:flex;align-items:center;justify-content:space-between}
-.hot-qty{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
-.hot-name{font-size:10px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.hot-heal{font-size:11px;color:var(--good);font-weight:500;margin-top:auto}
-
 /* vitals */
 .vitals,.wt-row{display:flex;align-items:center;gap:9px}
 .wt-row{margin-top:5px}
@@ -283,12 +270,23 @@ body{
 .farm-plot.ready .farm-ring .fill{stroke:var(--good)}
 /* status pip — same small-circle recipe as the nav dots (.nav .dot),
    top-left corner so it never collides with the progress ring
-   (top-right). Empty plots skip it — their "tap to plant" hint
-   already says everything. */
+   (top-right). Covers all three non-growing states: empty, needs
+   water, ready to harvest — growing already has the ring as its
+   own indicator, so it's the one state left with no dot. */
 .farm-plot .dot{position:absolute;top:4px;left:4px;width:7px;height:7px;
   border-radius:50%;border:1.5px solid var(--card)}
+.farm-plot .dot.empty{background:var(--ink-3)}
 .farm-plot .dot.needs-water{background:var(--bad)}
 .farm-plot .dot.ready{background:var(--good)}
+/* the "buy another plot" tile — same square slot, solid accent
+   border like an available action rather than dashed-empty, dims
+   and blocks the tap once the cost can't be afforded. */
+.farm-plot-build{border-style:solid;border-color:var(--accent)}
+.farm-plot-build.disabled{opacity:.55;cursor:default;pointer-events:none}
+.farm-plot-cost{display:flex;flex-wrap:wrap;justify-content:center;gap:4px;font-size:10px;color:var(--ink-2)}
+.farm-plot-cost span{display:flex;align-items:center;gap:2px}
+.farm-plot-cost .ok{color:var(--good)}
+.farm-plot-cost .no{color:var(--bad)}
 
 /* hand — trading-card layout: art on top, a type band, effects
    below. Framed in the card's own tint colour so the deck you're

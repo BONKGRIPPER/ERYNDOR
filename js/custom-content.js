@@ -315,7 +315,8 @@
     "durability": 12,
     "xp": 10,
     "tint": "blood",
-    "tier": 1
+    "tier": 1,
+    "damageType": "slash"
   },
   "strikeBronze": {
     "kind": "melee",
@@ -326,7 +327,8 @@
     "durability": 24,
     "xp": 30,
     "tint": "blood",
-    "tier": 3
+    "tier": 3,
+    "damageType": "slash"
   },
   "shoot": {
     "kind": "ranged",
@@ -337,7 +339,8 @@
     "durability": 12,
     "tint": "range",
     "xp": 5,
-    "tier": 1
+    "tier": 1,
+    "damageType": "ranged"
   },
   "pickFlint": {
     "kind": "mine",
@@ -348,7 +351,8 @@
     "durability": 6,
     "xp": 5,
     "tint": "stone",
-    "tier": 0
+    "tier": 0,
+    "damageType": "pierce"
   },
   "pickStone": {
     "kind": "mine",
@@ -359,7 +363,8 @@
     "durability": 12,
     "xp": 10,
     "tint": "stone",
-    "tier": 1
+    "tier": 1,
+    "damageType": "pierce"
   },
   "pickScrap": {
     "kind": "mine",
@@ -370,7 +375,8 @@
     "durability": 18,
     "xp": 20,
     "tint": "stone",
-    "tier": 2
+    "tier": 2,
+    "damageType": "pierce"
   },
   "axeScrap": {
     "kind": "axe",
@@ -381,7 +387,8 @@
     "durability": 18,
     "xp": 20,
     "tint": "wood",
-    "tier": 2
+    "tier": 2,
+    "damageType": "slash"
   },
   "axeFlint": {
     "kind": "axe",
@@ -392,7 +399,8 @@
     "durability": 6,
     "xp": 5,
     "tint": "wood",
-    "tier": 0
+    "tier": 0,
+    "damageType": "slash"
   },
   "axeStone": {
     "kind": "axe",
@@ -403,7 +411,8 @@
     "durability": 12,
     "xp": 10,
     "tint": "wood",
-    "tier": 1
+    "tier": 1,
+    "damageType": "slash"
   },
   "woodenClub": {
     "kind": "melee",
@@ -414,7 +423,8 @@
     "atk": 1,
     "durability": 5,
     "xp": 5,
-    "tier": 0
+    "tier": 0,
+    "damageType": "blunt"
   },
   "strikeScrap": {
     "kind": "melee",
@@ -425,7 +435,8 @@
     "durability": 18,
     "xp": 20,
     "tint": "blood",
-    "tier": 2
+    "tier": 2,
+    "damageType": "slash"
   },
   "fishingNet": {
     "kind": "fishing",
@@ -1312,10 +1323,6 @@
     "order": 3,
     "bank": true,
     "blurb": "The first trade city of the marches. Ore, river, and pine all feed the furnaces below the gate.",
-    "deck": {
-      "flint": 8,
-      "stick": 6
-    },
     "slotLabels": [
       "Mines",
       "River",
@@ -1369,11 +1376,6 @@
     "region": "leth-eiren",
     "order": 3,
     "blurb": "A cold pass of oak growth and fast water. Goblins stalk the bends while deer pick through the verge.",
-    "deck": {
-      "flint": 6,
-      "stick": 6,
-      "forage": 8
-    },
     "slotLabels": [
       "Stream",
       "Oakwood",
@@ -1429,12 +1431,6 @@
     "region": "leth-eiren",
     "order": 4,
     "blurb": "A narrow crossing choked with raiders and splintered barricades. The only way forward is through.",
-    "deck": {
-      "strikeStone": 6,
-      "woodenClub": 6,
-      "shoot": 4,
-      "forage": 2
-    },
     "slotLabels": [
       "Bridge",
       "Approach",
@@ -1490,11 +1486,6 @@
       "riverborn"
     ],
     "blurb": "The first great city beyond the marches. Markets, docks, and faction halls all pull at your loyalty.",
-    "deck": {
-      "forage": 10,
-      "stick": 4,
-      "flint": 4
-    },
     "slotLabels": [
       "Market",
       "Docks",
@@ -1901,6 +1892,7 @@
     "id": "altar",
     "name": "Bone Altar",
     "sub": "Prayer — bury bones for points",
+    "page": "deck",
     "buildCost": {
       "basaltBlock": 6,
       "bone": 5
@@ -1956,305 +1948,80 @@
     ],
     "recipes": [
       {
-        "id": "cookPoultry",
-        "name": "Cook Poultry",
-        "cost": {
-          "poultry": 1,
-          "stick": 1
-        },
+        "id": "card_redBerry",
+        "name": "Red Berry",
+        "cost": { "berries": 10 },
+        "fuel": 10,
         "repeatable": true,
-        "gives": {
-          "cookedPoultry": 1
-        },
+        "grantsCard": "redBerry",
         "skill": "cooking",
         "xp": 8,
-        "effect": "turns raw poultry into food"
+        "effect": "10 Red Berries + 10 fuel — a card that heals 1"
       },
       {
         "id": "makeCharcoal",
         "name": "Burn Charcoal",
-        "cost": {
-          "planks": 1,
-          "stick": 1
-        },
+        "cost": { "planks": 1, "stick": 1 },
         "villagerRecipe": true,
         "repeatable": true,
-        "gives": {
-          "charcoal": 1
-        },
+        "gives": { "charcoal": 1 },
         "skill": "cooking",
         "xp": 6,
         "effect": "burns planks down to charcoal"
       },
       {
-        "id": "cookSteak",
-        "name": "Cook Steak",
-        "cost": {
-          "steak": 1,
-          "stick": 1
-        },
+        "id": "card_cookedMeat",
+        "name": "Cooked Meat",
+        "cost": {},
+        "fuel": 10,
+        "anyOf": { "keys": ["poultry", "pork", "steak"], "qty": 10 },
         "repeatable": true,
-        "gives": {
-          "cookedSteak": 1
-        },
-        "skill": "cooking",
-        "xp": 12,
-        "effect": "turns raw steak into food"
-      },
-      {
-        "id": "cookPork",
-        "name": "Cook Pork",
-        "cost": {
-          "pork": 1,
-          "stick": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedPork": 1
-        },
-        "skill": "cooking",
-        "xp": 10,
-        "effect": "turns raw pork into food"
-      },
-      {
-        "id": "cook_bluegill",
-        "name": "Cook Bluegill",
-        "cost": {
-          "stick": 1,
-          "bluegill": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedBluegill": 1
-        },
-        "skill": "cooking",
-        "xp": 8,
-        "effect": "cooks bluegill into food"
-      },
-      {
-        "id": "cook_perch",
-        "name": "Cook Perch",
-        "cost": {
-          "stick": 1,
-          "perch": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedPerch": 1
-        },
-        "skill": "cooking",
-        "xp": 8,
-        "effect": "cooks perch into food"
-      },
-      {
-        "id": "cook_carp",
-        "name": "Cook Carp",
-        "cost": {
-          "stick": 1,
-          "carp": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedCarp": 1
-        },
-        "skill": "cooking",
-        "xp": 9,
-        "effect": "cooks carp into food"
-      },
-      {
-        "id": "cook_goldenKoi",
-        "name": "Cook Golden Koi",
-        "cost": {
-          "stick": 1,
-          "goldenKoi": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedGoldenKoi": 1
-        },
+        "grantsCard": "cookedMeat",
         "skill": "cooking",
         "xp": 14,
-        "effect": "cooks golden koi into food"
+        "effect": "10 of one raw meat + 10 fuel — a card that heals 3"
       },
       {
-        "id": "cook_brookTrout",
-        "name": "Cook Brook Trout",
-        "cost": {
-          "stick": 1,
-          "brookTrout": 1
-        },
+        "id": "card_cookedFish",
+        "name": "Cooked Fish",
+        "cost": {},
+        "fuel": 10,
+        "anyOf": { "keys": [
+          "bluegill",
+          "perch",
+          "carp",
+          "brookTrout",
+          "dace",
+          "minnow",
+          "riverTrout",
+          "grayling",
+          "pike",
+          "bass",
+          "catfish",
+          "whitefish"
+        ], "qty": 15 },
         "repeatable": true,
-        "gives": {
-          "cookedBrookTrout": 1
-        },
-        "skill": "cooking",
-        "xp": 9,
-        "effect": "cooks brook trout into food"
-      },
-      {
-        "id": "cook_dace",
-        "name": "Cook Dace",
-        "cost": {
-          "stick": 1,
-          "dace": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedDace": 1
-        },
-        "skill": "cooking",
-        "xp": 8,
-        "effect": "cooks dace into food"
-      },
-      {
-        "id": "cook_minnow",
-        "name": "Cook Minnow",
-        "cost": {
-          "stick": 1,
-          "minnow": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedMinnow": 1
-        },
-        "skill": "cooking",
-        "xp": 7,
-        "effect": "cooks minnow into food"
-      },
-      {
-        "id": "cook_glassEel",
-        "name": "Cook Glass Eel",
-        "cost": {
-          "stick": 1,
-          "glassEel": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedGlassEel": 1
-        },
+        "grantsCard": "cookedFish",
         "skill": "cooking",
         "xp": 14,
-        "effect": "cooks glass eel into food"
+        "effect": "15 of one common fish + 10 fuel — a card that heals 3"
       },
       {
-        "id": "cook_riverTrout",
-        "name": "Cook River Trout",
-        "cost": {
-          "stick": 1,
-          "riverTrout": 1
-        },
+        "id": "card_cookedRareFish",
+        "name": "Cooked Rare Fish",
+        "cost": {},
+        "fuel": 10,
+        "anyOf": { "keys": [
+          "goldenKoi",
+          "glassEel",
+          "silverSalmon",
+          "moonfin"
+        ], "qty": 3 },
         "repeatable": true,
-        "gives": {
-          "cookedRiverTrout": 1
-        },
+        "grantsCard": "cookedRareFish",
         "skill": "cooking",
-        "xp": 9,
-        "effect": "cooks river trout into food"
-      },
-      {
-        "id": "cook_grayling",
-        "name": "Cook Grayling",
-        "cost": {
-          "stick": 1,
-          "grayling": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedGrayling": 1
-        },
-        "skill": "cooking",
-        "xp": 9,
-        "effect": "cooks grayling into food"
-      },
-      {
-        "id": "cook_pike",
-        "name": "Cook Pike",
-        "cost": {
-          "stick": 1,
-          "pike": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedPike": 1
-        },
-        "skill": "cooking",
-        "xp": 11,
-        "effect": "cooks pike into food"
-      },
-      {
-        "id": "cook_silverSalmon",
-        "name": "Cook Silver Salmon",
-        "cost": {
-          "stick": 1,
-          "silverSalmon": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedSilverSalmon": 1
-        },
-        "skill": "cooking",
-        "xp": 16,
-        "effect": "cooks silver salmon into food"
-      },
-      {
-        "id": "cook_bass",
-        "name": "Cook Bass",
-        "cost": {
-          "stick": 1,
-          "bass": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedBass": 1
-        },
-        "skill": "cooking",
-        "xp": 9,
-        "effect": "cooks bass into food"
-      },
-      {
-        "id": "cook_catfish",
-        "name": "Cook Catfish",
-        "cost": {
-          "stick": 1,
-          "catfish": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedCatfish": 1
-        },
-        "skill": "cooking",
-        "xp": 11,
-        "effect": "cooks catfish into food"
-      },
-      {
-        "id": "cook_whitefish",
-        "name": "Cook Whitefish",
-        "cost": {
-          "stick": 1,
-          "whitefish": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedWhitefish": 1
-        },
-        "skill": "cooking",
-        "xp": 9,
-        "effect": "cooks whitefish into food"
-      },
-      {
-        "id": "cook_moonfin",
-        "name": "Cook Moonfin",
-        "cost": {
-          "stick": 1,
-          "moonfin": 1
-        },
-        "repeatable": true,
-        "gives": {
-          "cookedMoonfin": 1
-        },
-        "skill": "cooking",
-        "xp": 16,
-        "effect": "cooks moonfin into food"
+        "xp": 30,
+        "effect": "3 of one rare fish + 10 fuel — a card that heals 5"
       }
     ]
   }

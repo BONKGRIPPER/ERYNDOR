@@ -12,7 +12,7 @@
    cache (or GitHub's CDN) can keep answering the update check with
    the OLD sw.js for up to 10 minutes after a deploy, so bumping just
    CACHE_NAME in here isn't sufficient on its own. */
-const CACHE_NAME = 'leatheron-v2';
+const CACHE_NAME = 'leatheron-v3';
 const PRECACHE = [
   './',
   'index.html',

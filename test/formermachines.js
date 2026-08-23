@@ -17,24 +17,28 @@ console.log('  UI.renderMachineBar:', typeof UI.renderMachineBar === 'undefined'
 console.log('  no station still carries an "opens" field:',
   G.STATIONS.every(st => !st.opens));
 
-console.log('\n== Campfire: cooking recipes are ordinary flat-cost recipes ==');
+/* Cooking makes CARDS now, from raw ingredients + fuel POINTS — the
+   old per-item cook recipes (cookPoultry/cookSteak/cookPork and the
+   20 cook_<fish> ones) are gone. Charcoal-burning is the one plain
+   flat-cost recipe still on the Campfire. */
+console.log('\n== Campfire: the old per-item cook recipes are gone ==');
 G.wipe(); S.zone = 'aerendell'; S.weight = 0;
 give('stick', 40); give('flint', 40);
 console.log('  built:', G.buildStation('firepit'));
-give('poultry', 5);
-console.log('  cookPoultry cost:', JSON.stringify(G.findRecipe('cookPoultry').cost));
-console.log('  instant craft works:', G.craft('cookPoultry'));
-console.log('  cooked poultry gained:', S.cookedPoultry === 1);
-console.log('  poultry and a stick spent:', S.poultry === 4 && S.stick < 40);
+console.log('  cookPoultry no longer exists:', !G.findRecipe('cookPoultry'));
+console.log('  cook_bluegill no longer exists:', !G.findRecipe('cook_bluegill'));
+console.log('  Burn Charcoal survives as a flat recipe:',
+  JSON.stringify((G.findRecipe('makeCharcoal') || {}).cost));
 
 console.log('\n== Campfire: tap-craft flow works the same as any station ==');
-const started = G.startCraftJob('cookPoultry');
+give('planks', 10); give('stick', 10);
+const started = G.startCraftJob('makeCharcoal');
 console.log('  job starts:', started);
-console.log('  duration matches the shared tap-craft tuning:',
-  S.craftJobs.cookPoultry.ms === G.TUNE.tapCraftMs);
-global.__clock += G.TUNE.tapCraftMs + 50;
+console.log('  duration matches the shared tap-craft tuning (x2 cooking mult):',
+  S.craftJobs.makeCharcoal.ms === G.TUNE.tapCraftMs * 2);
+global.__clock += G.TUNE.tapCraftMs * 2 + 50;
 G.tickCraftJobs();
-console.log('  job completes -> a second cooked poultry:', S.cookedPoultry === 2);
+console.log('  job completes -> charcoal gained:', S.charcoal >= 1);
 
 console.log('\n== Stone Furnace: bronze bar is one flat recipe now (was 2 ores + a fuel slot) ==');
 G.wipe(); S.zone = 'kharBarak'; S.weight = 0;
@@ -61,20 +65,27 @@ console.log('\n== all three former machines carry an upgrade tier like other sta
   console.log('  ' + id + ' has an upgrade tier:', Array.isArray(st.upgrades) && st.upgrades.length > 0);
 });
 
-console.log('\n== UI.renderCraft shows the new recipes for a built Campfire ==');
+/* The Campfire renders on the FARM page (station page:'farm'), not
+   Craft — this used to look in #stations and could never find it.
+   It also no longer gets the bespoke "pick a food, pick a fuel"
+   panel: its recipes are ordinary tap-craft rows now. */
+console.log('\n== the Farm page shows the new card recipes for a built Campfire ==');
 G.wipe(); S.zone = 'aerendell'; S.weight = 0;
-give('stick', 40); give('flint', 40); give('poultry', 5);
-S.discovered.poultry = true; S.discovered.stick = true;
+give('stick', 40); give('flint', 40); give('berries', 20);
+S.discovered.berries = true; S.discovered.stick = true; S.discovered.planks = true;
 G.buildStation('firepit');
-UI.go('craft');
-const firepitCard = store['stations'].children.find(card =>
+UI.go('farm');
+const firepitCard = store['farm-stations'].children.find(card =>
   card.children[0] && card.children[0]._html.indexOf('Campfire') >= 0);
-console.log('  Campfire card renders:', !!firepitCard);
+console.log('  Campfire card renders on the Farm page:', !!firepitCard);
 if (firepitCard) {
   const recipesBody = firepitCard.children.find(p => p.className === 'recipes');
-  const cookRow = recipesBody.children.find(row =>
-    row.children[0] && row.children[0]._html.indexOf('Cook Poultry') >= 0);
-  console.log('  Cook Poultry recipe row rendered:', !!cookRow);
+  const rowHtml = recipesBody.children.map(r =>
+    (r.children[0] && r.children[0]._html) || '').join('|');
+  console.log('  Red Berry card recipe row rendered:', rowHtml.indexOf('Red Berry') >= 0);
+  console.log('  its cost line shows the fuel requirement:', rowHtml.indexOf('fuel') >= 0);
+  console.log('  no bespoke campfire Menu/Cook panel any more:',
+    rowHtml.indexOf('Choose your campfire setup') < 0 && rowHtml.indexOf('Fire is lit') < 0);
 }
 
 console.log('\n== unbuilt stations with no known recipe inside stay hidden ==');

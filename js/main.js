@@ -164,12 +164,15 @@
   G.on('inventory:dropped', ({ recovered }) => {
     if (recovered) UI.toast('No longer over-encumbered. Full speed restored.', 'Recovered');
   });
-  G.on('food:eaten', ({ key, healed }) =>
-    UI.toast('Ate ' + G.RESOURCES[key].name + ' — restored ' + healed + ' hp.', 'Eaten'));
-  G.on('food:refused', ({ key, reason }) =>
-    UI.toast(reason === 'raw'
-      ? G.RESOURCES[key].name + ' is raw. Cook it at the fire pit first.'
-      : 'Already at full health.', 'Not eaten'));
+  /* `key` is a CARD key now, not a resource — food is only ever eaten
+     by playing its card (kind:'food', systems/cards.js), and 'raw' can
+     no longer happen since raw food is never eaten at all. */
+  G.on('food:eaten', ({ key, healed }) => {
+    const c = G.cardDef(key);
+    UI.toast('Ate ' + ((c && c.name) || key) + ' — restored ' + healed + ' hp.', 'Eaten');
+  });
+  G.on('food:refused', () =>
+    UI.toast('Already at full health.', 'Not eaten'));
   G.on('hire:done', ({ name }) =>
     UI.banner('Hired', name, 'auto-crafts into this zone\'s crate while away', ''));
   G.on('hire:failed', ({ reason }) =>

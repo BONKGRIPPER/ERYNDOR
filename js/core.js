@@ -125,6 +125,11 @@
          systems/farm.js and world.js's stash()/restore(). Each slot is
          null (empty) or { seedKey, stage, wateredAt, stageMs }. */
       farmPlots: [],
+      /* How many extra plots have been bought beyond TUNE.farmPlotsBase
+         — see G.buildFarmPlot/G.farmPlotCount, systems/farm.js. Global,
+         not zone-tied (unlike farmPlots itself), since only Aerendell
+         has anything to farm right now anyway. */
+      farmPlotsBuilt: 0,
       /* Lifetime collection log for the fishing journal — counts fish
          actually caught, not just currently carried. */
       fishCaught: {},
@@ -321,6 +326,39 @@
     });
     return deckSlots;
   };
+  /* Bring every deck slot inside TUNE.deckCap / TUNE.maxCardCopies,
+     banking anything over the line in the collection instead of
+     destroying it. Used as a save migration (older saves were built
+     under the looser 60/5 limits) and safe to call any time — it's a
+     no-op on a deck that already fits. Returns how many cards moved. */
+  G.enforceDeckLimits = function () {
+    G.ensureDeckSlots();
+    G.syncActiveDeckSlot();          // fold live S.deck edits into the slot first
+    if (!S.collection) S.collection = {};
+    let moved = 0;
+    (S.deckSlots || []).forEach(slot => {
+      if (!slot || !Array.isArray(slot.deck)) return;
+      const counts = {};
+      const kept = [];
+      slot.deck.forEach(key => {
+        counts[key] = (counts[key] || 0) + 1;
+        if (counts[key] > G.TUNE.maxCardCopies || kept.length >= G.TUNE.deckCap) {
+          S.collection[key] = (S.collection[key] || 0) + 1;
+          moved++;
+          return;
+        }
+        kept.push(key);
+      });
+      slot.deck = kept;
+      if (slot.drawnCount > slot.deck.length) slot.drawnCount = slot.deck.length;
+    });
+    if (moved) {
+      G.loadDeckSlot(S.activeDeckSlot || 0);
+      G.emit('collection:changed');
+      G.emit('deck:changed');
+    }
+    return moved;
+  };
   G.setPreferredDeckForZone = function (zoneId, slotIdx) {
     G.ensureDeckSlots();
     if (!S.preferredDecks) S.preferredDecks = {};
@@ -479,7 +517,7 @@
                    'foils','prismatic','wardrobe','collection',
                    'locationDecks','locationField',
                    'lastSeen','stationVillagers','selected','craftJobs','campfireJob','stationLv','pins','zone','zones','homes','villagerLast','xpV2','discovered',
-                   'donateProgress','factionInfluence','selectedFaction','farmPlots','fishCaught','zoneStorage','bankStorage'];
+                   'donateProgress','factionInfluence','selectedFaction','farmPlots','farmPlotsBuilt','fishCaught','zoneStorage','bankStorage'];
 
   G.save = function (flash) {
     const d = {};
@@ -562,6 +600,7 @@
       if (!S.factionInfluence) S.factionInfluence = {};
       if (!S.selectedFaction) S.selectedFaction = 'ashkar';
       if (!Array.isArray(S.farmPlots)) S.farmPlots = [];
+      if (typeof S.farmPlotsBuilt !== 'number') S.farmPlotsBuilt = 0;
       if (!S.fishCaught) S.fishCaught = {};
       if (!S.discovered) S.discovered = {};
       if (!S.zone) S.zone = G.START_ZONE;
@@ -589,6 +628,11 @@
       if (!S.deck || !S.deck.length) G.buildDeck();
       G.ensureDeckSlots();
       G.loadDeckSlot(S.activeDeckSlot || 0);
+      /* Deck limits tightened (30 total, 3 copies of a key). Older
+         saves were built under 60/5 and can legitimately exceed
+         both, so trim them down — the excess goes to the collection
+         rather than being destroyed, since the player earned it. */
+      G.enforceDeckLimits();
       /* old saves carried a single flat locationDeck/locationDrawn —
          dropped outright (not converted) now that each field slot
          has its own independent deck; same "wipe and move on"

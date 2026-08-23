@@ -49,13 +49,22 @@
     if (Math.random() < 0.15) got.berrySeed = 1;
     return got;
   };
+  /* Flax/Berries were cut to half yield (TUNE.forageHerbMult) —
+     applied after every other multiplier (crit, foraging skill,
+     foil) has already compounded, floored with a floor of 1 so a
+     forage never rounds all the way down to nothing. Seeds are
+     deliberately untouched — same chance, same quantity, as before. */
+  function forageHerbQty(n) {
+    return Math.max(1, Math.floor(n * G.TUNE.forageHerbMult));
+  }
 
   G.registerCardKind('forage', {
     face(card) {
       const mult = G.foragingMult(card) * G.cardYieldMult(card);
+      const herbQty = forageHerbQty(mult);
       const yields = [
-        { key: 'flax', qty: mult, crit: mult * 2, chance: '50%' },
-        { key: 'berries', qty: mult, crit: mult * 2, chance: '50%' },
+        { key: 'flax', qty: herbQty, crit: forageHerbQty(mult * 2), chance: '50%' },
+        { key: 'berries', qty: herbQty, crit: forageHerbQty(mult * 2), chance: '50%' },
         { key: 'flaxSeed', qty: mult, chance: '15%' },
         { key: 'berrySeed', qty: mult, chance: '15%' },
       ];
@@ -74,6 +83,8 @@
       }
       const mult = G.foragingMult(ctx.card) * G.cardYieldMult(ctx.card);
       Object.keys(roll).forEach(k => { roll[k] *= mult; });
+      if (roll.flax) roll.flax = forageHerbQty(roll.flax);
+      if (roll.berries) roll.berries = forageHerbQty(roll.berries);
       Object.keys(roll).forEach(k => {
         const n = G.addRes(k, roll[k]);
         if (n) ctx.gains.push({ key: k, qty: n });
@@ -83,9 +94,50 @@
     offline(key, c, give) {
       const roll = G.rollForage();
       const mult = G.foragingMult(c) * G.cardYieldMult(c);
-      Object.keys(roll).forEach(k =>
-        give(k, Math.max(1, Math.floor(roll[k] * mult * T.offlineRate))));
+      Object.keys(roll).forEach(k => {
+        let qty = roll[k] * mult;
+        if (k === 'flax' || k === 'berries') qty = forageHerbQty(qty);
+        give(k, Math.max(1, Math.floor(qty * T.offlineRate)));
+      });
     },
+  });
+
+  /* ---------- FOOD ------------------------------------------
+     Food is only ever eaten as a card now — there is no eat-from-bag
+     path any more (G.eat is gone, see systems/food.js). Playing one
+     heals and CONSUMES the card: it leaves the deck permanently, so
+     food is a real recurring cost that the farm/cooking economy has
+     to keep supplying, not a one-time craft that heals forever.
+
+     A clean tap doubles the heal, exactly like it doubles damage and
+     yields everywhere else — nothing about food is special-cased out
+     of the game's core mechanic.
+
+     Playing one at full health refuses instead of burning the card,
+     matching how eating from the bag used to behave. */
+  G.registerCardKind('food', {
+    face(card) {
+      const heal = card.heal || 0;
+      if (S.hp >= G.maxHp()) {
+        return { detail: 'already at full health', blocked: true, yields: [] };
+      }
+      return { detail: 'heals ' + heal + ' hp — eats the card', yields: [] };
+    },
+    resolve(ctx) {
+      ctx.gains = [];
+      if (S.hp >= G.maxHp()) {
+        G.emit('food:refused', { key: ctx.key, reason: 'full' });
+        return;
+      }
+      const heal = (ctx.card.heal || 0) * (ctx.hit ? 2 : 1);
+      const before = S.hp;
+      S.hp = Math.min(G.maxHp(), S.hp + heal);
+      G.consumeCardFromDeck(ctx.key);
+      if (ctx.card.skill && ctx.card.xp) G.grantXp(ctx.card.skill, ctx.card.xp);
+      G.emit('food:eaten', { key: ctx.key, healed: S.hp - before });
+    },
+    /* nothing to award while away — you can't be hurt offline */
+    offline() {},
   });
 
   /* ---------- MELEE -----------------------------------------

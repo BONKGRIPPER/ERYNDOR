@@ -87,11 +87,18 @@ S.locationDecks.forEach(sd => sd.deck.forEach(k => { counts[k] = (counts[k] || 0
 const sortedJson = o => JSON.stringify(Object.keys(o).sort().reduce((m, k) => (m[k] = o[k], m), {}));
 console.log('  built decks match declared counts:', sortedJson(counts) === sortedJson(declared));
 
-console.log('\n== pig meat cooks and heals ==');
+console.log('\n== pig meat cooks into a food CARD, which heals when played ==');
 G.wipe(); S.weight = 0; S.stick = 99; S.flint = 99;
 console.log('  firepit actually built:', G.buildStation('firepit'));
-S.stick = 20; S.pork = 4; S.weight = 0;
-console.log('  cook pork:', G.craft('cookPork'));
-console.log('  cooked pork:', S.cookedPork, '| heals', G.FOODS.cookedPork.heal);
-S.hp = 3; G.eat('cookedPork');
-console.log('  ate one: hp 3 ->', S.hp);
+/* 10 of one raw meat + 10 fuel points -> a Cooked Meat card. There
+   is no eat-from-the-bag path any more; healing happens by playing
+   the card, which is consumed in the process. */
+S.pork = 10; S.stick = 20; S.weight = 0;
+console.log('  cook a Cooked Meat card:', G.craft('card_cookedMeat'));
+console.log('  raw pork spent:', S.pork === 0);
+console.log('  card is in the deck:', (G.deckCounts().cookedMeat || 0) === 1);
+S.hp = 3;
+const meatCard = G.cardDef('cookedMeat');
+G.cardKinds.food.resolve({ key: 'cookedMeat', card: meatCard, hit: false, gains: [] });
+console.log('  playing it healed 3: hp 3 ->', S.hp);
+console.log('  and the card was eaten:', (G.deckCounts().cookedMeat || 0) === 0);

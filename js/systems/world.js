@@ -43,19 +43,30 @@
   };
   G.zoneOpen = id => G.zoneBlocker(id) === null;
 
-  /* Each zone keeps its own deck, draw position, pasture, location
-     field AND workshops — moving on means rebuilding the Crafting
-     Bench and everything else there from scratch (ALWAYS_BUILT
-     stations like Bare Hands are the one exception, backfilled into
-     every zone's built map so they're never re-gated). Inventory
-     and skills are the only things still shared across all zones. */
+  /* THE DECK IS GLOBAL — deliberately not stashed here, it simply
+     travels with you. Zones used to keep their own deck and draw
+     position, so arriving somewhere new built a fresh starter deck
+     out of that zone's own `deck` block and handed you a pile of
+     cards you never picked. Those blocks are gone from data.js and
+     custom-content.js, and G.buildDeck is no longer called on
+     travel at all.
+
+     Still zone-tied: the pasture/location field AND workshops —
+     moving on means rebuilding the Crafting Bench and everything
+     else there from scratch (ALWAYS_BUILT stations like Bare Hands
+     are the one exception, backfilled into every zone's built map so
+     they're never re-gated) — plus that zone's farm plots. Deck,
+     deck slots, inventory and skills are shared across all zones.
+
+     Deck SLOTS are global too, so the D1/D2/D3 loadouts you build
+     are available everywhere. A zone can still name a preferred slot
+     to auto-equip on arrival (autoEquipPreferredDeck, below), which
+     is now purely a convenience switch between loadouts you built
+     yourself rather than a hidden deck rewrite. */
   function stash(zone) {
     if (!S.zones) S.zones = {};
     G.syncActiveDeckSlot();
     S.zones[zone] = {
-      deck: S.deck, drawnCount: S.drawnCount,
-      deckSlots: S.deckSlots,
-      activeDeckSlot: S.activeDeckSlot,
       locationDecks: S.locationDecks,
       locationField: S.locationField,
       built: S.built,
@@ -64,26 +75,7 @@
   }
   function restore(zone) {
     const saved = S.zones && S.zones[zone];
-    if (saved && saved.deckSlots && saved.deckSlots.length) {
-      S.deckSlots = saved.deckSlots;
-      if (G.pruneZoneDeckCards) G.pruneZoneDeckCards(zone, S.deckSlots);
-      S.activeDeckSlot = saved.activeDeckSlot || 0;
-      G.ensureDeckSlots();
-      G.loadDeckSlot(S.activeDeckSlot);
-      S.locationDecks = saved.locationDecks || [];
-      S.locationField = saved.locationField || [null, null, null];
-      if (G.syncLocationDecksToZone) G.syncLocationDecksToZone();
-      G.fillLocationField();
-      S.built = Object.assign({}, saved.built, G.defaultBuilt());
-      S.farmPlots = saved.farmPlots || [];
-      return false;
-    }
-    if (saved && saved.deck && saved.deck.length) {
-      S.deck = saved.deck;
-      S.drawnCount = saved.drawnCount || 0;
-      S.deckSlots = [{ deck: S.deck, drawnCount: S.drawnCount }];
-      if (G.pruneZoneDeckCards) G.pruneZoneDeckCards(zone, S.deckSlots);
-      S.activeDeckSlot = 0;
+    if (saved && saved.locationDecks) {
       S.locationDecks = saved.locationDecks || [];
       S.locationField = saved.locationField || [null, null, null];
       if (G.syncLocationDecksToZone) G.syncLocationDecksToZone();
@@ -94,11 +86,8 @@
       S.farmPlots = saved.farmPlots || [];
       return false;                       // returning to a known road
     }
-    G.buildDeck();
-    G.shuffle(S.deck);
-    S.drawnCount = 0;
-    S.deckSlots = [{ deck: S.deck, drawnCount: 0 }];
-    S.activeDeckSlot = 0;
+    /* First visit sets up the field and the buildings only — the
+       player's deck is not touched. */
     G.buildLocationDecks();
     S.locationDecks.forEach(sd => G.shuffle(sd.deck));
     S.locationField = [null, null, null];

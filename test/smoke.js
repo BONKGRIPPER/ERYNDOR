@@ -53,7 +53,7 @@ trial('build bench', () => { G.buildStation('bench'); UI.renderCraft(); });
 trial('build loom', () => { G.buildStation('loom'); UI.renderCraft(); });
 trial('weave cloth', () => { if (!G.craft('cloth')) throw new Error('weave failed'); });
 trial('build campfire', () => { G.buildStation('firepit'); UI.renderCraft(); });
-trial('cook poultry', () => { S.poultry = 5; if (!G.craft('cookPoultry')) throw new Error('cook failed'); });
+trial('cook a food card', () => { S.poultry = 10; S.stick = 20; S.weight = 0; if (!G.craft('card_cookedMeat')) throw new Error('cook failed'); });
 trial('build furnace', () => { G.buildStation('furnace'); UI.renderCraft(); });
 trial('smelt bronze bar', () => {
   S.tin = 5; S.copper = 5; if (!G.craft('bronzeBar')) throw new Error('smelt failed');

@@ -28,7 +28,14 @@ const furnace = G.findStation('furnace'), pick = G.findRecipe('scrapPick');
     'furnace:' + (G.inZone(furnace) ? 'yes' : 'no '),
     ' scrap pick:' + (G.inZone(pick) ? 'yes' : 'no '));
 });
-console.log('  "Ore Vein" action card only in the gate\'s deck:', !!G.ZONES.kharBarak.deck.oreVein);
+/* The "Ore Vein" card used to be seeded by Khar-Barak's own zone
+   deck. Zone decks are gone now (the deck is global and travels with
+   you), so nothing seeds oreVein from a zone. This line asserted
+   against a `deck` block that no longer exists — and it had already
+   been failing beforehand anyway, since no zone actually listed
+   oreVein even while those blocks were still in place. */
+console.log('  no zone seeds an "Ore Vein" card any more (zone decks removed):',
+  Object.keys(G.ZONES).every(z => !G.ZONES[z].deck));
 console.log('  location decks:',
   'aerendell', JSON.stringify(G.ZONES.aerendell.locationDecks),
   '| forestRoad', JSON.stringify(G.ZONES.forestRoad.locationDecks),
@@ -97,21 +104,34 @@ const beforeEmpty = S.stone;
 swing();
 console.log('  stone unchanged with nothing to hit:', S.stone === beforeEmpty);
 
-console.log('\n== forest road has no MINEABLE field — its deck is all animals ==');
+/* Forest Road USED to have nothing mineable at all. Boulders now
+   share slot 0 with the pine trees, so stone is reachable in the
+   second zone — but only one of the two is ever face-up, so you have
+   to clear whichever is showing to get at the next. */
+console.log('\n== forest road: boulders share the Forest slot with pine trees ==');
 S.zone = 'forestRoad';
+const roadSlot0 = G.ZONES.forestRoad.locationDecks[0];
+console.log('  slot 0 holds both pineTree and boulder:',
+  !!roadSlot0.pineTree && !!roadSlot0.boulder);
+console.log('  they are in the SAME slot, not separate ones:',
+  !G.ZONES.forestRoad.locationDecks.slice(1).some(d => d.boulder || d.pineTree));
 G.buildLocationDecks(); S.locationDecks.forEach(sd => G.shuffle(sd.deck));
 S.locationField = [null, null, null]; G.fillLocationField();
 console.log('  deck composition:', JSON.stringify(G.ZONES.forestRoad.locationDecks));
-/* 'combat' (either weapon) and 'ranged' (bow only, e.g. Deer) are
-   both hostile — animal is really "has an atk", not one exact
-   requires string (see isHostile() in ui.js). */
-const roadDefs = S.locationField.filter(Boolean).map(s => G.LOCATIONS[s.key]);
-console.log('  every field slot is hostile, none mineable:',
-  roadDefs.length > 0 && roadDefs.every(d => !!d.atk));
-console.log('  no pick target here:', G.activeLocation('mine') === null);
-const beforeSwing = S.stone;
-swing();
-console.log('  a pick swung here does nothing (no target):', S.stone === beforeSwing);
+/* Slot 0 shows exactly one card at a time, so a given fill may put
+   up either a tree or a boulder — run the slot's whole deck to prove
+   both actually appear. */
+const slot0Seen = {};
+for (let i = 0; i < 40; i++) {
+  S.locationField = [null, null, null];
+  G.buildLocationDecks(); S.locationDecks.forEach(sd => G.shuffle(sd.deck));
+  G.fillLocationField();
+  if (S.locationField[0]) slot0Seen[S.locationField[0].key] = true;
+}
+console.log('  boulders really do turn up in slot 0:', !!slot0Seen.boulder);
+console.log('  pine trees still turn up there too:', !!slot0Seen.pineTree);
+console.log('  and nothing else sneaks into that slot:',
+  Object.keys(slot0Seen).every(k => k === 'boulder' || k === 'pineTree'));
 console.log('  oreVeinRoad definition still exists for the 4th zone:', !!G.LOCATIONS.oreVeinRoad);
 
 console.log('\n== khar-barak ore vein: tin and copper both drop ==');

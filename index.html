@@ -35,7 +35,6 @@
       </div>
     </div>
 
-    <div class="hotbar" id="hotbar"></div>
 
     <div class="vitals">
       <span id="hp-ico"></span>
@@ -116,11 +115,12 @@
               <div class="num" id="pp-val">0</div></div>
           </div>
         <div class="prayer-note">
-          Bury bones at the Bone Altar to earn points. Spend them here to set
+          Bury bones at the altar below to earn points. Spend them here to set
             a card aside and shorten your cycle — it moves to your collection,
             not gone for good.
         </div>
       </div>
+        <div id="deck-stations"></div>
         <div id="deck-slots"></div>
         <div class="sec"><span>Deck — <span id="deck-size">10</span> cards</span>
           <span class="hint" id="purge-hint"></span></div>
@@ -323,7 +323,7 @@
      cache, belt-and-braces alongside the query bust. */
   if ('serviceWorker' in navigator && (location.protocol === 'http:' || location.protocol === 'https:')) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js?v=2', { updateViaCache: 'none' }).catch(() => {});
+      navigator.serviceWorker.register('sw.js?v=3', { updateViaCache: 'none' }).catch(() => {});
     });
   }
 </script>
