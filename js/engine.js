@@ -78,16 +78,14 @@
     G.emit('deck:changed');
   };
 
-  /* Durability is one shared pool per card key, not per physical
-     copy — crafting another of the same tier tops the pool back up.
-     Call after any card resolves; a no-op for keys with no pool. At
-     zero, every remaining copy of the key leaves the deck at once. */
-  /* Removes exactly ONE copy of a key from the active deck — a food
-     card is eaten when you play it. Deliberately distinct from
-     G.drainDurability below, which yanks EVERY copy at once when a
-     shared durability pool bottoms out. Prefers a copy from the
-     already-drawn part of the deck, since that's the one that was
-     just played. */
+  /* Removes exactly ONE copy of a key from the active deck.
+     Currently UNUSED — food cards were briefly consumed on play and
+     this is what did it; they persist now, like every other card.
+     Kept because it's the only single-copy remover in the codebase
+     (G.drainDurability below yanks EVERY copy at once when a shared
+     durability pool bottoms out) and any future consumable card kind
+     will want exactly this. Prefers a copy from the already-drawn
+     part of the deck, since that's the one that was just played. */
   G.consumeCardFromDeck = function (key) {
     let i = -1;
     for (let n = 0; n < S.drawnCount && n < S.deck.length; n++) {
@@ -105,6 +103,10 @@
     return true;
   };
 
+  /* Durability is one shared pool per card key, not per physical
+     copy — crafting another of the same tier tops the pool back up.
+     Call after any card resolves; a no-op for keys with no pool. At
+     zero, every remaining copy of the key leaves the deck at once. */
   G.drainDurability = function (key) {
     if (!G.durabilityEnabled()) return;
     if (!(key in S.durability)) return;
@@ -359,11 +361,19 @@
       const hi = entry.max != null ? entry.max : lo;
       got[entry.key] = (got[entry.key] || 0) + G.rand(lo, hi);
     }
+    /* nightOnly entries (Batch 3, real-time plan) drop out of the
+       pool entirely during the day — not just zero chance, actually
+       absent, so a oneOf's other options aren't diluted by an option
+       nobody can roll right now. */
+    const available = e => !e.nightOnly || G.isNight();
     def.dropTable.forEach(entry => {
       if (entry && Array.isArray(entry.oneOf) && entry.oneOf.length) {
-        addDrop(entry.oneOf[Math.floor(Math.random() * entry.oneOf.length)]);
+        const opts = entry.oneOf.filter(available);
+        if (!opts.length) return;
+        addDrop(opts[Math.floor(Math.random() * opts.length)]);
         return;
       }
+      if (!available(entry)) return;
       addDrop(entry);
     });
     return got;
@@ -535,6 +545,14 @@
     if (slot.hp <= 0) {
       const def = G.LOCATIONS[slot.key];
       const drops = G.rollDrops(def);
+      /* Hostile locations (anything with atk) drop TUNE.nightLootMult
+         at night — the reward half of "enemies hit harder at night"
+         (Batch 3, real-time plan). Non-hostile gathering nodes
+         (boulders, trees) are unaffected — this is combat risk/
+         reward, not a blanket night bonus. */
+      if (def.atk && G.isNight()) {
+        Object.keys(drops).forEach(k => { drops[k] = Math.round(drops[k] * G.TUNE.nightLootMult); });
+      }
       const got = {};
       Object.keys(drops).forEach(k => {
         const n = G.addRes(k, drops[k]);

@@ -1,6 +1,6 @@
 /* Food is CARDS only. Raw food is an ingredient; the Campfire cooks
-   it into a kind:'food' card that heals when played and is EATEN in
-   the process (leaves the deck). Recipes use two new cost shapes:
+   it into a kind:'food' card that heals when played and STAYS in the
+   deck, like every other card. Recipes use two new cost shapes:
    `fuel` POINTS from any burnable, and `anyOf` ("N of any one kind").
    Run: node test/foodcards.js */
 const { boot } = require('./harness');
@@ -26,13 +26,16 @@ console.log('\n== the starting deck carries exactly one Red Berry ==');
 G.wipe();
 console.log('  1 redBerry in a fresh deck:', G.deckCounts().redBerry === 1);
 
-console.log('\n== playing a food card heals AND eats the card ==');
+console.log('\n== playing a food card heals and KEEPS the card ==');
 G.wipe(); S.weight = 0;
 S.hp = 5;
 console.log('  starting at 5 hp with 1 Red Berry:', S.hp === 5 && G.deckCounts().redBerry === 1);
 playFood('redBerry');
 console.log('  healed by 1:', S.hp === 6);
-console.log('  the card left the deck:', (G.deckCounts().redBerry || 0) === 0);
+console.log('  the card is still in the deck:', G.deckCounts().redBerry === 1);
+console.log('  and can be played again:', (playFood('redBerry'), S.hp === 7));
+console.log('  still there after a second use:', G.deckCounts().redBerry === 1);
+console.log('  the deck never shrank:', S.deck.length === 10);
 
 console.log('\n== a clean tap doubles the heal, same as every other card ==');
 G.wipe(); S.weight = 0;

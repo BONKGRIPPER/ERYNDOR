@@ -115,6 +115,10 @@
       villagerLast: {},    // 'zone:stationId' -> last production time
       stationVillagers: {}, // zone -> { stationId: true } — hired AT a station now, not a named Town role
       lastSeen: Date.now(),
+      /* stamped once, right here, on every fresh character — the
+         moment G.gameSeason() (systems/clock.js) counts forward from,
+         so day 1 is always Spring no matter the real-world date. */
+      seasonEpoch: Date.now(),
       page: 'play',
       /* Donate (Bag page): cumulative worth donated since the last time
          it crossed TUNE.donateWorthPerXp — see G.donateItems, craft.js */
@@ -517,7 +521,7 @@
                    'foils','prismatic','wardrobe','collection',
                    'locationDecks','locationField',
                    'lastSeen','stationVillagers','selected','craftJobs','campfireJob','stationLv','pins','zone','zones','homes','villagerLast','xpV2','discovered',
-                   'donateProgress','factionInfluence','selectedFaction','farmPlots','farmPlotsBuilt','fishCaught','zoneStorage','bankStorage'];
+                   'donateProgress','factionInfluence','selectedFaction','farmPlots','farmPlotsBuilt','fishCaught','zoneStorage','bankStorage','seasonEpoch'];
 
   G.save = function (flash) {
     const d = {};
@@ -601,6 +605,11 @@
       if (!S.selectedFaction) S.selectedFaction = 'ashkar';
       if (!Array.isArray(S.farmPlots)) S.farmPlots = [];
       if (typeof S.farmPlotsBuilt !== 'number') S.farmPlotsBuilt = 0;
+      /* a save from before the seasonal calendar existed has no
+         epoch to count from — start it at Day 1/Spring as of THIS
+         load, same "day 1 is Spring" guarantee a brand-new character
+         gets, rather than backdating to an arbitrary past date */
+      if (typeof S.seasonEpoch !== 'number') S.seasonEpoch = Date.now();
       if (!S.fishCaught) S.fishCaught = {};
       if (!S.discovered) S.discovered = {};
       if (!S.zone) S.zone = G.START_ZONE;

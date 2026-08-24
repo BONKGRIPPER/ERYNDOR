@@ -163,7 +163,14 @@
     if (r.advanced.length) {
       G.emit('farm:advanced', { advanced: r.advanced });
       G.emit('state:changed');
+      return;
     }
+    /* Nothing finished, but a growing plot's on-screen countdown has
+       to keep moving — re-render while any timer is running. The bar
+       itself animates in CSS and doesn't need this; the "1:23 left"
+       text does. Only fires while something is actually growing, so
+       an idle farm costs nothing. */
+    if ((S.farmPlots || []).some(p => p && p.wateredAt != null)) G.emit('state:changed');
   });
 
 })(window.Game = window.Game || {});

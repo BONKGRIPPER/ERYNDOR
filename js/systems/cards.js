@@ -104,24 +104,27 @@
 
   /* ---------- FOOD ------------------------------------------
      Food is only ever eaten as a card now — there is no eat-from-bag
-     path any more (G.eat is gone, see systems/food.js). Playing one
-     heals and CONSUMES the card: it leaves the deck permanently, so
-     food is a real recurring cost that the farm/cooking economy has
-     to keep supplying, not a one-time craft that heals forever.
+     path any more (G.eat is gone, see systems/food.js).
+
+     A food card is NOT consumed when played: it stays in the deck and
+     comes round again next cycle, exactly like every other card. The
+     limit on healing is therefore deck space, not stock — with
+     TUNE.maxCardCopies at 3 you can only carry so many heals per
+     cycle, which is what makes later food tiers worth their slots.
 
      A clean tap doubles the heal, exactly like it doubles damage and
      yields everywhere else — nothing about food is special-cased out
      of the game's core mechanic.
 
-     Playing one at full health refuses instead of burning the card,
-     matching how eating from the bag used to behave. */
+     Playing one at full health refuses, same as eating from the bag
+     used to. */
   G.registerCardKind('food', {
     face(card) {
       const heal = card.heal || 0;
       if (S.hp >= G.maxHp()) {
         return { detail: 'already at full health', blocked: true, yields: [] };
       }
-      return { detail: 'heals ' + heal + ' hp — eats the card', yields: [] };
+      return { detail: 'heals ' + heal + ' hp', yields: [] };
     },
     resolve(ctx) {
       ctx.gains = [];
@@ -132,7 +135,6 @@
       const heal = (ctx.card.heal || 0) * (ctx.hit ? 2 : 1);
       const before = S.hp;
       S.hp = Math.min(G.maxHp(), S.hp + heal);
-      G.consumeCardFromDeck(ctx.key);
       if (ctx.card.skill && ctx.card.xp) G.grantXp(ctx.card.skill, ctx.card.xp);
       G.emit('food:eaten', { key: ctx.key, healed: S.hp - before });
     },
@@ -161,7 +163,9 @@
       if (!slot || power <= 0) return;
       ctx.dealt = true;
       const def = G.LOCATIONS[slot.key];
-      const rawBack = def.atk || 0;
+      /* enemies hit TUNE.nightAtkMult harder at night — Batch 3,
+         real-time plan */
+      const rawBack = (def.atk || 0) * (G.isNight() ? G.TUNE.nightAtkMult : 1);
       const dmg = ctx.hit ? power * 2 : power;
       const result = G.damageLocation(dmg, 'melee', ctx.target);
       const killed = !!(result && result.cleared);
@@ -196,7 +200,7 @@
       if (!slot || power <= 0) return;
       ctx.dealt = true;
       const def = G.LOCATIONS[slot.key];
-      const rawBack = def.atk || 0;
+      const rawBack = (def.atk || 0) * (G.isNight() ? G.TUNE.nightAtkMult : 1);
       const ammo = G.spendConsumable('ammo');
       const base = power + (ammo ? ammo.dmg : 0);
       const dmg = ctx.hit ? base * 2 : base;          // clean tap doubles

@@ -25,6 +25,9 @@
     spirit: ['#7a68a6', '#a794cf'],
     dark:   ['#5c6672', '#8b95a1'],
     pink:   ['#c2807e', '#dda9a7'],
+    sun:    ['#d99a2e', '#f5c667'],
+    night:  ['#5b6472', '#8f9aa8'],
+    ice:    ['#5a90ad', '#9fcbe0'],
   };
 
   const S = (c, d) => ({ c, d });
@@ -106,6 +109,29 @@
       '<path d="M10 8l4 3 5-4-2 5-4 1z" fill="$2"/>'),
     gold: S(C.gold,
       '<circle cx="12" cy="12" r="6.5" fill="$1"/><circle cx="12" cy="12" r="4" fill="$2"/>'),
+    /* the real-device clock's day/night indicator — see systems/clock.js */
+    sun: S(C.sun,
+      '<circle cx="12" cy="12" r="5" fill="$2"/>' +
+      '<path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" ' +
+      'stroke="$1" stroke-width="2" stroke-linecap="round"/>'),
+    moon: S(C.night,
+      '<path d="M16 3a9 9 0 1 0 5 16 7 7 0 0 1-5-16z" fill="$1"/>' +
+      '<circle cx="9" cy="9" r="1.1" fill="$2"/><circle cx="13" cy="14" r="0.8" fill="$2"/>'),
+    /* the seasonal calendar readout — see G.gameSeason, systems/clock.js */
+    seasonSpring: S(C.leaf,
+      '<path d="M12 20V11" stroke="$1" stroke-width="2" stroke-linecap="round"/>' +
+      '<path d="M12 13c0-4 3-6 7-6-1 4-3 6-7 6z" fill="$2"/>' +
+      '<path d="M12 15c0-3-3-5-6-5 1 3 3 5 6 5z" fill="$1"/>'),
+    seasonSummer: S(C.sun,
+      '<circle cx="12" cy="12" r="5" fill="$2"/>' +
+      '<path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" ' +
+      'stroke="$1" stroke-width="2" stroke-linecap="round"/>'),
+    seasonAutumn: S(C.wood,
+      '<path d="M12 4c5 1 6 6 4 10-2 4-7 5-9 2-2-3 0-7 3-8-2-1-3-3-1-4 1-1 2 0 3 0z" fill="$1"/>' +
+      '<path d="M12 4v16" stroke="$2" stroke-width="1.4" stroke-linecap="round"/>'),
+    seasonWinter: S(C.ice,
+      '<path d="M12 3v18M4 8l16 8M20 8L4 16" stroke="$1" stroke-width="2" stroke-linecap="round"/>' +
+      '<circle cx="12" cy="12" r="1.6" fill="$2"/>'),
     diamond: S(['#4f8fa0', '#8fc6d4'],
       '<path d="M12 4l6 5-6 11-6-11z" fill="$2"/><path d="M6 9h12l-6 4z" fill="$1"/>'),
     leather: S(C.wood,

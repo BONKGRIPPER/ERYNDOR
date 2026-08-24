@@ -108,6 +108,14 @@ body{
 /* deck + bag sit together at the top right — both are "your stuff",
    as opposed to the nav below which is "where you are" */
 .hdr-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+/* the real-device clock readout — purely a diagnostic indicator in
+   v1 (see systems/clock.js), so it's not a button, just a small pill
+   matching .hdr-lv's weight rather than competing with deck/bag */
+.hdr-clock{display:flex;align-items:center;gap:4px;height:34px;flex-shrink:0;
+  padding:0 8px;background:var(--sunk);border:1px solid var(--line);
+  border-radius:var(--r-sm);color:var(--ink-3);font-size:11px;
+  font-variant-numeric:tabular-nums}
+.hdr-clock svg{display:block}
 .hdr-bag{width:34px;height:34px;flex-shrink:0;display:flex;align-items:center;
   justify-content:center;background:var(--sunk);border:1px solid var(--line);
   border-radius:var(--r-sm);cursor:pointer}
@@ -278,6 +286,27 @@ body{
 .farm-plot .dot.empty{background:var(--ink-3)}
 .farm-plot .dot.needs-water{background:var(--bad)}
 .farm-plot .dot.ready{background:var(--good)}
+/* growth progress — a bar along the plot's bottom edge, the same
+   treatment tap-craft rows use (.r-progress). The corner ring says
+   WHICH state the plot is in; this says how much longer. */
+.farm-progress{position:absolute;left:0;right:0;bottom:0;height:3px;
+  background:var(--line-2);overflow:hidden;
+  border-bottom-left-radius:var(--r);border-bottom-right-radius:var(--r)}
+.farm-progress-fill{display:block;height:100%;width:0;background:var(--accent)}
+/* watering splash — one-shot ripple out from the middle of the plot,
+   plus a small squash on the plot itself */
+.farm-plot.watering{animation:farmWaterPulse .6s ease-out}
+.farm-plot.watering::after{
+  content:'';position:absolute;left:50%;top:50%;width:14px;height:14px;
+  margin:-7px 0 0 -7px;border-radius:50%;pointer-events:none;
+  border:2px solid var(--accent);
+  animation:farmRipple .6s ease-out forwards}
+@keyframes farmWaterPulse{0%{transform:scale(1)}35%{transform:scale(1.05)}100%{transform:scale(1)}}
+@keyframes farmRipple{0%{transform:scale(.35);opacity:.85}100%{transform:scale(4.2);opacity:0}}
+@media (prefers-reduced-motion:reduce){
+  .farm-plot.watering,.farm-plot.watering::after{animation:none}
+  .farm-progress-fill{transition:none !important}
+}
 /* the "buy another plot" tile — same square slot, solid accent
    border like an available action rather than dashed-empty, dims
    and blocks the tap once the cost can't be afforded. */
@@ -541,6 +570,16 @@ body{
 .prayer-panel .num{color:var(--spirit)}
 .prayer-note{font-size:11px;line-height:1.6;color:var(--ink-2);margin-top:10px;
   padding-top:10px;border-top:1px solid #e2dcf0}
+
+/* ---------- season (Home page) ---------- */
+.season-panel{background:var(--zone-soft);border:1px solid var(--zone-line);
+  border-radius:var(--r);padding:12px 14px;margin-bottom:16px}
+.season-top{display:flex;align-items:center;gap:11px}
+.season-ico{flex-shrink:0;display:flex}
+.season-name{font-size:15px;font-weight:600;color:var(--ink)}
+.season-sub{font-size:11px;color:var(--ink-2);margin-top:1px}
+.season-bar{height:4px;border-radius:2px;background:var(--line-2);margin-top:10px;overflow:hidden}
+.season-bar-fill{display:block;height:100%;background:var(--accent);transition:width .3s ease-out}
 .deck-slots{display:flex;flex-direction:column;gap:8px;margin:0 0 14px}
 .deck-active-box{width:100%;display:flex;align-items:center;gap:10px;background:var(--card);
   border:1px solid var(--line);border-radius:var(--r);padding:10px 12px}

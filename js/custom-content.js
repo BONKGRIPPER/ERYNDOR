@@ -642,7 +642,8 @@
             "key": "riverTrout"
           },
           {
-            "key": "grayling"
+            "key": "grayling",
+            "nightOnly": true
           }
         ]
       },
@@ -703,7 +704,8 @@
       {
         "oneOf": [
           {
-            "key": "grayling"
+            "key": "grayling",
+            "nightOnly": true
           },
           {
             "key": "pike"
@@ -738,7 +740,8 @@
             "key": "brookTrout"
           },
           {
-            "key": "dace"
+            "key": "dace",
+            "nightOnly": true
           }
         ]
       },
@@ -799,7 +802,8 @@
       {
         "oneOf": [
           {
-            "key": "dace"
+            "key": "dace",
+            "nightOnly": true
           },
           {
             "key": "minnow"
@@ -956,7 +960,8 @@
             "key": "riverTrout"
           },
           {
-            "key": "grayling"
+            "key": "grayling",
+            "nightOnly": true
           }
         ]
       },
@@ -1184,7 +1189,8 @@
             "key": "bluegill"
           },
           {
-            "key": "perch"
+            "key": "perch",
+            "nightOnly": true
           },
           {
             "key": "carp"
@@ -1219,7 +1225,8 @@
             "key": "brookTrout"
           },
           {
-            "key": "dace"
+            "key": "dace",
+            "nightOnly": true
           },
           {
             "key": "minnow"
@@ -1254,7 +1261,8 @@
             "key": "riverTrout"
           },
           {
-            "key": "grayling"
+            "key": "grayling",
+            "nightOnly": true
           },
           {
             "key": "pike"

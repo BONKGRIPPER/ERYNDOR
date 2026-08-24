@@ -159,6 +159,70 @@ const readyCell = document.getElementById('farm').children[0].children[1];
 console.log('  ready cell\'s ring fill is at 0 offset (full ring):',
   readyCell.children[0].children[1].style.strokeDashoffset === '0');
 
+console.log('\n== flax and berries take 120s from watering, before farming levels ==');
+console.log('  flax base stage is 120s:', G.CROPS.flaxSeed.stageMs === 120000);
+console.log('  berries base stage is 120s:', G.CROPS.berrySeed.stageMs === 120000);
+G.wipe(); S.zone = 'aerendell'; S.weight = 0;
+S.skills.farming.lv = 1;
+console.log('  an untrained farmer waits the full 120s:',
+  G.farmGrowMs(G.CROPS.flaxSeed) === 120000);
+S.skills.farming.lv = 11;
+console.log('  the farming skill still shortens it (-2%/lv):',
+  G.farmGrowMs(G.CROPS.flaxSeed) < 120000);
+S.skills.farming.lv = 1;
+
+console.log('\n== a growing plot shows a progress bar and a live countdown ==');
+G.wipe(); S.zone = 'aerendell'; S.weight = 0;
+give('flaxSeed', 1);
+G.plantSeed(0, 'flaxSeed');
+G.waterPlot(0);
+UI.go('farm');
+const growCell = document.getElementById('farm').children[0].children[0];
+const bar = growCell.children.find(c => c.className === 'farm-progress');
+console.log('  a farm-progress bar is rendered:', !!bar);
+console.log('  it has a fill that animates toward 100%:',
+  !!bar && bar.children[0].className === 'farm-progress-fill' &&
+  bar.children[0].style.width === '100%');
+console.log('  the fill transitions over the REMAINING time, not the full stage:',
+  !!bar && /^width \d+ms linear$/.test(bar.children[0].style.transition));
+const growHint = growCell.children.find(c => c.className === 'farm-plot-hint');
+console.log('  the hint counts down instead of saying "growing":',
+  !!growHint && /left$/.test(growHint._html) && growHint._html.indexOf('growing') < 0);
+console.log('  and reads as mm:ss near the start of a 120s crop:',
+  !!growHint && /^[12]:\d\d left$/.test(growHint._html));
+/* nearly done -> seconds-only formatting */
+S.farmPlots[0].wateredAt = Date.now() - (S.farmPlots[0].stageMs - 9000);
+UI.renderFarm();
+const lateHint = document.getElementById('farm').children[0].children[0]
+  .children.find(c => c.className === 'farm-plot-hint');
+console.log('  under a minute it drops to plain seconds:',
+  !!lateHint && /^\ds left$/.test(lateHint._html));
+
+console.log('\n== watering plays a one-shot splash on the plot ==');
+G.wipe(); S.zone = 'aerendell'; S.weight = 0;
+give('flaxSeed', 1);
+G.plantSeed(0, 'flaxSeed');
+UI.go('farm');
+/* an earlier section watered plot 0, which correctly flagged it —
+   step past the splash's 700ms window so this starts clean */
+global.__clock += 5000;
+UI.renderFarm();
+const dryCell = document.getElementById('farm').children[0].children[0];
+console.log('  an un-watered plot has no splash:', dryCell.classList.contains('watering') === false);
+UI.flagWatered(0);
+UI.renderFarm();
+const wetCell = document.getElementById('farm').children[0].children[0];
+console.log('  the freshly-watered plot gets the splash class:',
+  wetCell.classList.contains('watering'));
+console.log('  a DIFFERENT plot does not:',
+  document.getElementById('farm').children[0].children[1].classList.contains('watering') === false);
+/* the flag is time-boxed, so a later re-render doesn't replay it */
+UI.flagWatered(0);
+global.__clock += 5000;
+UI.renderFarm();
+console.log('  and it does not replay on a later re-render:',
+  document.getElementById('farm').children[0].children[0].classList.contains('watering') === false);
+
 console.log('\n== Bag page renders a card for the seed, and its detail sheet shows the region ==');
 G.wipe(); S.zone = 'aerendell'; S.weight = 0;
 give('flaxSeed', 1);

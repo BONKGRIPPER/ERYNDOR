@@ -55,6 +55,10 @@
   });
 
   G.on('state:changed', () => UI.renderAll());
+  /* the clock readout ticks every real minute (systems/clock.js) —
+     cheap enough to update directly rather than triggering a full
+     UI.renderAll for a text change nothing else depends on. */
+  G.on('clock:changed', () => UI.renderClock());
   G.on('deck:changed', () => { UI.renderPips(); if (S.page === 'deck') UI.renderDeck(); });
   G.on('deck:reshuffled', () => UI.renderPips());
   G.on('pins:changed', () => {
@@ -132,7 +136,10 @@
     UI.renderAll();
   });
   G.on('farm:planted', () => G.playAudioHook && G.playAudioHook('action.plant'));
-  G.on('farm:watered', () => G.playAudioHook && G.playAudioHook('action.water'));
+  G.on('farm:watered', ({ i }) => {
+    UI.flagWatered(i);               // renderFarm replays the splash on the new cell
+    if (G.playAudioHook) G.playAudioHook('action.water');
+  });
   G.on('farm:harvested', () => G.playAudioHook && G.playAudioHook('action.harvest'));
   G.on('station:upgraded', ({ name, level }) =>
     UI.banner('Upgraded', name + ' — Lv' + level, 'tap-crafting here is faster now', 'spirit'));

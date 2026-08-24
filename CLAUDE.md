@@ -91,8 +91,11 @@ the shim above is only a fallback, not the itch.io path. Regenerate with
     node test/tieredprayer.js purge/restore/move prayer cost scales 2x per gear tier, Donate bar's 10x xp-per-fill
     node test/villagerslowdown.js villagerCraftMult 25x (was 5x), Forage's halved flax/berries yield (seeds untouched)
     node test/deckaltar.js   Bone Altar renders on the Deck page (not Craft), craft-tab dot ignores off-page stations
-    node test/foodcards.js   food-as-cards, fuel points, anyOf costs, eat-on-play consumption
+    node test/foodcards.js   food-as-cards (persist on play), fuel points, anyOf costs
     node test/damagetypes.js blunt/pierce/slash/ranged typing, weak/resist multipliers, ships inert
+    node test/clock.js      real-device clock, day/night boundary, flip-only re-render, header readout
+    node test/season.js     seasonal calendar (1 real week = 1 season), Day1=Spring, old-save migration
+    node test/nightgating.js Batch 3: night hours, nightOnly fish, 2x enemy dmg/loot at night
 
 Run **all of them** after any change. `smoke.js` also does two static checks
 that have caught real bugs: DOM ids referenced in JS but missing from
@@ -588,19 +591,20 @@ editor's next Save.
 - **Food is CARDS ONLY — there is no eat-from-the-bag path.**
   `G.eat`/`G.canEat` are deleted; raw food (berries, poultry, pork,
   steak, every fish) is now purely an INGREDIENT. Healing happens by
-  playing a `kind:'food'` card, which **consumes the card** — it
-  leaves the deck permanently (`G.consumeCardFromDeck`, engine.js,
-  which removes exactly ONE copy, unlike `drainDurability` which
-  yanks them all). That's what makes food a recurring cost the farm/
-  cooking economy has to keep supplying rather than a one-time craft
-  that heals forever. A clean tap doubles the heal like everything
-  else; playing at full health refuses WITHOUT burning the card.
+  playing a `kind:'food'` card. A clean tap doubles the heal like
+  everything else; playing at full health refuses WITHOUT burning the card.
   Four cards: Red Berry (1), Cooked Meat (3), Cooked Fish (3),
   Cooked Rare Fish (5). The starting deck is 3/3/3 + **1 Red Berry**
   (10 cards). A food card is an ordinary card in every other respect —
-  dealt into the hand, played from it, and showing `+N hp` on its face
-  via `combatLine` (which would otherwise leave it blank, since food
-  grants no resources to list).
+  dealt into the hand, played from it, **not consumed** (it stays in
+  the deck and comes round again next cycle), and showing `+N hp` on
+  its face via `combatLine` (which would otherwise leave it blank,
+  since food grants no resources to list). The limit on healing is
+  therefore DECK SPACE, not stock: `TUNE.maxCardCopies` 3 caps how
+  many heals you carry per cycle, which is what makes later food
+  tiers worth their slots. `G.consumeCardFromDeck` (engine.js) is
+  left in place but unused — it's the codebase's only single-copy
+  remover and a future consumable card kind will want it.
   **The header hotbar is gone entirely** — `UI.renderHotbar`,
   `UI.healingItems`, `TUNE.hotbarSlots`, `#hotbar` and the whole
   `.hot*` CSS block are all deleted. It existed to tap-to-eat from
@@ -657,6 +661,98 @@ editor's next Save.
   passes it — routing damage typing through it silently made picks
   unable to hit Khar-Barak's Scrap-Pick-gated ore vein. Keep the two
   separate.
+
+- **Farm plots show a live countdown and a progress bar while
+  growing, and splash when watered.** Flax and Red Berries are both
+  `stageMs: 120 * 1000` — 120s is the BASE, and the farming skill
+  still shortens it (`G.farmGrowMs`, -2%/level floored at 40%). The
+  plot's hint counts down (`2:00 left` -> `45s left`, `fmtRemain` in
+  ui.js) instead of reading "growing...", backed by a `.farm-progress`
+  bar along the bottom edge; the corner ring stays as the
+  at-a-glance state indicator. Watering plays a one-shot CSS ripple
+  (`.farm-plot.watering`), flagged via `UI.flagWatered` from the
+  `farm:watered` event and replayed at render — watering rebuilds the
+  whole grid, so a class set on the old element would be thrown away.
+  Honors `prefers-reduced-motion`.
+  Two things worth not regressing: the farm ticker now emits
+  `state:changed` while ANY plot is growing (not only when a stage
+  completes), or the countdown would freeze between renders; and
+  **the growth animations start in a deferred pass after
+  `wrap.appendChild(grid)`** — `void el.offsetWidth` cannot force a
+  reflow on a node that isn't in the document yet, so setting the
+  from-state during the build loop meant the browser only ever saw
+  the end state and the bar snapped straight to 100%. The ring had
+  the same latent bug. See `test/farm.js`.
+
+- **Batch 1 of the real-time/economy plan: the real-device clock.**
+  `systems/clock.js` — game hour IS the device's real hour
+  (`G.gameClock()`, `Date.now()`, nothing persisted, nothing cached).
+  Day is `[TUNE.dayStartHour, TUNE.nightStartHour)` (6am–8pm by
+  default); `G.isNight()` is the boolean everything downstream will
+  read. A shared-registry ticker (`registerTicker('clock', 60000,
+  ...)`) fires `clock:changed` every real minute so the header
+  readout stays live, but only emits `state:changed` — the signal
+  that triggers a full `UI.renderAll()` — on an actual day/night
+  FLIP, same "don't re-render for nothing" discipline the farm/
+  villager tickers already follow. A small header pill
+  (`#clock-badge`, styled to match `.hdr-lv`'s weight rather than
+  compete with the deck/bag buttons) shows a sun/moon glyph plus a
+  12-hour readout — purely diagnostic in v1, nothing tappable yet.
+  Player clock manipulation is explicitly NOT defended against —
+  single-player, no server authority, no monetization; confirmed
+  as an accepted tradeoff, not an oversight.
+  **Test-harness gotcha, worth remembering for every future
+  real-time system:** `test/harness.js` only mocks `Date.now()`, not
+  the `Date` constructor — `new Date()` with no arguments returns the
+  REAL wall-clock time in tests, silently. `G.gameClock()` calls
+  `new Date(Date.now())` specifically so it goes through the mocked
+  path; any future code reaching for `new Date()` directly will look
+  correct in the browser and then be untestable. See `test/clock.js`.
+
+- **Batch 2 of the real-time/economy plan: the seasonal calendar.**
+  Built into `systems/clock.js` alongside the device clock. One real
+  week = one in-game season (`G.SEASONS`: spring, summer, autumn,
+  winter, repeating every 4 weeks); `G.gameDay()` counts real days
+  since `S.seasonEpoch`, `G.gameSeason()` derives the season from it.
+  `S.seasonEpoch` is stamped once, in `G.freshState`, at the exact
+  moment a character is created — this is what guarantees "Day 1 is
+  always Spring" regardless of the real-world date, since the
+  calendar only ever counts relative to that save's own start. An old
+  save with no `seasonEpoch` gets one backfilled to `Date.now()` on
+  load, so it also restarts at Day 1/Spring rather than trying to
+  backdate to an arbitrary past date. Purely local — nothing
+  server-synced, matching the brief's own explicit scope decision.
+  `UI.renderSeason` draws a small panel (`#season-panel`, styled off
+  the same `--zone-soft`/`--zone-line` tokens the zone bar uses) at
+  the top of the Home page: season name, "day N of 7 · M days left"
+  (reading "changes tomorrow" on the last day instead of "0 days
+  left"), and a progress bar. Four new sprites
+  (`seasonSpring/Summer/Autumn/Winter`) give each season its own
+  glyph rather than reusing the day/night sun for Summer.
+  The clock ticker (from Batch 1) now also tracks day ROLLOVERS, not
+  just day/night flips — a midnight rollover doesn't necessarily
+  cross the day/night boundary (night already spans across midnight
+  by default), so without a separate check the season panel could go
+  stale if left open across it. `season:dayChanged` fires on a real
+  rollover and also triggers `state:changed`.
+  See `test/season.js`.
+
+- **Batch 3 of the real-time/economy plan: time-of-day gating.**
+  Night is 9pm-7am (`TUNE.nightStartHour`/`dayStartHour`, adjusted
+  from Batch 1's placeholder 8pm-6am). `G.rollDrops` (engine.js) now
+  filters out any dropTable/oneOf entry flagged `nightOnly: true`
+  during the day — not zero-chance, actually absent, so it doesn't
+  dilute the other options' odds while unavailable. One fish per
+  fishing zone is nightOnly: perch (Forest Road pond), dace
+  (Still-tide Pass), grayling (Khar-Barak) — all in custom-content.js,
+  the only file these locations live in.
+  Hostiles (any location with `atk`) hit `TUNE.nightAtkMult` (2x)
+  harder at night — applied where melee/ranged already compute
+  `rawBack` in systems/cards.js — and drop `TUNE.nightLootMult` (2x)
+  more loot, applied in `G.damageLocation` right after `G.rollDrops`,
+  gated on `def.atk` so gathering nodes (boulders, trees) are
+  unaffected — this is combat risk/reward, not a blanket night bonus.
+  See `test/nightgating.js`.
 
 ## Known open questions
 

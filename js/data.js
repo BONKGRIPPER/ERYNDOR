@@ -66,6 +66,16 @@
     resistMult: 0.5,         // damage multiplier against a type the target resists
     marketBuyMult: 2,        // Market page: buy price = worth * this (sell is worth * 1)
     marketSellBatch: 5,      // Market page: Sell button moves up to this many of a stack per tap
+    /* Real-time clock (systems/clock.js) — game hour IS the device's
+       real hour. Day is [dayStartHour, nightStartHour); everything
+       else is night. */
+    dayStartHour: 7,
+    nightStartHour: 21,
+    /* Batch 3, real-time plan: enemies hit harder and drop more at
+       night — the "prepare before you go" stakes the brief wants,
+       tied to a real clock instead of a fixed danger zone. */
+    nightAtkMult: 2,
+    nightLootMult: 2,
   };
 
   /* ---- SKILLS -------------------------------------------------
@@ -213,11 +223,14 @@
      farming skill level — see G.farmGrowMs). `yield` is a normal
      drop table, the same shape G.rollDrops already consumes for
      G.LOCATIONS (plain string or {key,min,max,chance}). */
+  /* stageMs is the BASE time from watering to harvest — the farming
+     skill still shortens it (G.farmGrowMs: -2% per level, floored at
+     40% of base), so 120s is what an untrained farmer waits. */
   G.CROPS = {
     flaxSeed:  { name: 'Flax',        region: 'leth-eiren', stages: 1,
-                 stageMs: 5 * 60 * 1000, yield: [{ key: 'flax', min: 5, max: 5 }] },
+                 stageMs: 120 * 1000, yield: [{ key: 'flax', min: 5, max: 5 }] },
     berrySeed: { name: 'Red Berries', region: 'leth-eiren', stages: 1,
-                 stageMs: 4 * 60 * 1000, yield: [{ key: 'berries', min: 5, max: 5 }] },
+                 stageMs: 120 * 1000, yield: [{ key: 'berries', min: 5, max: 5 }] },
   };
 
   /* ---- CONSUMABLES ---------------------------------------------

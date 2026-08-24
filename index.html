@@ -25,6 +25,9 @@
         <span class="hdr-zone-xp"><span class="hdr-zone-xp-fill" id="zone-xp-fill"></span></span>
       </button>
       <div class="hdr-actions">
+        <div class="hdr-clock" id="clock-badge" title="the game clock follows your device's real time">
+          <span id="clock-ico"></span><span id="clock-time"></span>
+        </div>
         <button class="hdr-deck" id="deck-btn">
           <span class="hdr-deck-ico" id="deck-ico"></span>
           <span class="hdr-deck-n"><b id="deck-left">30</b><i>/</i><span id="deck-total">30</span></span>
@@ -54,6 +57,7 @@
     <!-- HOME -->
     <div class="page" id="page-home">
       <div class="pad">
+        <div id="season-panel"></div>
         <div class="sec"><span class="sec-l">The Known World</span>
           <span class="hint">travel between zones</span></div>
         <div id="world"></div>
@@ -294,6 +298,7 @@
 <script src="js/custom-assets.js"></script>
 <script src="js/core.js"></script>
 <script src="js/engine.js"></script>
+<script src="js/systems/clock.js"></script>
 <script src="js/systems/cards.js"></script>
 <script src="js/systems/craft.js"></script>
 <script src="js/systems/food.js"></script>
@@ -323,7 +328,7 @@
      cache, belt-and-braces alongside the query bust. */
   if ('serviceWorker' in navigator && (location.protocol === 'http:' || location.protocol === 'https:')) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js?v=3', { updateViaCache: 'none' }).catch(() => {});
+      navigator.serviceWorker.register('sw.js?v=4', { updateViaCache: 'none' }).catch(() => {});
     });
   }
 </script>

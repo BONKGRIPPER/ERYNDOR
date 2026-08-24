@@ -24,6 +24,17 @@
   let deckPickerOpen = false;
   let openMovePickerKey = null;
   let openStationMenu = null;   // station id whose Level Up / Hire menu is expanded
+  /* which farm plot was just watered, so renderFarm can replay the
+     splash on the freshly-rebuilt cell — see UI.flagWatered */
+  let justWatered = { i: -1, at: 0 };
+  UI.flagWatered = function (i) { justWatered = { i, at: Date.now() }; };
+
+  /* "1:23" / "45s" — a growing plot's remaining time */
+  function fmtRemain(ms) {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    if (s < 60) return s + 's';
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
 
   /* ---------- pinned recipes bar (above the tabs) ----------- */
   UI.renderPinBar = function () {
@@ -83,8 +94,43 @@
     }).join('');
   };
 
+  /* the header's real-device clock readout — see systems/clock.js.
+     Diagnostic only in v1: shows the sun/moon and the current hour,
+     nothing tappable yet. */
+  UI.renderClock = function () {
+    const ico = $('clock-ico'); const time = $('clock-time');
+    if (!ico || !time) return;
+    const c = G.gameClock();
+    ico.innerHTML = sp(c.isNight ? 'moon' : 'sun', 15);
+    const h12 = ((c.hour + 11) % 12) + 1;
+    time.textContent = h12 + ':' + String(c.minute).padStart(2, '0') + (c.hour < 12 ? 'am' : 'pm');
+  };
+
+  /* the seasonal calendar readout, top of the Home page — see
+     G.gameSeason/G.daysLeftInSeason, systems/clock.js */
+  const SEASON_SPRITE = { spring: 'seasonSpring', summer: 'seasonSummer', autumn: 'seasonAutumn', winter: 'seasonWinter' };
+  UI.renderSeason = function () {
+    const wrap = $('season-panel'); if (!wrap) return;
+    const season = G.gameSeason();
+    const dayOfWeek = (G.gameDay() % 7) + 1;
+    const left = G.daysLeftInSeason();
+    wrap.innerHTML = '';
+    const panel = el('div', 'season-panel');
+    panel.innerHTML =
+      `<div class="season-top">
+         <span class="season-ico">${sp(SEASON_SPRITE[season], 26)}</span>
+         <div>
+           <div class="season-name">${season[0].toUpperCase() + season.slice(1)}</div>
+           <div class="season-sub">day ${dayOfWeek} of 7 · ${left === 0 ? 'changes tomorrow' : left + ' day' + (left === 1 ? '' : 's') + ' left'}</div>
+         </div>
+       </div>
+       <div class="season-bar"><span class="season-bar-fill" style="width:${(dayOfWeek / 7) * 100}%"></span></div>`;
+    wrap.appendChild(panel);
+  };
+
   UI.renderVitals = function () {
     UI.applyTheme();
+    UI.renderClock();
     const zn = $('zone-name');
     if (zn) { zn.textContent = G.zoneName(); }
     const zr = $('zone-region');
@@ -1712,6 +1758,7 @@
 
   /* ---------- home: regions and travel ---------------------- */
   UI.renderHome = function () {
+    UI.renderSeason();
     const wrap = $('world'); wrap.innerHTML = '';
     G.REGIONS.forEach(reg => {
       const zones = G.regionZones(reg.id);
@@ -1908,6 +1955,7 @@
     $('farm-slots').textContent = G.farmPlotCount() + ' plot' + (G.farmPlotCount() === 1 ? '' : 's');
     wrap.innerHTML = '';
     const grid = el('div', 'farm-grid');
+    const pendingGrowth = [];   // growth animations, started once the grid is live
     for (let i = 0; i < G.farmPlotCount(); i++) {
       const plot = S.farmPlots[i];
       const cell = el('div', 'farm-plot');
@@ -1955,23 +2003,41 @@
       }
       cell.appendChild(el('span', null, sp(G.resSprite(plot.seedKey), 24)));
       cell.appendChild(el('div', 'farm-plot-name', crop.name));
+
+      const elapsed = growing ? Date.now() - plot.wateredAt : 0;
+      const remain = growing ? Math.max(0, plot.stageMs - elapsed) : 0;
       cell.appendChild(el('div', 'farm-plot-hint',
-        ready ? 'tap to harvest' : growing ? 'growing…' : 'tap to water'));
+        ready ? 'tap to harvest' : growing ? fmtRemain(remain) + ' left' : 'tap to water'));
 
       if (ready) {
         fill.style.transition = 'none';
         fill.style.strokeDashoffset = '0';
       } else if (growing) {
-        const elapsed = Date.now() - plot.wateredAt;
-        const remain = Math.max(0, plot.stageMs - elapsed);
         const frac = Math.min(1, elapsed / plot.stageMs);
-        fill.style.transition = 'none';
-        fill.style.strokeDashoffset = String(C * (1 - frac));
-        void fill.offsetWidth;
-        fill.style.transition = 'stroke-dashoffset ' + remain + 'ms linear';
-        fill.style.strokeDashoffset = '0';
+        /* An explicit bar along the bottom edge, on top of the corner
+           ring — the ring reads as a state at a glance, the bar (plus
+           the countdown above) answers "how much longer". */
+        const barTrack = el('div', 'farm-progress');
+        const barFill = el('div', 'farm-progress-fill');
+        barTrack.appendChild(barFill);
+        cell.appendChild(barTrack);
+        /* Both the ring and the bar start at the TRUE elapsed point
+           and transition over only the REMAINING time, so a re-render
+           mid-growth resumes instead of restarting. The from-state has
+           to be applied after the grid is in the document, though —
+           forcing a reflow on a detached node does nothing, and the
+           browser would just see the end state and never animate.
+           Hence the deferred pass after wrap.appendChild(grid). */
+        pendingGrowth.push({ ring: fill, bar: barFill, frac, remain, C });
       } else {
         fill.style.strokeDashoffset = String(C);   // needs-water: empty ring
+      }
+      /* Watering splash — a one-shot CSS ripple. The flag is checked
+         at render (not applied on the live node at click time) because
+         watering re-renders the whole grid, which would throw away a
+         class set on the old element. */
+      if (justWatered.i === i && Date.now() - justWatered.at < 700) {
+        cell.classList.add('watering');
       }
       cell.onclick = () => {
         if (ready) G.harvestPlot(i);
@@ -1996,6 +2062,20 @@
       grid.appendChild(buildCell);
     }
     wrap.appendChild(grid);
+    /* Now that the cells are actually in the document, set each growth
+       animation's start point, force one real reflow, and let it run
+       out the remaining time. */
+    pendingGrowth.forEach(g => {
+      g.ring.style.transition = 'none';
+      g.ring.style.strokeDashoffset = String(g.C * (1 - g.frac));
+      g.bar.style.transition = 'none';
+      g.bar.style.width = (g.frac * 100) + '%';
+      void g.bar.offsetWidth;                       // one reflow, both elements
+      g.ring.style.transition = 'stroke-dashoffset ' + g.remain + 'ms linear';
+      g.ring.style.strokeDashoffset = '0';
+      g.bar.style.transition = 'width ' + g.remain + 'ms linear';
+      g.bar.style.width = '100%';
+    });
     renderStationsInto('farm-stations', 'farm', 'No cooking stations available here yet.');
   };
 
