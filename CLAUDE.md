@@ -197,11 +197,33 @@ editor's next Save.
   die while away. The only offline progress is villagers (see township.js);
   crafting (including the former campfire/furnace/altar machines) is all
   tap-to-craft now — a short timed cycle per tap, not a background process.
-- **Per-zone decks.** Each zone owns its deck and pasture; inventory, skills
-  and buildings are shared.
-- **Cross-zone dependencies are deliberate.** Cottages in zone 1 need nails
-  from zone 2; campsites in zone 2 need tanned leather from zone 3. The Scrap
-  Pick is built in zone 2 but only pays out ore in zone 3.
+- **The deck is global; only the pasture (location field) is per-zone.**
+  Deck, deck slots, inventory, and skills are all shared everywhere — see
+  the "deck is global" entry below. Zones each own their own location
+  field/pasture and, as of the home-base rework directly below, nothing
+  else.
+- **Every zone but Aerendell is gather-only now — home-base rework.**
+  Every crafting station except Bare Hands (`G.ALWAYS_BUILT`) carries
+  `zones: ['aerendell']` and refuses to build anywhere else
+  (`G.buildStation` checks `G.inZone(st)` directly, not just the UI
+  hiding the option). This replaces the old "cross-zone dependencies are
+  deliberate" design — cottages needing nails from one zone, tanned
+  leather from another, the Scrap Pick built in one zone but only paying
+  out ore in a third — all of that required REBUILDING stations fresh in
+  every zone you traveled to, which is exactly the "starting over each
+  zone" friction this reverses. The loop now: travel out, gather what
+  Aerendell can't produce, bring it home, craft at the one set of
+  stations you actually maintain. Farming followed the same move —
+  `G.plantSeed` now requires `S.zone === G.START_ZONE` outright (it used
+  to be region-locked, so Forest Road could farm too since it shares
+  Aerendell's region); the Farm page shows an explanatory empty state
+  elsewhere rather than dead "tap to plant" tiles that would silently
+  fail. Two now-stale things worth knowing if you touch stations again:
+  `S.built` is still stashed per zone in `world.js` (harmless — no zone
+  but Aerendell will ever populate it beyond Bare Hands), and several
+  recipes inside `bench`/`armorBench` still carry their own
+  now-redundant `zones: ['aerendell']` from when they were split by zone
+  — left as explicit documentation, not a bug. See `test/zonebuild.js`.
 - **Fishing is a card kind, not a special case.** `requires: 'fishing'`
   locations (ponds, riverbanks, streams) are matched by `G.activeLocation`/
   `G.damageLocation` through the exact same generic `requires`-matching path
@@ -737,6 +759,23 @@ editor's next Save.
   rollover and also triggers `state:changed`.
   See `test/season.js`.
 
+- **Fixed a real bug: the farm growth ticker forced a full app
+  re-render every 5s while ANYTHING was watered, on EVERY page —
+  including mid-hand on Play.** Batch 2's farm-countdown-refresh
+  addition (above) fired `state:changed` (a full `UI.renderAll()`)
+  once a plot was growing, with no page check. That meant every open
+  session forced a whole-app re-render every 5 seconds for the entire
+  growth duration the moment any plot was watered, regardless of what
+  the player was doing — including mid-tap during an active reflex
+  window on the Play page. Fixed: the countdown refresh now only
+  fires while `S.page === 'farm'`; the real stage-completion event
+  (`farm:advanced`) still fires on any page, since the nav badge needs
+  it. Reported as "cards auto-select and it won't stop, starting
+  ~10min into a session" — timing consistent with a first crop
+  finishing its water cycle. Not fully reproduced live before fixing
+  (usage-constrained); flagged as the most likely and most reckless
+  candidate found, and an unambiguous improvement regardless.
+
 - **Batch 3 of the real-time/economy plan: time-of-day gating.**
   Night is 9pm-7am (`TUNE.nightStartHour`/`dayStartHour`, adjusted
   from Batch 1's placeholder 8pm-6am). `G.rollDrops` (engine.js) now
@@ -754,7 +793,189 @@ editor's next Save.
   unaffected — this is combat risk/reward, not a blanket night bonus.
   See `test/nightgating.js`.
 
+- **Recipe pins are gone; the Craft page's Craft button is bigger.**
+  The one call site that created a `{type: 'recipe', ...}` pin (the
+  per-recipe row in `renderStationsInto`, js/ui.js) was removed along
+  with its `Pin` button — a recipe pinned before this change still
+  shows in the pin bar and can still be un-pinned from there, this
+  only stops new ones. Station-type pins (the Craft page's per-station
+  build row, and the station-menu Level Up section) are untouched. The
+  Craft button itself grew via a new `.px-btn.lg` class
+  (`font-size:13.5px;padding:12px 16px;min-height:44px;min-width:76px`,
+  css/style.css) — freeing up the space the removed Pin button used
+  to occupy made room for it.
+- **Batch 4 of the real-time/economy plan: real-time travel, on a
+  linear road chain.** Travel is no longer instant — starting a trip
+  (`G.travel`, systems/world.js) opens a full-screen locking overlay
+  (`#travel-overlay`, a `position:fixed;inset:0;z-index:500` sibling
+  placed right after `.saveflash` in index.html) that blocks every tap
+  underneath until the trip's real-world duration has actually
+  elapsed; the player explicitly chose "lock the UI" over "stay
+  playable while traveling." `S.travel` is `null` or `{from, to,
+  departAt, arriveAt}`; arrival resolves lazily (`G.checkTravelArrival`,
+  same "compute on next read" principle as farm growth/villager work)
+  from a dedicated 1s ticker and once at boot right after `G.load()`,
+  so a trip completes correctly whether or not the app was open the
+  whole time. The ticker calls `UI.renderTravelOverlay()` directly for
+  the per-second countdown rather than emitting `state:changed` (a
+  full `UI.renderAll()`) — the exact mistake the farm-growth ticker
+  made earlier this session (see the "auto-select" bug entry above);
+  arrival itself IS global (new zone, new stations, new field) so it
+  correctly still emits `state:changed` there.
+  **Cost is a single ordered road, not a full point-to-point map or a
+  flat per-zone number.** `G.TRAVEL_ROAD` (data.js, right after
+  `G.START_ZONE`) is one ordered list — `aerendell -> forestRoad (30s)
+  -> kharBarak (5min) -> stillTidePass (5min) -> duunVaelBridge (5min)
+  -> riverhold (10min)` — where each entry's `ms` is the cost of
+  stepping INTO it from the entry immediately before. `G.travelCost(id)`
+  sums every link strictly between the player's current zone and the
+  destination's positions in that list, in either direction, so it's
+  genuinely point-to-point: Khar-Barak -> Still-tide Pass costs exactly
+  5:00 (not "5:30 from Aerendell"), and a full Aerendell -> Riverhold
+  run costs 25:30. Deliberately ONE centralized array rather than a
+  `travelHours`-style field living on each zone object — a first
+  attempt at that field-per-zone approach was silently overridden by
+  `js/custom-content.js`'s wholesale zone redeclares (the same
+  Architecture-section gotcha that's bitten stations/boulder before),
+  caught via a failing test before it shipped. See `test/travel.js`.
+
+- **Forage is zone-specific now — Aerendell only ever turns up Red
+  Berries, Forest Road only ever turns up Flax.** `G.rollForage`
+  (systems/cards.js) branches on `S.zone`: Aerendell rolls `berries`
+  (100% — there's no other primary item to compete with) plus the
+  same independent 15% `berrySeed` chance it always had; Forest Road
+  mirrors that with `flax`/`flaxSeed`; any OTHER zone falls back to
+  the original 50/50-flax-or-berries roll, so forage stays functional
+  anywhere the card can be played without a zone rule of its own. The
+  card's `face()` preview branches the same way. This is a real,
+  load-bearing gate now: flax — and therefore String (Loom), and
+  therefore the Bow and Fishing Net (Bench) — can only ever be
+  gathered in Forest Road, so those recipes are only reachable once
+  the player has actually made the trip out and back. See
+  `test/zoneforage.js`.
+- **Fishing Net now costs String + Stick, not raw Flax, and lost a
+  now-impossible zone lock.** It was `{stick: 8, flax: 6}` with
+  `zones: ['forestRoad']` (custom-content.js's bench recipes) — that
+  zone lock made it permanently uncraftable the moment stations
+  became Aerendell-only (see the home-base rework entry above): a
+  station can only ever be built in Aerendell, so a recipe requiring
+  the player to be standing in Forest Road while at that station could
+  never actually fire. Now `{string: 3, stick: 8}` with no zone
+  field — the flax dependency still exists, just one step removed
+  (Forest Road flax → Loom → String → Bench), and craftable wherever
+  the Bench itself is. `fishingRod` (also bench, unaffected) still
+  legitimately restricts by `zones`, but for a different reason — it
+  can't be built AT ALL in Aerendell, not "requires standing
+  somewhere the station doesn't exist."
+- **A one-shot banner calls out the Loom ("Spinning Table") the first
+  time flax makes it home.** `S.loomUnlockShown` (persisted,
+  `core.js`) flips true and fires `UI.banner('Unlocked', 'Spinning
+  Table', ...)` the first time `travel:done` fires with `id ===
+  G.START_ZONE` while `S.discovered.flax` is true (js/main.js). This
+  is on top of, not instead of, the existing generic `'discovered'`
+  toast ("First Flax. New recipes may be available.") — that one's
+  event-driven off discovery itself (fires out in Forest Road, before
+  anything is actually reachable yet); this one's arrival-driven and
+  names the specific station, once, at the moment it actually becomes
+  useful. Note `UI.toast` is currently a no-op (an early `return;` —
+  see its definition in `ui.js`) — every live in-game notification
+  right now actually goes through `UI.banner`, not `UI.toast`; don't
+  assume a `UI.toast(...)` call is user-visible without checking that.
+
+- **Recipes can now gate behind a station's upgrade tier, not just
+  discovered materials.** A new `minLevel` field on a recipe (e.g.
+  `{ id: 'scrapAxe', minLevel: 2, ... }`) is checked in both
+  `canStartRecipe` (craft.js — a hard block, so no other path in can
+  bypass it) and `UI.renderStationsInto` (ui.js — the recipe stays
+  fully hidden below that level, same "undiscovered stays hidden"
+  treatment `costKnown` already gets, rather than showing disabled).
+  **The Crafting Bench's level-2 upgrade now costs Scrap Metal too**
+  (`{basaltBlock: 8, planks: 30, scrapMetal: 10}`, was missing the
+  scrapMetal term) **and Bench lv2 is what actually unlocks
+  scrapAxe/scrapPick/scrapSword/scrapShield** (`minLevel: 2` on all
+  four) — discovering Scrap Metal alone used to be enough, which
+  didn't line up with Scrap Metal itself only ever dropping from
+  goblins, a real fight, while the recipes sat there craftable from
+  turn one. **Also fixed in passing**: custom-content.js's live
+  version of scrapAxe/scrapPick/scrapSword carried a stale
+  `zones: ['forestRoad', 'kharBarak']` — left over from before
+  stations became Aerendell-only (see the home-base rework entry) —
+  which made them permanently uncraftable (a station can never be
+  built anywhere a recipe's zone lock might require standing). That
+  zone lock is gone; `minLevel` is the real gate now. See
+  `test/scrapshield.js` (the level-gating half) and `test/mining.js`
+  (updated to build/upgrade in Aerendell instead of the no-longer-
+  reachable Forest Road it used to build at).
+- **Shield cards are a new passive card kind — Scrap Shield is the
+  first.** Unlike every other kind, a shield card does nothing when
+  tapped (`G.registerCardKind('shield', ...)`, systems/cards.js) —
+  its real effect just requires sitting in the CURRENT DEALT HAND.
+  `G.shieldBlock()` (engine.js, next to `G.hand`) sums `block` across
+  every shield-kind card currently in hand; `G.mitigate` (core.js)
+  now subtracts both `G.defense()` (equipped armor) and
+  `G.shieldBlock()` from every incoming hit, so it's live the instant
+  a shield is dealt and gone the instant that hand resolves — no
+  separate "equip" step, no persistence beyond the hand it's in.
+  Scrap Shield (`{block: 1}`, tier 2, bench recipe costing
+  `{scrapMetal: 4, planks: 4}`, `minLevel: 2`) is the only shield that
+  exists yet; a future tier is just a bigger `block` number on a new
+  card, nothing else to wire up. See `test/scrapshield.js`.
+
+- **Aggro enemies chip the player on every card played, not just
+  when attacked — the goblin is the first.** A new `aggro: true`
+  field on a `G.LOCATIONS` def (currently only `goblin`, which turns
+  up in Forest Road/Still-tide Pass/Duun-Vael Bridge — it's one
+  shared definition, not a per-zone copy, so flagging it applies
+  everywhere it appears) makes `G.resolveCard` (engine.js) deal
+  `aggroDmg` (1) to the player on EVERY card played while it's alive
+  in the field, any kind at all — a Gather, a Forage, a Craft-page
+  tap-to-craft never even touches this, only actual hand-card plays
+  do. This is on top of, not instead of, the normal atk-based
+  retaliate-on-a-failed-kill; a new `meleeBonusDmg` field (2, goblin
+  only so far) adds extra damage to THAT retaliate specifically when
+  the failed kill attempt was a melee card (ranged/other kinds are
+  unaffected). The aggro tick is snapshotted from `S.locationField`
+  BEFORE `kind.resolve()` runs, so a swing that kills the aggro enemy
+  outright still counts as "it was alive when this card was played."
+  **Also fixed in passing**: the shared `goblin` def's `zones`-style
+  reachability wasn't broken, but this pass is what surfaced that the
+  scrap-tier recipes nearby carried the same stale-zone-lock bug (see
+  the scrap-tier entry above) — worth rechecking any similarly-old
+  content near something you're actively touching.
+- **A short "enemy strikes" animation now plays for every source of
+  enemy damage, aggro or ordinary retaliate alike.** A new
+  `'enemy:attack'` event (`{name, dmg, index}`) fires from three
+  places — the new aggro tick, and the existing melee/ranged retaliate
+  sites (systems/cards.js) — deliberately separate from the existing
+  `'retaliate'` event, which still only fires for melee/ranged and
+  still only drives the "Bite back" banner; if the aggro tick reused
+  that banner it would pop on literally every single card played
+  while a goblin sits on the field, which is noise, not feedback.
+  `.locard.attacking` (css/style.css) is a quick `translateY` lift-
+  and-lunge, `enemyStrike` keyframe, ~0.3s. **The tricky part**:
+  `G.resolveCard` always fires a `state:changed` immediately after
+  `'enemy:attack'`, which triggers a full location-field rebuild
+  (`UI.renderLocationField`) — a class set directly on the DOM node
+  in main.js's handler would be classing an element that's torn down
+  a moment later, before the animation ever paints. Fixed the same
+  way the farm page's watering splash already solved this exact
+  problem: `UI.flagAttacked(index)` (ui.js, next to the pre-existing
+  `UI.flagWatered`) just records which slot and when; `UI.
+  renderLocationField` checks that flag at BUILD time and adds the
+  class to the freshly-built node itself, so it survives the
+  render that would otherwise wipe it. See `test/aggro.js`.
+
 ## Known open questions
+
+- **"A villager draws from the shared bank" is now unreachable through
+  real play.** Every station is Aerendell-only, and Aerendell has no
+  `bank: true` — only Khar-Barak and Riverhold do, and neither can host
+  a station any more. The mechanism itself still works correctly
+  (`test/villagerbar.js` verifies it by seeding the hired state
+  directly, since the normal build/hire flow now refuses), but no
+  player will ever trigger it unless Aerendell gains a bank or a
+  station becomes buildable in a bank zone again. Not fixed — just
+  flagging that this piece of earlier work is currently dead weight.
 
 - `requiresCard` is only actually enforced for AXE cards, because
   `G.damageLocation`'s `cardKey` argument is only passed by the axe

@@ -455,6 +455,14 @@
                 skill: 'woodcut', atk: 3, durability: 18, xp: 11, tint: 'wood', tier: 2, damageType: 'slash' },
     axeBronze:{ kind: 'axe', name: 'Fell Tree', type: 'Tool',
                 skill: 'woodcut', atk: 4, durability: 24, xp: 20, tint: 'wood', tier: 3, damageType: 'slash' },
+
+    /* Shield cards are passive — G.shieldBlock (engine.js) sums
+       `block` across every shield-kind card currently in the dealt
+       hand and G.mitigate (core.js) subtracts it from every incoming
+       hit, no tap required. `block` starts at 1 for the scrap tier;
+       future tiers just carry a bigger number. */
+    scrapShield: { kind: 'shield', name: 'Scrap Shield', type: 'Defense',
+                   skill: 'crafting', block: 1, durability: 18, xp: 20, tint: 'stone', tier: 2 },
   };
 
   /* ---- EVENTS ------------------------------------------------------
@@ -546,7 +554,18 @@
                  { key: 'tanningSalt', min: 1, max: 2, chance: 0.7 },
                  { key: 'gold', min: 2, max: 8, chance: 0.6 },
                ] },
+    /* Aggro: chips the player for `aggroDmg` on EVERY card played
+       while it's alive on the field, any kind — not just a card
+       aimed at it — on top of its normal atk-based retaliate on a
+       failed kill (see the aggro-tick block in G.resolveCard,
+       engine.js). `meleeBonusDmg` is a separate bonus specifically
+       to that retaliate, only when the card that failed to finish
+       it off was melee. Goblin turns up in Forest Road, Still-tide
+       Pass and Duun-Vael Bridge's location decks — this flags every
+       appearance of the shared `goblin` key, not just Forest Road's,
+       since it's one definition, not a per-zone copy. */
     goblin:  { name: 'Road Goblin',      hp: 5, atk: 5, sprite: 'goblin', requires: 'combat',
+               aggro: true, aggroDmg: 1, meleeBonusDmg: 2,
                dropTable: [
                  { key: 'bone' },
                  { key: 'gold', min: 1, max: 5, chance: 0.6 },
@@ -588,7 +607,7 @@
         { id: 'flintAxe',  name: 'Flint Axe',  cost: { flint: 6, stick: 6 },
           repeatable: true, grantsCard: 'axeFlint', effect: 'adds a Fell Tree card — crude, wears fast' },
       ] },
-    { id: 'bench', name: 'Crafting Bench', sub: 'Basic tools and fittings',
+    { id: 'bench', name: 'Crafting Bench', sub: 'Basic tools and fittings', zones: ['aerendell'],
       buildCost: { basaltBlock: 2, planks: 12 },
       villagerHireCost: { planks: 15, stick: 10 },
       /* shown from the very first visit to the Craft page, even
@@ -600,7 +619,11 @@
          craft.js) — level 2 is upgrades[0], level 3 is upgrades[1], etc.
          speedMult is the ABSOLUTE multiplier on TUNE.tapCraftMs at that
          level, not compounded per-tier. */
-      upgrades: [{ cost: { basaltBlock: 8, planks: 30 }, speedMult: 0.65 }],
+      /* Level 2 now costs Scrap Metal alongside the existing Basalt
+         Block/Planks — it's what actually unlocks the scrap-tier
+         weapons/tools/shield below (see their minLevel: 2), not just
+         a speed bump any more. */
+      upgrades: [{ cost: { basaltBlock: 8, planks: 30, scrapMetal: 10 }, speedMult: 0.65 }],
       /* Recipes are sorted for the player: axes, then picks, then
          weapons, then everything else (spun/stitched materials,
          carry-capacity gear). Keep new bench recipes filed into
@@ -610,26 +633,32 @@
            recipe below burns Planks instead, never sticks. Stone-tier
            weapons/tools cost a refined Stone Block (Stone Cutter,
            Aerendell) now, not raw stone; Planks are milled from raw
-           Logs at the Sawmill, same zone — see those stations' entries. */
+           Logs at the Sawmill, same zone — see those stations' entries.
+           Scrap-tier recipes carry minLevel: 2 — Bench level 2 is what
+           actually unlocks them now, not just discovering Scrap Metal
+           (see G.canStartRecipe/UI.renderStationsInto's minLevel gate). */
         /* -- axes -- */
         { id: 'axe',        name: 'Stone Axe',  cost: { stoneBlock: 1, planks: 6 },
           repeatable: true, zones: ['aerendell'], grantsCard: 'axeStone', effect: 'adds a Fell Tree card' },
-        { id: 'scrapAxe',   name: 'Scrap Axe',  cost: { scrapMetal: 4, planks: 6 },
-          repeatable: true, zones: ['forestRoad', 'kharBarak'], grantsCard: 'axeScrap',
+        { id: 'scrapAxe',   name: 'Scrap Axe',  cost: { scrapMetal: 4, planks: 6 }, minLevel: 2,
+          repeatable: true, zones: ['aerendell'], grantsCard: 'axeScrap',
           effect: 'adds a Fell Tree card — sturdier than stone' },
         /* -- picks -- */
         { id: 'stonePick',  name: 'Stone Pick', cost: { stoneBlock: 1, planks: 6 },
           repeatable: true, zones: ['aerendell'], grantsCard: 'pickStone',
           effect: 'adds a Swing Pick card' },
-        { id: 'scrapPick',  name: 'Scrap Pick', cost: { scrapMetal: 4, stick: 6 },
-          repeatable: true, zones: ['forestRoad', 'kharBarak'], grantsCard: 'pickScrap',
+        { id: 'scrapPick',  name: 'Scrap Pick', cost: { scrapMetal: 4, stick: 6 }, minLevel: 2,
+          repeatable: true, zones: ['aerendell'], grantsCard: 'pickScrap',
           effect: 'adds a Swing Pick card — the only way to work ore' },
         /* -- weapons -- */
         { id: 'stoneSword', name: 'Stone Sword', cost: { stoneBlock: 1, planks: 4 },
           repeatable: true, zones: ['aerendell'], grantsCard: 'strikeStone', effect: 'adds a Strike card' },
-        { id: 'scrapSword', name: 'Scrap Sword', cost: { scrapMetal: 4, planks: 4 },
-          repeatable: true, zones: ['forestRoad', 'kharBarak'], grantsCard: 'strikeScrap',
+        { id: 'scrapSword', name: 'Scrap Sword', cost: { scrapMetal: 4, planks: 4 }, minLevel: 2,
+          repeatable: true, zones: ['aerendell'], grantsCard: 'strikeScrap',
           effect: 'adds a Strike card — sturdier than stone' },
+        { id: 'scrapShield', name: 'Scrap Shield', cost: { scrapMetal: 4, planks: 4 }, minLevel: 2,
+          repeatable: true, zones: ['aerendell'], grantsCard: 'scrapShield',
+          effect: 'adds a card that blocks 1 dmg while held in hand' },
         { id: 'shortBow',   name: 'Short Bow',  cost: { planks: 5, string: 2 },
           repeatable: true, grantsCard: 'shoot', effect: 'adds a Loose Arrow card' },
         /* -- misc -- */
@@ -687,7 +716,7 @@
           effect: 'milled from birch logs, backed with pine planks' },
       ] },
     { id: 'loom', name: 'Loom', sub: 'Weave string into cloth',
-      buildCost: { planks: 10, stick: 14 }, zones: ['aerendell', 'forestRoad'],
+      buildCost: { planks: 10, stick: 14 }, zones: ['aerendell'],
       villagerHireCost: { planks: 10, stick: 10 },
       upgrades: [{ cost: { planks: 20, cloth: 10 }, speedMult: 0.65 }],
       recipes: [
@@ -698,19 +727,22 @@
           repeatable: true, gives: { highlandCloth: 1 }, skill: 'crafting', xp: 8,
           effect: 'four highland wool spun into one cloth' },
       ] },
-    /* Zone restriction moved onto individual recipes below so the
-       one Armor Bench can host both the Forest Road scrap set and
-       Aerendell's Highland Robes without bleeding into each other. */
-    { id: 'armorBench', name: 'Armor Bench', sub: 'Padded armor built up from cloth',
+    /* The Scrap and Highland Robes sets used to be split by recipe-
+       level zone (Forest Road vs Aerendell) so one Armor Bench could
+       host both without bleeding into each other. The station itself
+       is Aerendell-only now (see `zones` below), so these per-recipe
+       zones are redundant — left in place as explicit documentation,
+       harmless either way. */
+    { id: 'armorBench', name: 'Armor Bench', sub: 'Padded armor built up from cloth', zones: ['aerendell'],
       buildCost: { planks: 14, basaltBlock: 3 },
       upgrades: [{ cost: { planks: 25, basaltBlock: 6 }, speedMult: 0.65 }],
       recipes: [
         { id: 'scrapHelm',  name: 'Scrap Helm',       cost: { cloth: 2, scrapMetal: 3 },
-          zones: ['forestRoad'], equips: 'scrapHelm',  effect: '+1 defense' },
+          zones: ['aerendell'], equips: 'scrapHelm',  effect: '+1 defense' },
         { id: 'scrapChest', name: 'Scrap Chestplate', cost: { cloth: 3, scrapMetal: 6 },
-          zones: ['forestRoad'], equips: 'scrapChest', effect: '+1 defense' },
+          zones: ['aerendell'], equips: 'scrapChest', effect: '+1 defense' },
         { id: 'scrapLegs',  name: 'Scrap Greaves',    cost: { cloth: 3, scrapMetal: 5 },
-          zones: ['forestRoad'], equips: 'scrapLegs',  effect: '+1 defense' },
+          zones: ['aerendell'], equips: 'scrapLegs',  effect: '+1 defense' },
         { id: 'highlandHood',  name: 'Highland Hood',  cost: { highlandCloth: 2, leather: 2 },
           zones: ['aerendell'], equips: 'highlandHood',  effect: '+1 defense, +1 warmth' },
         { id: 'highlandCloak', name: 'Highland Cloak', cost: { highlandCloth: 3, leather: 3 },
@@ -724,7 +756,7 @@
     /* Lives on the Deck page, not Craft — burying a bone is a deck
        action in practice, and sitting it next to the prayer-point
        counter means you watch the number climb as you bury. */
-    { id: 'altar', name: 'Bone Altar', sub: 'Prayer — bury bones for points', page: 'deck',
+    { id: 'altar', name: 'Bone Altar', sub: 'Prayer — bury bones for points', page: 'deck', zones: ['aerendell'],
       buildCost: { basaltBlock: 6, bone: 5 },
       villagerHireCost: { basaltBlock: 5, bone: 10 },
       upgrades: [{ cost: { basaltBlock: 12, bone: 12 }, speedMult: 0.65 }],
@@ -733,7 +765,7 @@
           repeatable: true, prayer: 1,
           effect: 'earns prayer points and prayer xp' },
       ] },
-    { id: 'firepit', name: 'Campfire', sub: 'Cook food, burn planks to charcoal', page: 'farm',
+    { id: 'firepit', name: 'Campfire', sub: 'Cook food, burn planks to charcoal', page: 'farm', zones: ['aerendell'],
       buildCost: { stick: 12, flint: 8 },
       villagerHireCost: { stick: 15, flint: 10 },
       upgrades: [{ cost: { planks: 25, stick: 20 }, speedMult: 0.65 }],
@@ -764,12 +796,13 @@
           repeatable: true, grantsCard: 'cookedRareFish', skill: 'cooking', xp: 30,
           effect: '3 of one rare fish + 10 fuel — a card that heals 5' },
       ] },
-    { id: 'tannery', name: 'Tanning Station', sub: 'Turn raw hide into leather',
+    { id: 'tannery', name: 'Tanning Station', sub: 'Turn raw hide into leather', zones: ['aerendell'],
       buildCost: { planks: 16, stone: 10, string: 4 },
       villagerHireCost: { planks: 15, stone: 10 },
-      /* follows the cows and the deer out to the Road — leather is
-         made here now instead of dropping off an animal for free */
-      zones: ['forestRoad'],
+      /* used to be zone-restricted to Forest Road ("follows the cows
+         and the deer out to the Road") — now every crafting station
+         lives in Aerendell only (see the id:'tannery' station-level
+         `zones` field above); other zones are gather-only. */
       upgrades: [{ cost: { leather: 12, planks: 20 }, speedMult: 0.65 }],
       recipes: [
         { id: 'leather', name: 'Tan Hide', cost: { hide: 1, animalFat: 2 }, villagerRecipe: true,
@@ -780,7 +813,7 @@
           repeatable: true, gives: { tannedLeather: 1 }, skill: 'tanning', xp: 12,
           effect: 'salt from Khar-Barak cures leather for building' },
       ] },
-    { id: 'fletching', name: 'Fletching Station', sub: 'Arrows and bow upgrades',
+    { id: 'fletching', name: 'Fletching Station', sub: 'Arrows and bow upgrades', zones: ['aerendell'],
       buildCost: { planks: 14, string: 3 },
       villagerHireCost: { planks: 15, string: 5 },
       upgrades: [{ cost: { planks: 25, string: 10 }, speedMult: 0.65 }],
@@ -792,20 +825,18 @@
           repeatable: true, gives: { stoneArrow: 3 }, skill: 'fletching', xp: 5,
           effect: 'makes 3 — spent by Loose Arrow cards' },
       ] },
-    { id: 'furnace', name: 'Stone Furnace', sub: 'Smelt ore into bars',
+    { id: 'furnace', name: 'Stone Furnace', sub: 'Smelt ore into bars', zones: ['aerendell'],
       buildCost: { stone: 30, charcoal: 5 },
       villagerHireCost: { stone: 20, charcoal: 10 },
-      zones: ['kharBarak'],
       upgrades: [{ cost: { stone: 50, charcoal: 15 }, speedMult: 0.65 }],
       recipes: [
         { id: 'bronzeBar', name: 'Smelt Bronze Bar', cost: { tin: 1, copper: 1, charcoal: 1 }, villagerRecipe: true,
           repeatable: true, gives: { bronzeBar: 1 }, skill: 'smithing', xp: 12,
           effect: 'melts tin and copper together' },
       ] },
-    { id: 'smithy', name: 'Smithing Table', sub: 'Work bars into weapons',
+    { id: 'smithy', name: 'Smithing Table', sub: 'Work bars into weapons', zones: ['aerendell'],
       buildCost: { stone: 20, bronzeBar: 2 },
       villagerHireCost: { stone: 15, bronzeBar: 3 },
-      zones: ['forestRoad', 'kharBarak'],
       upgrades: [{ cost: { bronzeBar: 8, stone: 30 }, speedMult: 0.65 }],
       recipes: [
         { id: 'bronzeDagger', name: 'Bronze Dagger', cost: { stick: 4, bronzeBar: 2 },
@@ -907,6 +938,29 @@
       needs: { kills: 20 } },
   };
   G.START_ZONE = 'aerendell';
+
+  /* Batch 4, real-time plan: every zone sits along ONE road, in this
+     order, each link taking its own real-world time. `ms` is the
+     cost of the STEP INTO that entry FROM THE ONE BEFORE IT in this
+     list — Aerendell has none, since nothing travels "into" the
+     start. G.travelCost (systems/world.js) sums every link between
+     the player's current position and the destination, in either
+     direction, so Aerendell -> Khar-Barak costs 30s (into Forest
+     Road) + 5min (into Khar-Barak) = 5:30, and a full end-to-end
+     Aerendell -> Riverhold run costs 25:30. One central list here
+     rather than a field on each zone, deliberately — it can't be
+     silently overridden by custom-content.js's per-zone redeclares
+     the way a field living ON a zone object already was once
+     (kharBarak's own travelHours went missing exactly that way while
+     this was being built — see the CLAUDE.md note on this batch). */
+  G.TRAVEL_ROAD = [
+    { zone: 'aerendell' },
+    { zone: 'forestRoad', ms: 30 * 1000 },
+    { zone: 'kharBarak', ms: 5 * 60 * 1000 },
+    { zone: 'stillTidePass', ms: 5 * 60 * 1000 },
+    { zone: 'duunVaelBridge', ms: 5 * 60 * 1000 },
+    { zone: 'riverhold', ms: 10 * 60 * 1000 },
+  ];
 
   /* Each zone tints the interface so you always know where you are. */
   G.ZONE_THEME = {

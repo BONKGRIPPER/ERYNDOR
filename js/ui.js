@@ -28,6 +28,15 @@
      splash on the freshly-rebuilt cell — see UI.flagWatered */
   let justWatered = { i: -1, at: 0 };
   UI.flagWatered = function (i) { justWatered = { i, at: Date.now() }; };
+  /* which location field slot an enemy just struck the player from —
+     same replay pattern as justWatered above. G.resolveCard always
+     fires a final state:changed right after 'enemy:attack' (see its
+     own comment, engine.js), which rebuilds the whole field fresh —
+     a class set directly on the DOM node in main.js's handler would
+     be torn down before it ever painted, so the flag is checked and
+     replayed here, at build time, instead. */
+  let justAttacked = { i: -1, at: 0 };
+  UI.flagAttacked = function (i) { justAttacked = { i, at: Date.now() }; };
 
   /* "1:23" / "45s" — a growing plot's remaining time */
   function fmtRemain(ms) {
@@ -35,6 +44,32 @@
     if (s < 60) return s + 's';
     return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
   }
+
+  /* ---------- travel overlay (Batch 4, real-time plan) -------
+     Full-screen and shown/hidden here; see #travel-overlay,
+     index.html and the .travel-* CSS. Called once per second while
+     a trip is in progress (systems/world.js's 'travel' ticker calls
+     this directly rather than emitting state:changed — see that
+     ticker's own comment for why) and once from UI.renderAll so a
+     trip already in progress shows correctly the moment the app
+     opens. */
+  UI.renderTravelOverlay = function () {
+    const overlay = $('travel-overlay'); if (!overlay) return;
+    if (!G.isTraveling()) { overlay.style.display = 'none'; return; }
+    overlay.style.display = 'flex';
+    const t = S.travel;
+    const zone = G.ZONES[t.to] || {};
+    $('travel-ico').innerHTML = sp('road', 52);
+    $('travel-dest').textContent = zone.name || t.to;
+    $('travel-eta').textContent = fmtRemain(G.travelRemainingMs());
+    $('travel-note').textContent = t.to === G.START_ZONE
+      ? 'Bringing it all home to craft.'
+      : 'Gather what Aerendell can\'t provide, then head back to craft it.';
+    const total = t.arriveAt - t.departAt;
+    const elapsed = Math.min(total, Date.now() - t.departAt);
+    const pct = total > 0 ? (elapsed / total) * 100 : 100;
+    $('travel-bar-fill').style.width = pct + '%';
+  };
 
   /* ---------- pinned recipes bar (above the tabs) ----------- */
   UI.renderPinBar = function () {
@@ -245,6 +280,9 @@
          <div class="locard-emb">${sp(want, 30)}</div>
          <div class="locard-name">${def.name}</div>
          <div class="blocks locard-blocks">${blocks}</div>`;
+      if (justAttacked.i === i && Date.now() - justAttacked.at < 500) {
+        card.classList.add('attacking');
+      }
       wrap.appendChild(card);
       box.appendChild(wrap);
     }
@@ -1647,6 +1685,7 @@
         st.recipes.forEach(r => {
           if (!G.inZone(r)) return;                 // wrong zone
           if (!G.costKnown(r.cost)) return;         // undiscovered stays hidden
+          if (r.minLevel && G.stationLevel(st.id) < r.minLevel) return;  // station not upgraded yet
           shown++;
           const made = S.made[r.id] || 0;
           const done = made > 0 && !r.repeatable;
@@ -1684,13 +1723,14 @@
             track.appendChild(fill);
             line.appendChild(track);
           }
+          /* Recipe pins removed for now — the Pin button was eating
+             space next to Craft on a small phone screen for a
+             secondary feature; station pins (build-page) are
+             untouched. A recipe pinned from before this change still
+             shows in the pin bar and can still be un-pinned from
+             there; this only stops NEW recipe pins being created. */
           const col = el('div', 'btn-col');
-          if (!done) {
-            const pin = el('button', 'pin-btn' + (G.isPinned('recipe', r.id) ? ' on' : ''), 'Pin');
-            pin.onclick = () => G.togglePin({ type: 'recipe', id: r.id });
-            col.appendChild(pin);
-          }
-          const b = el('button', 'px-btn' + (r.prayer ? ' spirit' : ' acc'),
+          const b = el('button', 'px-btn lg' + (r.prayer ? ' spirit' : ' acc'),
             done ? 'Made' : running ? 'Crafting…' : r.prayer ? 'Bury' : 'Craft');
           b.disabled = done || running || !ok;
           b.onclick = () => G.startCraftJob(r.id);
@@ -1817,8 +1857,15 @@
           card.appendChild(prefRow);
         }
         if (!here && !blocker) {
-          const b = el('button', 'px-btn acc', 'Travel');
-          b.onclick = () => { G.travel(z.id); UI.go('play'); };
+          /* travel is no longer instant — starting a trip opens the
+             full-screen travel overlay (UI.renderTravelOverlay, fed
+             by the state:changed G.travel emits), which covers this
+             page too, so there's no need to also switch tabs here
+             the way the old instant-travel version did. */
+          const cost = G.travelCost(z.id);
+          const b = el('button', 'px-btn acc', 'Travel (' + fmtRemain(cost) + ')');
+          b.disabled = G.isTraveling();
+          b.onclick = () => { G.travel(z.id); };
           card.appendChild(b);
         }
         wrap.appendChild(card);
@@ -1950,6 +1997,22 @@
 
   UI.renderFarm = function () {
     const wrap = $('farm'); if (!wrap) return;
+    /* Farming is Aerendell-only (G.plantSeed enforces this) — away
+       from the start zone, showing empty "tap to plant" tiles that
+       silently fail on tap would be dishonest UI. Same "explain why,
+       don't just hide" pattern the Market page uses when you leave a
+       trade city. renderStationsInto below still runs — the Campfire
+       is Aerendell-only too, so it naturally falls back to its own
+       "No cooking stations available here yet" empty state. */
+    if (S.zone !== G.START_ZONE) {
+      $('farm-slots').textContent = '';
+      wrap.innerHTML = '';
+      wrap.appendChild(el('div', 'empty',
+        'Farming only happens back in ' + G.ZONES[G.START_ZONE].name + '.<br>' +
+        'Gather out here, then bring it home to plant.'));
+      renderStationsInto('farm-stations', 'farm', 'No cooking stations available here yet.');
+      return;
+    }
     G.ensureFarmPlots();
     G.collectFarmWork();
     $('farm-slots').textContent = G.farmPlotCount() + ' plot' + (G.farmPlotCount() === 1 ? '' : 's');
@@ -2302,6 +2365,7 @@
 
   /* ---------- full refresh ---------------------------------- */
   UI.renderAll = function () {
+    UI.renderTravelOverlay();
     UI.renderVitals(); UI.renderStatus(); UI.renderLocationField(); UI.renderPips();
     UI.renderPinBar();
     UI.renderStreak();

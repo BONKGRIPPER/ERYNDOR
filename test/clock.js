@@ -56,7 +56,7 @@ G.on('state:changed', () => { stateChanges++; });
 global.__clock += 61000;   // still 11am-ish — still day, no flip
 tickIntervals();
 console.log('  a same-state tick does not fire state:changed:', stateChanges === 0);
-global.__clock += 10 * 3600 * 1000;   // jump ~10h forward, well past 8pm -> night
+global.__clock += 12 * 3600 * 1000;   // jump ~12h forward from ~10am, well past 9pm -> night
 tickIntervals();
 console.log('  a real day/night flip DOES fire state:changed:', stateChanges >= 1);
 G.stopTickers();

@@ -1,6 +1,6 @@
 /* Khar-Barak city rework regression check. Run: node test/kharbarak.js */
 const { boot } = require('./harness');
-const { G } = boot();
+const { G, travelNow } = boot();
 
 console.log('== khar-barak is a city-safe production zone ==');
 const zone = G.ZONES.kharBarak;
@@ -30,6 +30,6 @@ console.log('\n== travel builds only safe field cards there ==');
 G.wipe();
 S.kills = 25;
 S.bronzeBar = 1;
-G.travel('kharBarak');
+travelNow('kharBarak');
 const liveHostiles = (S.locationField || []).filter(loc => loc && loc.atk).map(loc => loc.key);
 console.log('  no hostile active field cards:', liveHostiles.length === 0, JSON.stringify(liveHostiles));

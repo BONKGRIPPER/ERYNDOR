@@ -4,7 +4,7 @@
    that's gone; the deck travels with you.
    Run: node test/zones.js */
 const { boot } = require('./harness');
-const { G } = boot();
+const { G, travelNow } = boot();
 
 console.log('== no zone defines a deck of its own any more ==');
 const offenders = Object.keys(G.ZONES).filter(z => G.ZONES[z].deck);
@@ -24,7 +24,7 @@ S.kills = 5;
 const invBefore = { stone: S.stone, stick: S.stick, wood: S.wood };
 const deckSig = JSON.stringify(G.deckCounts());
 const sizeBefore = S.deck.length;
-G.travel('forestRoad');
+travelNow('forestRoad');
 console.log('  now in', G.zoneName());
 console.log('  deck', S.deck.length, JSON.stringify(G.deckCounts()));
 console.log('  deck size unchanged by travel:', S.deck.length === sizeBefore);
@@ -33,22 +33,22 @@ console.log('  inventory carried:',
   S.stone === invBefore.stone && S.stick === invBefore.stick && S.wood === invBefore.wood);
 
 console.log('\n== the same deck follows you back and forth ==');
-G.travel('aerendell');
+travelNow('aerendell');
 console.log('  back in Aerendell: deck', S.deck.length, '| same:',
   JSON.stringify(G.deckCounts()) === deckSig);
-G.travel('forestRoad');
+travelNow('forestRoad');
 console.log('  back on the Road:  deck', S.deck.length, '| same:',
   JSON.stringify(G.deckCounts()) === deckSig);
 
 console.log('\n== a card crafted in one zone is still there in the next ==');
-G.travel('aerendell');
+travelNow('aerendell');
 S.weight = 0; S.stoneBlock = 5; S.planks = 40; S.basaltBlock = 10; S.wood = 40;
 G.buildStation('bench');
 const hadPick = G.deckCounts().pickStone || 0;
 const crafted = G.craft('stonePick');
 const nowPick = G.deckCounts().pickStone || 0;
 console.log('  Stone Pick crafted in Aerendell:', crafted && nowPick > hadPick);
-G.travel('forestRoad');
+travelNow('forestRoad');
 console.log('  and it is still in the deck on the Road:',
   (G.deckCounts().pickStone || 0) === nowPick);
 
@@ -80,7 +80,7 @@ Object.keys(tally).forEach(k =>
 console.log('  gold range', Math.min(...goldRuns) + '-' + Math.max(...goldRuns));
 console.log('  scrap range', Math.min(...scrapRuns) + '-' + Math.max(...scrapRuns));
 
-console.log('\n== pick on the road, furnace at the gate ==');
+console.log('\n== every station lives in Aerendell now, informational readout ==');
 const pick = G.findRecipe('scrapPick'), furnace = G.findStation('furnace');
 const smithy = G.findStation('smithy');
 ['aerendell', 'forestRoad', 'kharBarak'].forEach(z => {
@@ -100,7 +100,7 @@ console.log('  scraps', S.leatherScrap, '-> craft:', G.craft('scrapLeather'));
 console.log('  scraps now', S.leatherScrap, '| leather', S.leather);
 
 console.log('\n== bronze dagger ==');
-S.zone = 'forestRoad'; S.weight = 0;
+S.zone = 'aerendell'; S.weight = 0;   // the smithy is Aerendell-only now
 S.stone = 60; S.bronzeBar = 6; S.stick = 20;
 console.log('  build smithy:', G.buildStation('smithy'));
 const deckBefore = S.deck.length;

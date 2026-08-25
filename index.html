@@ -18,6 +18,22 @@
 
   <div class="saveflash" id="saveflash">saved</div>
 
+  <!-- ============ TRAVEL OVERLAY ============
+       Full-screen, hidden by default — see UI.renderTravelOverlay.
+       Sits above the header/pages/nav in the DOM so it visually and
+       functionally blocks every tap underneath while a trip is in
+       progress (Batch 4, real-time plan — travel deliberately locks
+       the whole UI, not just the Play page). -->
+  <div class="travel-overlay" id="travel-overlay" style="display:none">
+    <div class="travel-card">
+      <span id="travel-ico"></span>
+      <div class="travel-title">On the road to <b id="travel-dest"></b></div>
+      <div class="travel-eta" id="travel-eta"></div>
+      <div class="travel-bar"><span class="travel-bar-fill" id="travel-bar-fill"></span></div>
+      <div class="travel-note" id="travel-note"></div>
+    </div>
+  </div>
+
   <!-- ============ HEADER ============ -->
   <div class="header">
     <div class="hdr-top">
@@ -328,7 +344,7 @@
      cache, belt-and-braces alongside the query bust. */
   if ('serviceWorker' in navigator && (location.protocol === 'http:' || location.protocol === 'https:')) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js?v=4', { updateViaCache: 'none' }).catch(() => {});
+      navigator.serviceWorker.register('sw.js?v=5', { updateViaCache: 'none' }).catch(() => {});
     });
   }
 </script>

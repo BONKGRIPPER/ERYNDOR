@@ -583,6 +583,18 @@
   G.hand = [];
   G.phase = 'choose';
 
+  /* A shield card blocks incoming damage passively, just by sitting
+     in the current dealt hand — it never needs to be tapped/played,
+     unlike every other card kind. Sums every shield-kind card
+     currently in hand (in practice at most one at a time, since the
+     starting deck only carries a couple of copies, but this stays
+     correct if that ever changes), read live by G.mitigate (core.js)
+     on every incoming hit. */
+  G.shieldBlock = () => G.hand.reduce((sum, k) => {
+    const c = G.cardDef(k);
+    return sum + (c && c.kind === 'shield' ? (c.block || 0) : 0);
+  }, 0);
+
   function faceFor(key) {
     const card = G.cardDef(key);
     const kind = G.cardKinds[card.kind];
@@ -706,7 +718,24 @@
       target: targetIndex,
       verdict: null,
     };
+    /* Aggro enemies (G.LOCATIONS[key].aggro) chip the player on EVERY
+       card played while they're alive on the field — any kind, not
+       just an attack aimed at them — on top of, not instead of, the
+       normal retaliate-on-a-failed-kill mechanic below. Snapshotted
+       BEFORE kind.resolve() runs, so a swing that finishes the aggro
+       enemy off this same turn still counts as "it was alive when
+       this card was played". */
+    const aggroSlots = (S.locationField || [])
+      .map((slot, i) => ({ slot, i }))
+      .filter(({ slot }) => slot && G.LOCATIONS[slot.key] && G.LOCATIONS[slot.key].aggro);
     if (kind && kind.resolve) kind.resolve(ctx);
+    aggroSlots.forEach(({ slot, i }) => {
+      const def = G.LOCATIONS[slot.key];
+      const dmg = def.aggroDmg || 0;
+      if (dmg <= 0) return;
+      G.hurtPlayer(dmg);
+      G.emit('enemy:attack', { name: def.name, dmg: G.mitigate(dmg), index: i });
+    });
     G.emit('card:resolved', ctx);
 
     /* the whole hand leaves the deck — the two you passed on are discarded */

@@ -1,7 +1,7 @@
 const { boot, trial } = require('./harness');
 
 console.log('== storage + death ==');
-const { G } = boot();
+const { G, travelNow } = boot();
 
 trial('zone crate stores items once per deck cycle', () => {
   G.wipe();
@@ -19,8 +19,8 @@ trial('shared bank survives between bank zones', () => {
   S.gold = 10; S.weight = 0.1;
   G.depositAllToStorage('bank');
   S.kills = 999;
-  G.travel('forestRoad');
-  G.travel('kharBarak');
+  travelNow('forestRoad');
+  travelNow('kharBarak');
   if ((G.currentBank().gold || 0) !== 10) throw new Error('bank inventory did not persist across bank zones');
 });
 

@@ -41,7 +41,7 @@ console.log('  refused, bench never built:', G.upgradeStation('bench') === false
 
 console.log('\n== refuses once maxed (bench only has one tier defined) ==');
 G.wipe();
-give('stone', 100); give('wood', 100); give('planks', 100); give('basaltBlock', 20); give('stoneBlock', 10);
+give('stone', 100); give('wood', 100); give('planks', 100); give('basaltBlock', 20); give('stoneBlock', 10); give('scrapMetal', 20);
 G.buildStation('bench');
 G.upgradeStation('bench');
 console.log('  at max level:', !G.stationNextUpgrade('bench'));
@@ -49,7 +49,7 @@ console.log('  a second upgrade attempt is refused:', G.upgradeStation('bench') 
 
 console.log('\n== station:upgraded and state:changed fire on success ==');
 G.wipe();
-give('stone', 100); give('wood', 100); give('planks', 100); give('basaltBlock', 20); give('stoneBlock', 10);
+give('stone', 100); give('wood', 100); give('planks', 100); give('basaltBlock', 20); give('stoneBlock', 10); give('scrapMetal', 20);
 G.buildStation('bench');
 let upFired = 0, stateFired = 0;
 G.on('station:upgraded', () => { upFired++; });
@@ -60,7 +60,7 @@ console.log('  state:changed fired:', stateFired >= 1);
 
 console.log('\n== a tap-craft job at an upgraded station runs the faster duration ==');
 G.wipe();
-give('stone', 100); give('wood', 100); give('planks', 100); give('basaltBlock', 20); give('stoneBlock', 10);
+give('stone', 100); give('wood', 100); give('planks', 100); give('basaltBlock', 20); give('stoneBlock', 10); give('scrapMetal', 20);
 G.buildStation('bench');
 G.upgradeStation('bench');
 G.startCraftJob('axe');
@@ -70,7 +70,7 @@ console.log('  faster than the base duration:', expectedMs < G.TUNE.tapCraftMs);
 
 console.log('\n== upgrading mid-job does not retroactively speed up that job ==');
 G.wipe();
-give('stone', 100); give('wood', 100); give('planks', 100); give('basaltBlock', 20); give('stoneBlock', 10);
+give('stone', 100); give('wood', 100); give('planks', 100); give('basaltBlock', 20); give('stoneBlock', 10); give('scrapMetal', 20);
 G.buildStation('bench');
 G.startCraftJob('axe');                 // still level 1, base duration
 const lockedMs = S.craftJobs.axe.ms;
@@ -80,7 +80,7 @@ console.log('  and that duration is the base, unaccelerated one:', lockedMs === 
 
 console.log('\n== stationLv survives a save/load round trip ==');
 G.wipe();
-give('stone', 100); give('wood', 100); give('planks', 100); give('basaltBlock', 20); give('stoneBlock', 10);
+give('stone', 100); give('wood', 100); give('planks', 100); give('basaltBlock', 20); give('stoneBlock', 10); give('scrapMetal', 20);
 G.buildStation('bench');
 G.upgradeStation('bench');
 G.save(false);
@@ -98,7 +98,7 @@ console.log('  backfilled to {}:', JSON.stringify(S.stationLv) === '{}');
 
 console.log('\n== UI.renderCraft shows the level badge and an upgrade row ==');
 G.wipe();
-give('stone', 100); give('wood', 100); give('planks', 100); give('basaltBlock', 20); give('stoneBlock', 10);
+give('stone', 100); give('wood', 100); give('planks', 100); give('basaltBlock', 20); give('stoneBlock', 10); give('scrapMetal', 20);
 S.discovered.stone = true; S.discovered.wood = true;
 G.buildStation('bench');
 UI.go('craft');

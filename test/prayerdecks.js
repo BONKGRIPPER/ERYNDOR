@@ -1,7 +1,7 @@
 const { boot, trial } = require('./harness');
 
 console.log('== prayer decks ==');
-const { G } = boot();
+const { G, travelNow } = boot();
 
 trial('prayer milestones scale point gain and move cost', () => {
   S.skills.prayer.lv = 100;
@@ -35,7 +35,7 @@ trial('preferred zone deck auto-equips on travel', () => {
   const targetDeck = G.ensureDeckSlotExists(1).deck.slice();
   G.setPreferredDeckForZone('forestRoad', 1);
   S.kills = 999;
-  G.travel('forestRoad');
+  travelNow('forestRoad');
   if (S.activeDeckSlot !== 1) throw new Error('preferred deck slot not equipped');
   if (JSON.stringify(S.deck) !== JSON.stringify(targetDeck)) throw new Error('active deck contents did not switch to preferred slot');
 });

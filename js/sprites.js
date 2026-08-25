@@ -117,6 +117,12 @@
     moon: S(C.night,
       '<path d="M16 3a9 9 0 1 0 5 16 7 7 0 0 1-5-16z" fill="$1"/>' +
       '<circle cx="9" cy="9" r="1.1" fill="$2"/><circle cx="13" cy="14" r="0.8" fill="$2"/>'),
+    /* the travel-overlay road icon — see UI.renderTravelOverlay */
+    road: S(C.wood,
+      '<path d="M4 20l6-16h4l6 16z" fill="$2"/>' +
+      '<path d="M10 20l2-6 2 6z" fill="$1"/>' +
+      '<rect x="10.7" y="7" width="2.6" height="2.4" fill="$1"/>' +
+      '<rect x="9.6" y="12" width="4.8" height="2.4" fill="$1"/>'),
     /* the seasonal calendar readout — see G.gameSeason, systems/clock.js */
     seasonSpring: S(C.leaf,
       '<path d="M12 20V11" stroke="$1" stroke-width="2" stroke-linecap="round"/>' +

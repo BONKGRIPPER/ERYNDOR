@@ -104,14 +104,11 @@
     G.loadDeckSlot(pref);
   }
 
-  G.travel = function (id) {
-    if (!G.ZONES[id]) return false;
-    if (id === S.zone) return false;
-    const blocker = G.zoneBlocker(id);
-    if (blocker) {
-      G.emit('travel:blocked', { id, blocker });
-      return false;
-    }
+  /* Actually relocates the player — the old, instant G.travel body.
+     Only ever called once a trip's arriveAt has actually passed (see
+     G.travel/G.checkTravelArrival below); never called directly for
+     a player-initiated move any more. */
+  function arrive(id) {
     stash(S.zone);
     S.zone = id;
     const first = restore(id);
@@ -120,8 +117,84 @@
     G.emit('deck:changed');
     G.emit('state:changed');
     G.save(true);
+  }
+
+  /* Batch 4, real-time plan (chain-graph revision): every zone sits
+     along ONE road, in G.TRAVEL_ROAD order (data.js). Cost between the
+     player's current zone and a destination is the sum of every link
+     strictly between their two positions in that list, in either
+     direction — so it's genuinely point-to-point along the road, not
+     just "distance from Aerendell": Khar-Barak -> Still-tide Pass
+     costs exactly 5min, the same as the reverse, regardless of where
+     Aerendell sits. Returns milliseconds. */
+  G.travelCost = function (id) {
+    const road = G.TRAVEL_ROAD;
+    const iFrom = road.findIndex(n => n.zone === S.zone);
+    const iTo = road.findIndex(n => n.zone === id);
+    if (iFrom < 0 || iTo < 0 || iFrom === iTo) return 0;
+    const lo = Math.min(iFrom, iTo), hi = Math.max(iFrom, iTo);
+    let total = 0;
+    for (let i = lo + 1; i <= hi; i++) total += road[i].ms || 0;
+    return total;
+  };
+
+  G.isTraveling = () => !!S.travel;
+  G.travelRemainingMs = () => S.travel ? Math.max(0, S.travel.arriveAt - Date.now()) : 0;
+
+  /* Lazy resolver, same "compute on next read" principle as
+     G.collectFarmWork/G.collectVillagerWork — a trip completes
+     whether or not the app was open for the whole duration. Returns
+     true (and finalizes arrival) only once the clock has actually
+     passed arriveAt. */
+  G.checkTravelArrival = function () {
+    if (!S.travel) return false;
+    if (Date.now() < S.travel.arriveAt) return false;
+    const id = S.travel.to;
+    S.travel = null;
+    arrive(id);
     return true;
   };
+
+  /* Starts a trip instead of relocating instantly. A 0-cost route
+     (none exist today, but the field is real content data, not a
+     hardcoded assumption) resolves immediately rather than opening a
+     0-length travel screen. */
+  G.travel = function (id) {
+    if (!G.ZONES[id]) return false;
+    if (id === S.zone) return false;
+    if (G.isTraveling()) return false;
+    const blocker = G.zoneBlocker(id);
+    if (blocker) {
+      G.emit('travel:blocked', { id, blocker });
+      return false;
+    }
+    const ms = G.travelCost(id);
+    if (ms <= 0) { arrive(id); return true; }
+    const now = Date.now();
+    S.travel = { from: S.zone, to: id, departAt: now, arriveAt: now + ms };
+    G.emit('travel:started', { to: id, ms, arriveAt: S.travel.arriveAt });
+    G.emit('state:changed');
+    G.save(true);
+    return true;
+  };
+
+  /* Ticks once a real second — cheap on purpose. While a trip is
+     still in progress this calls UI.renderTravelOverlay() DIRECTLY
+     rather than emitting state:changed (a full UI.renderAll every
+     second): the exact mistake the farm countdown ticker made
+     earlier this session, which forced a whole-app re-render every
+     5s on every page for as long as anything was growing. Travel
+     deliberately blocks all input behind a full-screen overlay while
+     it's active, so the risk that fix addressed doesn't apply the
+     same way here — but there's no reason to pay for it regardless
+     when a targeted update does the same job. state:changed only
+     fires on actual arrival, since that's a real full-app state
+     change (new zone, new stations, new field). */
+  G.registerTicker('travel', 1000, () => {
+    if (!S.travel) return;
+    if (G.checkTravelArrival()) return;
+    if (G.UI && G.UI.renderTravelOverlay) G.UI.renderTravelOverlay();
+  });
 
   /* Is a station or recipe available in the current zone? */
   G.inZone = function (thing) {

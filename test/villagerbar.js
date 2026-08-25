@@ -89,12 +89,23 @@ G.collectVillagerWork();
 console.log('  crate flax spent first:', G.crateFor('aerendell').flax === undefined);
 console.log('  carried flax untouched while the crate could still cover it:', S.flax === 30);
 
+/* Every station but Bare Hands is Aerendell-only now (see
+   test/zonebuild.js) — and Aerendell has no bank — so "a villager
+   hired in a bank zone" is no longer reachable through real play at
+   all; G.buildStation/G.hireVillagerAt correctly refuse to set one up
+   in Khar-Barak today. The underlying mechanics (S.stationVillagers
+   is just state, and G.collectVillagerWork doesn't re-check a
+   station's `zones` once hired) still work if that ever changes —
+   verified here by seeding the hired state directly rather than
+   through the now-blocked build/hire flow. */
 console.log('\n== once its own zone has a bank, a villager can draw on the shared bank too ==');
+console.log('  (this exact setup is unreachable through real play today — every station is');
+console.log('   Aerendell-only and Aerendell has no bank; verifying the mechanism stays correct anyway)');
 G.wipe(); S.zone = 'kharBarak'; S.weight = 0;
 console.log('  Khar-Barak really is a bank zone:', G.zoneHasBank('kharBarak'));
-give('planks', 200); give('stick', 200); give('basaltBlock', 20);
-G.buildStation('bench');
-G.hireVillagerAt('bench');               // villagerRecipe: Stitch Leather, cost {leatherScrap: 3}
+if (!S.stationVillagers.kharBarak) S.stationVillagers.kharBarak = {};
+S.stationVillagers.kharBarak.bench = true;
+S.villagerLast['kharBarak:bench'] = Date.now();
 S.bankStorage = { leatherScrap: 30 };    // nothing in the crate or carried inventory
 console.log('  zoneCanAfford sees the bank leatherScrap:', G.zoneCanAfford('kharBarak', { leatherScrap: 3 }));
 global.__clock += G.villagerInterval('bench') * 2;

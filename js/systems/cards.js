@@ -42,11 +42,31 @@
   });
 
   /* ---------- FORAGE ---------------------------------------- */
+  /* Forage is zone-specific now: Aerendell only turns up Red Berries
+     (+ a chance of Red Berry Seeds), Forest Road only turns up Flax
+     (+ a chance of Flax Seeds) — the same 15% seed chance either
+     zone carried before this split, just no longer competing with a
+     50/50 primary-item roll since each zone now has exactly one
+     primary item. This is what gates String (spun from flax, at the
+     Loom) — and everything downstream of it, like the Bow and
+     Fishing Net — behind an actual trip to Forest Road; Aerendell
+     alone can never produce flax. Any OTHER zone (no split specified
+     for them) keeps the original 50/50-flax-or-berries roll, so
+     forage stays functional anywhere the card can be played without
+     needing its own zone rule written first. */
   G.rollForage = function () {
     const got = {};
-    got[Math.random() < 0.5 ? 'flax' : 'berries'] = 1;
-    if (Math.random() < 0.15) got.flaxSeed = 1;
-    if (Math.random() < 0.15) got.berrySeed = 1;
+    if (S.zone === G.START_ZONE) {
+      got.berries = 1;
+      if (Math.random() < 0.15) got.berrySeed = 1;
+    } else if (S.zone === 'forestRoad') {
+      got.flax = 1;
+      if (Math.random() < 0.15) got.flaxSeed = 1;
+    } else {
+      got[Math.random() < 0.5 ? 'flax' : 'berries'] = 1;
+      if (Math.random() < 0.15) got.flaxSeed = 1;
+      if (Math.random() < 0.15) got.berrySeed = 1;
+    }
     return got;
   };
   /* Flax/Berries were cut to half yield (TUNE.forageHerbMult) —
@@ -62,16 +82,32 @@
     face(card) {
       const mult = G.foragingMult(card) * G.cardYieldMult(card);
       const herbQty = forageHerbQty(mult);
-      const yields = [
-        { key: 'flax', qty: herbQty, crit: forageHerbQty(mult * 2), chance: '50%' },
-        { key: 'berries', qty: herbQty, crit: forageHerbQty(mult * 2), chance: '50%' },
-        { key: 'flaxSeed', qty: mult, chance: '15%' },
-        { key: 'berrySeed', qty: mult, chance: '15%' },
-      ];
+      let yields, detail;
+      if (S.zone === G.START_ZONE) {
+        yields = [
+          { key: 'berries', qty: herbQty, crit: forageHerbQty(mult * 2), chance: '100%' },
+          { key: 'berrySeed', qty: mult, chance: '15%' },
+        ];
+        detail = 'red berries, rare seeds';
+      } else if (S.zone === 'forestRoad') {
+        yields = [
+          { key: 'flax', qty: herbQty, crit: forageHerbQty(mult * 2), chance: '100%' },
+          { key: 'flaxSeed', qty: mult, chance: '15%' },
+        ];
+        detail = 'flax, rare seeds';
+      } else {
+        yields = [
+          { key: 'flax', qty: herbQty, crit: forageHerbQty(mult * 2), chance: '50%' },
+          { key: 'berries', qty: herbQty, crit: forageHerbQty(mult * 2), chance: '50%' },
+          { key: 'flaxSeed', qty: mult, chance: '15%' },
+          { key: 'berrySeed', qty: mult, chance: '15%' },
+        ];
+        detail = 'one herb, rare seeds';
+      }
       if (G.isEncumbered()) {
         return { detail: 'pack full — no gain', blocked: true, yields };
       }
-      return { detail: 'one herb, rare seeds', yields };
+      return { detail, yields };
     },
     resolve(ctx) {
       ctx.gains = [];
@@ -100,6 +136,23 @@
         give(k, Math.max(1, Math.floor(qty * T.offlineRate)));
       });
     },
+  });
+
+  /* ---------- SHIELD ------------------------------------------
+     A shield doesn't do anything when tapped — its real effect
+     (G.shieldBlock, engine.js) is passive, just from sitting in the
+     current dealt hand, checked live by G.mitigate every time the
+     player takes a hit. Tapping it is still a normal, valid way to
+     end the turn (every hand of 3 has to resolve one card), it just
+     grants nothing and can't crit. */
+  G.registerCardKind('shield', {
+    face(card) {
+      return { detail: 'blocks ' + (card.block || 0) + ' dmg while held' };
+    },
+    resolve(ctx) {
+      ctx.gains = [];
+    },
+    offline() {},
   });
 
   /* ---------- FOOD ------------------------------------------
@@ -163,9 +216,12 @@
       if (!slot || power <= 0) return;
       ctx.dealt = true;
       const def = G.LOCATIONS[slot.key];
+      const slotIndex = S.locationField.indexOf(slot);
       /* enemies hit TUNE.nightAtkMult harder at night — Batch 3,
-         real-time plan */
-      const rawBack = (def.atk || 0) * (G.isNight() ? G.TUNE.nightAtkMult : 1);
+         real-time plan. meleeBonusDmg is an aggro-enemy extra —
+         goblins bite harder specifically when you swing melee at
+         them, on top of their normal atk. */
+      const rawBack = ((def.atk || 0) + (def.meleeBonusDmg || 0)) * (G.isNight() ? G.TUNE.nightAtkMult : 1);
       const dmg = ctx.hit ? power * 2 : power;
       const result = G.damageLocation(dmg, 'melee', ctx.target);
       const killed = !!(result && result.cleared);
@@ -176,7 +232,9 @@
       /* a dead animal cannot bite back */
       if (!killed && rawBack) {
         G.hurtPlayer(rawBack);
-        G.emit('retaliate', { name: def.name, dmg: G.mitigate(rawBack) });
+        const shown = G.mitigate(rawBack);
+        G.emit('retaliate', { name: def.name, dmg: shown });
+        G.emit('enemy:attack', { name: def.name, dmg: shown, index: slotIndex });
       }
     },
   });
@@ -212,7 +270,9 @@
       G.grantXp(ctx.card.skill, ctx.card.xp);
       if (!killed && rawBack && def.rangedRetaliate) {
         G.hurtPlayer(rawBack);
-        G.emit('retaliate', { name: def.name, dmg: G.mitigate(rawBack) });
+        const shown = G.mitigate(rawBack);
+        G.emit('retaliate', { name: def.name, dmg: shown });
+        G.emit('enemy:attack', { name: def.name, dmg: shown, index: S.locationField.indexOf(slot) });
       }
     },
   });

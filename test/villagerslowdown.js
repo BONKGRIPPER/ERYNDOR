@@ -29,6 +29,11 @@ r = G.collectVillagerWork();
 console.log('  exactly one tick lands once the real (25x) interval has elapsed:', r.results[0].applied === 1);
 
 console.log('\n== forage yields half the flax/berries it used to, seeds untouched ==');
+/* Forage is zone-gated now (see test/zoneforage.js) — Aerendell only
+   ever rolls berries/berrySeed, a single independent 15% seed check
+   rather than the old two-independent-rolls "~27.75% either" shape,
+   so the sanity bounds below are centered on a single 15% event
+   (n=400, mean=60, sd~7) rather than the old wider ones. */
 G.wipe(); S.zone = 'aerendell'; S.weight = 0;
 const trials = 400;
 let herbTotal = 0, seedHits = 0;
@@ -40,13 +45,13 @@ for (let i = 0; i < trials; i++) {
   if (roll.berries) herbTotal += roll.berries;
   if (roll.flaxSeed || roll.berrySeed) seedHits++;
 }
-console.log('  rollForage/seed CHANCE itself is untouched by this change (still ~15% each, sanity only):',
-  seedHits > trials * 0.15 && seedHits < trials * 0.42);
+console.log('  rollForage/seed CHANCE itself is untouched by this change (still ~15%, sanity only):',
+  seedHits > trials * 0.08 && seedHits < trials * 0.25);
 
 G.wipe(); S.zone = 'aerendell'; S.weight = 0;
 const face = G.cardKinds.forage.face(G.CARDS.forage);
-const flaxFace = face.yields.find(y => y.key === 'flax');
-const seedFace = face.yields.find(y => y.key === 'flaxSeed');
+const flaxFace = face.yields.find(y => y.key === 'berries');
+const seedFace = face.yields.find(y => y.key === 'berrySeed');
 console.log('  card face shows the halved herb qty (mult 1 -> floor(0.5) -> min 1):', flaxFace.qty === 1);
 console.log('  card face shows the FULL seed qty, unaffected:', seedFace.qty === 1);
 

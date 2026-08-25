@@ -119,6 +119,17 @@
          moment G.gameSeason() (systems/clock.js) counts forward from,
          so day 1 is always Spring no matter the real-world date. */
       seasonEpoch: Date.now(),
+      /* Batch 4, real-time plan: null while not traveling, else
+         { from, to, departAt, arriveAt } — see G.travel/G.checkTravelArrival,
+         systems/world.js. Real minutes elapsed, resolved lazily the
+         same way farm growth and villager work already are, so a
+         trip still completes even if the app was closed the whole
+         time it was in progress. */
+      travel: null,
+      /* one-shot flag — the "Spinning Table unlocked" banner (main.js's
+         travel:done handler) fires once, the first time the player
+         arrives back in Aerendell having ever discovered flax. */
+      loomUnlockShown: false,
       page: 'play',
       /* Donate (Bag page): cumulative worth donated since the last time
          it crossed TUNE.donateWorthPerXp — see G.donateItems, craft.js */
@@ -195,8 +206,10 @@
     Object.values(S.equipped).forEach(k => d += (G.ITEMS[k] && G.ITEMS[k].def) || 0);
     return d;
   };
-  /* incoming damage after armor soaks it up, floored at zero */
-  G.mitigate = n => Math.max(0, n - G.defense());
+  /* incoming damage after armor AND any held shield soaks it up,
+     floored at zero — see G.shieldBlock (engine.js) for the shield
+     half of this. */
+  G.mitigate = n => Math.max(0, n - G.defense() - G.shieldBlock());
   /* every armor slot holding a scrap-set piece */
   G.hasArmorSet = () => Object.keys(G.RAG_DEFAULTS).every(slot => {
     const it = G.ITEMS[S.equipped[slot]];
@@ -521,7 +534,7 @@
                    'foils','prismatic','wardrobe','collection',
                    'locationDecks','locationField',
                    'lastSeen','stationVillagers','selected','craftJobs','campfireJob','stationLv','pins','zone','zones','homes','villagerLast','xpV2','discovered',
-                   'donateProgress','factionInfluence','selectedFaction','farmPlots','farmPlotsBuilt','fishCaught','zoneStorage','bankStorage','seasonEpoch'];
+                   'donateProgress','factionInfluence','selectedFaction','farmPlots','farmPlotsBuilt','fishCaught','zoneStorage','bankStorage','seasonEpoch','travel','loomUnlockShown'];
 
   G.save = function (flash) {
     const d = {};

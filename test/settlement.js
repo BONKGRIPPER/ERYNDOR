@@ -68,12 +68,12 @@ const saltSources = Object.keys(G.LOCATIONS).filter(k =>
 console.log('  tanning salt drops from:', saltSources.map(k =>
   G.LOCATIONS[k].name + ' (' + zonesFor(k).join(',') + ')').join(', '));
 
-console.log('\n== the tannery followed the cows out to the Road ==');
+console.log('\n== the tannery moved back home — every station but Bare Hands is Aerendell-only ==');
 const tannery = G.findStation('tannery');
-S.zone = 'aerendell';
-console.log('  shown in Aerendell:', G.inZone(tannery), '(expect false)');
 S.zone = 'forestRoad';
-console.log('  shown in Forest Road:', G.inZone(tannery), '(expect true)');
+console.log('  no longer shown in Forest Road:', G.inZone(tannery), '(expect false)');
+S.zone = 'aerendell';
+console.log('  shown in Aerendell instead:', G.inZone(tannery), '(expect true)');
 
 console.log('\n== leather is rendered from hide + fat, not dropped free ==');
 console.log('  cow no longer drops leather directly:',

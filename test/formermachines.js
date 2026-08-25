@@ -41,7 +41,7 @@ G.tickCraftJobs();
 console.log('  job completes -> charcoal gained:', S.charcoal >= 1);
 
 console.log('\n== Stone Furnace: bronze bar is one flat recipe now (was 2 ores + a fuel slot) ==');
-G.wipe(); S.zone = 'kharBarak'; S.weight = 0;
+G.wipe(); S.zone = 'aerendell'; S.weight = 0;   // the furnace is Aerendell-only now
 give('stone', 60); give('charcoal', 20);
 console.log('  built:', G.buildStation('furnace'));
 give('tin', 5); give('copper', 5); give('charcoal', 5);
@@ -88,9 +88,16 @@ if (firepitCard) {
     rowHtml.indexOf('Choose your campfire setup') < 0 && rowHtml.indexOf('Fire is lit') < 0);
 }
 
+/* Every station except Bare Hands is Aerendell-only now — gather
+   out in the zones, craft back home. Furnace used to be Khar-Barak-
+   only; it's the opposite now. */
 console.log('\n== unbuilt stations with no known recipe inside stay hidden ==');
 G.wipe(); S.zone = 'kharBarak'; S.weight = 0;
 UI.go('craft');
+console.log('  the furnace is not even offered outside Aerendell any more:',
+  !G.inZone(G.findStation('furnace')));
+S.zone = 'aerendell'; S.weight = 0;
+UI.renderCraft();
 const furnaceCardHidden = store['stations'].children.find(card =>
   card.children[0] && card.children[0]._html.indexOf('Stone Furnace') >= 0);
 console.log('  furnace not shown with nothing discovered:', !furnaceCardHidden);

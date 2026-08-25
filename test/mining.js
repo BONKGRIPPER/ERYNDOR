@@ -50,16 +50,20 @@ for (let i = 0; i < 2000; i++) {
 Object.keys(t).forEach(k =>
   console.log('  ' + G.RESOURCES[k].name.padEnd(15), (t[k] / 20).toFixed(0) + '% of kills'));
 
-console.log('\n== scrap pick is the only pick out on the road/gate ==');
+console.log('\n== scrap pick needs both Scrap Metal AND a level-2 Bench now ==');
 console.log('  stonePick is Aerendell-only:',
   JSON.stringify(G.findRecipe('stonePick').zones) === JSON.stringify(['aerendell']));
 console.log('  scrapPick cost:', JSON.stringify(pick.cost));
-G.wipe(); S.zone = 'forestRoad'; S.weight = 0;
-give('stone', 60); give('stick', 60);
+console.log('  scrapPick requires Bench lv2:', pick.minLevel === 2);
+G.wipe(); S.zone = 'aerendell'; S.weight = 0;
+give('basaltBlock', 40); give('planks', 60); give('stick', 60);
 G.buildStation('bench');
-console.log('  craft without scrap:', G.craft('scrapPick'), '(expect false)');
 give('scrapMetal', 8);
-console.log('  craft with scrap:  ', G.craft('scrapPick'),
+console.log('  craft without the level-2 upgrade:', G.craft('scrapPick'), '(expect false)');
+give('scrapMetal', 10);   // top up for the upgrade's own scrapMetal cost, on top of the recipe's 4
+G.upgradeStation('bench');
+console.log('  bench is now level 2:', G.stationLevel('bench') === 2);
+console.log('  craft with scrap AND the upgrade:', G.craft('scrapPick'),
   '| pickScrap cards', G.deckCounts().pickScrap);
 
 console.log('\n== picks only work against a location target now ==');

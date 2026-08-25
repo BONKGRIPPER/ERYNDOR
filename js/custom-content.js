@@ -438,6 +438,17 @@
     "tier": 2,
     "damageType": "slash"
   },
+  "scrapShield": {
+    "kind": "shield",
+    "name": "Scrap Shield",
+    "type": "Defense",
+    "skill": "crafting",
+    "block": 1,
+    "durability": 18,
+    "xp": 20,
+    "tint": "stone",
+    "tier": 2
+  },
   "fishingNet": {
     "kind": "fishing",
     "name": "Fishing Net",
@@ -1633,6 +1644,7 @@
     "id": "bench",
     "name": "Crafting Bench",
     "sub": "Basic tools and fittings",
+    "zones": ["aerendell"],
     "buildCost": {
       "basaltBlock": 2,
       "planks": 12
@@ -1646,7 +1658,8 @@
       {
         "cost": {
           "basaltBlock": 8,
-          "planks": 30
+          "planks": 30,
+          "scrapMetal": 10
         },
         "speedMult": 0.65
       }
@@ -1673,11 +1686,8 @@
           "scrapMetal": 4,
           "planks": 6
         },
+        "minLevel": 2,
         "repeatable": true,
-        "zones": [
-          "forestRoad",
-          "kharBarak"
-        ],
         "grantsCard": "axeScrap",
         "effect": "adds a Fell Tree card — sturdier than stone"
       },
@@ -1702,11 +1712,8 @@
           "scrapMetal": 4,
           "stick": 6
         },
+        "minLevel": 2,
         "repeatable": true,
-        "zones": [
-          "forestRoad",
-          "kharBarak"
-        ],
         "grantsCard": "pickScrap",
         "effect": "adds a Swing Pick card — the only way to work ore"
       },
@@ -1731,13 +1738,22 @@
           "scrapMetal": 4,
           "planks": 4
         },
+        "minLevel": 2,
         "repeatable": true,
-        "zones": [
-          "forestRoad",
-          "kharBarak"
-        ],
         "grantsCard": "strikeScrap",
         "effect": "adds a Strike card — sturdier than stone"
+      },
+      {
+        "id": "scrapShield",
+        "name": "Scrap Shield",
+        "cost": {
+          "scrapMetal": 4,
+          "planks": 4
+        },
+        "minLevel": 2,
+        "repeatable": true,
+        "grantsCard": "scrapShield",
+        "effect": "adds a card that blocks 1 dmg while held in hand"
       },
       {
         "id": "shortBow",
@@ -1790,13 +1806,10 @@
         "id": "fishingNet",
         "name": "Fishing Net",
         "cost": {
-          "stick": 8,
-          "flax": 6
+          "string": 3,
+          "stick": 8
         },
         "repeatable": true,
-        "zones": [
-          "forestRoad"
-        ],
         "grantsCard": "fishingNet",
         "skill": "crafting",
         "xp": 6,
@@ -1838,8 +1851,7 @@
       "stick": 10
     },
     "zones": [
-      "aerendell",
-      "forestRoad"
+      "aerendell"
     ],
     "upgrades": [
       {
@@ -1901,6 +1913,7 @@
     "name": "Bone Altar",
     "sub": "Prayer — bury bones for points",
     "page": "deck",
+    "zones": ["aerendell"],
     "buildCost": {
       "basaltBlock": 6,
       "bone": 5
@@ -1937,6 +1950,7 @@
     "name": "Campfire",
     "sub": "Cook food, burn planks to charcoal",
     "page": "farm",
+    "zones": ["aerendell"],
     "buildCost": {
       "stick": 12,
       "flint": 8

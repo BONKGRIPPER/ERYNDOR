@@ -1,7 +1,7 @@
 /* Farming: skill, plots, real-time growth gated on watering, region-
    locked seeds. Run: node test/farm.js */
 const { boot } = require('./harness');
-const { G } = boot();
+const { G, travelNow } = boot();
 const give = (k, n) => { S[k] = (S[k] || 0) + n; S.weight = 0; };
 
 console.log('== farming is a real skill ==');
@@ -46,15 +46,18 @@ console.log('  fails out of bounds:', G.plantSeed(99, 'flaxSeed') === false);
 console.log('  succeeds in home region:', G.plantSeed(0, 'flaxSeed') === true);
 console.log('  seed consumed:', S.flaxSeed === 2);
 console.log('  fails on an occupied slot:', G.plantSeed(0, 'flaxSeed') === false);
-/* forestRoad shares aerendell's leth-eiren region now (crops are
-   region-locked, not zone-locked — see the "Grows anywhere in
-   <region>" wording, ui.js), so planting there should actually
-   SUCCEED. kharBarak is a genuinely different region ('khar'). */
+/* Farming is Aerendell-only now, full stop — not region-locked
+   (Forest Road shares Aerendell's region but can no longer farm),
+   not just region-locked-elsewhere. Both a same-region zone and a
+   different-region zone must refuse. */
 S.zone = 'kharBarak';
-console.log('  fails outside the seed\'s region:', G.plantSeed(1, 'berrySeed') === false || !S.farmPlots[1]);
+console.log('  fails in a different-region zone:', G.plantSeed(1, 'berrySeed') === false || !S.farmPlots[1]);
 S.zone = 'forestRoad';
 give('berrySeed', 1);
-console.log('  succeeds anywhere else in the same region:', G.plantSeed(1, 'berrySeed') === true);
+console.log('  ALSO fails in a same-region zone that is not the start zone:',
+  G.plantSeed(1, 'berrySeed') === false && !S.farmPlots[1]);
+S.zone = 'aerendell';
+console.log('  succeeds back in the actual start zone:', G.plantSeed(1, 'berrySeed') === true);
 S.zone = 'aerendell';
 
 console.log('\n== watering starts the timer and grants farming xp ==');
@@ -107,9 +110,9 @@ give('flaxSeed', 1);
 G.plantSeed(0, 'flaxSeed');
 const beforeTravel = JSON.stringify(S.farmPlots[0]);
 S.kills = 999;                     // bypass Forest Road's kill gate for this test
-G.travel('forestRoad');
+travelNow('forestRoad');
 console.log('  a fresh zone starts with no plots:', S.farmPlots.length === 0 || S.farmPlots.every(p => !p));
-G.travel('aerendell');
+travelNow('aerendell');
 console.log('  aerendell plot restored on return:', JSON.stringify(S.farmPlots[0]) === beforeTravel);
 
 console.log('\n== UI.renderFarm renders every plot state without crashing ==');

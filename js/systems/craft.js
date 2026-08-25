@@ -70,7 +70,12 @@
   /* ---------- building ------------------------------------- */
   G.buildStation = function (id) {
     const st = G.findStation(id);
-    if (!st || st.locked || S.built[id] || !G.canAffordCraft(st.buildCost)) return false;
+    /* Every station but Bare Hands is Aerendell-only now — the UI
+       already hides the build option elsewhere via G.inZone in
+       renderStationsInto, but enforcing it here too closes any other
+       path in (pins, a stale render) rather than relying on the UI
+       alone to keep the rule real. */
+    if (!st || st.locked || !G.inZone(st) || S.built[id] || !G.canAffordCraft(st.buildCost)) return false;
     G.spendCraftCost(st.buildCost);
     S.built[id] = true;
     unpin('station', id);
@@ -165,6 +170,14 @@
   function canStartRecipe(r, id) {
     if (!r) return false;
     if (S.made[id] && !r.repeatable) return false;
+    /* r.minLevel gates a recipe behind a station upgrade tier (e.g.
+       the scrap-tier bench recipes needing Bench lv2) — checked
+       against the STATION the recipe actually lives on, not a flat
+       global level. */
+    if (r.minLevel) {
+      const st = G.stationForRecipe(id);
+      if (!st || G.stationLevel(st.id) < r.minLevel) return false;
+    }
     if (!G.canAffordCraft(r.cost || {})) return false;
     if (r.fuel && G.fuelAvailable() < r.fuel) return false;
     if (r.anyOf && !G.anyOfChoice(r)) return false;

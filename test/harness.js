@@ -75,7 +75,23 @@ function boot(opts) {
     try { eval(fs.readFileSync(path.join(ROOT, f), 'utf8')); }
     catch (e) { crashes.push({ file: f, msg: e.message }); }
   });
-  return { G: global.window.Game, store, files, crashes, REAL,
+  /* Batch 4 (real-time plan) made G.travel asynchronous — it starts a
+     real-world-hours trip (S.travel) instead of relocating instantly.
+     Most existing tests only use travel to SET UP a scenario in
+     another zone; they aren't testing the trip itself, so re-writing
+     every one of them to fast-forward the clock by hand would just be
+     noise. travelNow(id) is that fast-forward, in one call: start the
+     trip, jump the clock straight to arrival, resolve it. Tests that
+     actually exercise the travel/overlay mechanic (test/travel.js)
+     call G.travel directly instead, without this helper. */
+  function travelNow(id) {
+    const G = global.window.Game;
+    if (!G.travel(id)) return false;
+    if (G.S.travel) global.__clock = G.S.travel.arriveAt;
+    return G.checkTravelArrival();
+  }
+
+  return { G: global.window.Game, store, files, crashes, REAL, travelNow,
            flush() { const t = global.__timers; global.__timers = []; t.forEach(f => f()); },
            tickIntervals() { Object.values(global.__intervals).forEach(f => f()); } };
 }

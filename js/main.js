@@ -71,6 +71,18 @@
     if (G.playAudioHook) G.playAudioHook('action.travel');
     if (G.syncZoneMusic) G.syncZoneMusic();
   });
+  /* One-shot: the first time flax makes it back to Aerendell, call
+     out that the Loom ("Spinning Table") can now spin it into
+     String — the String recipe itself already appears on its own the
+     moment flax is discovered (G.costKnown, see the generic
+     'discovered' toast above), this is just a louder, one-time
+     nudge toward the specific station that unlocks. */
+  G.on('travel:done', ({ id }) => {
+    if (id === G.START_ZONE && S.discovered.flax && !S.loomUnlockShown) {
+      S.loomUnlockShown = true;
+      UI.banner('Unlocked', 'Spinning Table', 'Weave flax into string at the Loom.', '');
+    }
+  });
   G.on('travel:blocked', ({ blocker }) =>
     UI.toast('That way is closed — ' + blocker + '.', 'Travel'));
   G.on('discovered', ({ key }) =>
@@ -101,6 +113,19 @@
      learn once you've actually swung at it. */
   G.on('retaliate', ({ name, dmg }) =>
     UI.banner('Bite back', name, '-' + dmg + ' hp', 'blood'));
+  /* A short "the enemy is hitting you" lunge on the enemy's own
+     location card — fires for every source of enemy damage, aggro
+     passive chip or normal retaliate alike (see 'enemy:attack',
+     engine.js/systems/cards.js), unlike the 'retaliate' banner above
+     which is deliberately melee/ranged-only (an aggro tick firing a
+     full banner on every single card played would be nonstop noise).
+     G.resolveCard always fires a state:changed right after this,
+     rebuilding the location field from scratch — flag it for
+     UI.renderLocationField to replay instead of classing a DOM node
+     that's about to be torn down (same pattern as UI.flagWatered). */
+  G.on('enemy:attack', ({ index }) => {
+    if (typeof index === 'number') UI.flagAttacked(index);
+  });
 
   G.on('location:hurt', ({ index }) => {
     const card = document.querySelector('.locard[data-slot="' + index + '"]');
@@ -356,6 +381,12 @@
   /* ---------- boot ----------------------------------------- */
   window.S = G.S = G.freshState();
   const had = G.load();
+  /* a trip that finished while the app was closed resolves right
+     here, before the first render — same lazy-catch-up principle as
+     the villager/farm systems, so reopening after a trip completed
+     lands you in the new zone immediately rather than showing a
+     stale "still traveling" overlay for a moment first. */
+  G.checkTravelArrival();
   if (!S.deck.length) G.buildDeck();
   if (!had) {
     G.shuffle(S.deck);
@@ -378,7 +409,11 @@
   G.registerTicker('saveInfo', 5000, UI.updateSaveInfo);
   G.startTickers();
   G.tickCraftJobs();                    // any tap-craft that ran out while the app was closed
-  if (away > 0) showVillagerReturn(away);
+  /* no hand to deal while still mid-trip — the travel overlay covers
+     the Play page entirely until arrival, so there's nothing for a
+     dealt hand to be seen or played in right now. */
+  if (G.isTraveling()) { /* nothing to draw */ }
+  else if (away > 0) showVillagerReturn(away);
   else G.drawHand();
 
 })(window.Game = window.Game || {});

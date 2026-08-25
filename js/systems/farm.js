@@ -79,14 +79,18 @@
 
   G.canPlantSeed = seedKey => G.availablePlantSeedCount(seedKey) > 0;
 
+  /* Farming is Aerendell-only now — the home base is where you bring
+     gathered goods back TO, not a mechanic to rebuild in every zone.
+     Used to be region-locked (any zone sharing Aerendell's region
+     could farm); tightened to the exact starting zone. */
   G.plantSeed = function (i, seedKey) {
     G.ensureFarmPlots();
     const crop = G.CROPS[seedKey];
-    const zone = G.ZONES[S.zone] || {};
     if (!crop) return false;
+    if (S.zone !== G.START_ZONE) { G.emit('farm:failed', { reason: 'zone', seedKey }); return false; }
     if (i < 0 || i >= G.farmPlotCount()) return false;
     if (S.farmPlots[i]) { G.emit('farm:failed', { reason: 'occupied', i }); return false; }
-    if (crop.region !== zone.region) { G.emit('farm:failed', { reason: 'region', seedKey }); return false; }
+    if (crop.region !== G.ZONES[G.START_ZONE].region) { G.emit('farm:failed', { reason: 'region', seedKey }); return false; }
     if (!G.canPlantSeed(seedKey)) { G.emit('farm:failed', { reason: 'noseed', seedKey }); return false; }
     if (!G.spendCraftCost({ [seedKey]: 1 })) { G.emit('farm:failed', { reason: 'noseed', seedKey }); return false; }
     S.farmPlots[i] = { seedKey, stage: 0, wateredAt: null, stageMs: null };
@@ -165,12 +169,18 @@
       G.emit('state:changed');
       return;
     }
-    /* Nothing finished, but a growing plot's on-screen countdown has
-       to keep moving — re-render while any timer is running. The bar
-       itself animates in CSS and doesn't need this; the "1:23 left"
-       text does. Only fires while something is actually growing, so
-       an idle farm costs nothing. */
-    if ((S.farmPlots || []).some(p => p && p.wateredAt != null)) G.emit('state:changed');
+    /* Nothing finished, but a growing plot's on-screen countdown text
+       has to keep moving. state:changed drives a FULL UI.renderAll —
+       every page, including a live hand mid-reflex-window on Play —
+       so this only fires while the player is actually looking at the
+       Farm page. Firing it regardless of page (as an earlier version
+       of this ticker did) meant every open app forced a full re-render
+       every 5s the moment any plot was watered, indefinitely, whatever
+       the player was doing — including mid-tap on the Play page. The
+       progress bar itself animates in CSS and needs none of this. */
+    if (S.page === 'farm' && (S.farmPlots || []).some(p => p && p.wateredAt != null)) {
+      G.emit('state:changed');
+    }
   });
 
 })(window.Game = window.Game || {});

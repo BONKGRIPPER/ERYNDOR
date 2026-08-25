@@ -5,7 +5,7 @@
    there. See G.buildLocationDecks/G.fillLocationField (engine.js) and
    G.ZONES[zone].locationDecks (data.js). Run: node test/locationdecks.js */
 const { boot } = require('./harness');
-const { G } = boot();
+const { G, travelNow } = boot();
 
 console.log('== each zone\'s slot decks build from locationDecks, one array entry per slot ==');
 G.wipe(); S.zone = 'aerendell'; S.weight = 0;
@@ -72,7 +72,7 @@ console.log('\n== S.locationDecks survives a zone-travel stash/restore round tri
 G.wipe(); S.zone = 'aerendell'; S.weight = 0;
 const before = JSON.stringify(S.locationDecks);
 S.kills = 5;
-G.travel('forestRoad');
-G.travel('aerendell');
+travelNow('forestRoad');
+travelNow('aerendell');
 console.log('  aerendell\'s slot decks restored, not rebuilt/reshuffled:',
   JSON.stringify(S.locationDecks) === before);
