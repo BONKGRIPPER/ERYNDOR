@@ -965,6 +965,15 @@ editor's next Save.
   class to the freshly-built node itself, so it survives the
   render that would otherwise wipe it. See `test/aggro.js`.
 
+- **Foil Fishing Nets no longer drop in Forest Road — moved to
+  Khar-Barak's foil pool.** `forestRoad.foilPool` (data.js) dropped
+  `fishingNet`; `kharBarak.foilPool` (custom-content.js, the zone
+  that's actually live — see the Architecture callout) gained it
+  alongside the `fishingRod` foil it already had. Both foils now
+  come from the same zone, matching the intent that a foil shouldn't
+  turn up before the player has actually reached the city it's meant
+  to feel tied to.
+
 ## Known open questions
 
 - **"A villager draws from the shared bank" is now unreachable through

@@ -1382,7 +1382,8 @@
     "foilPool": [
       "flint",
       "stick",
-      "fishingRod"
+      "fishingRod",
+      "fishingNet"
     ],
     "cape": "gatebreakerCape",
     "needs": {

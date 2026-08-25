@@ -919,7 +919,7 @@
       locationDecks: [{ pineTree: 5, boulder: 5 }, { pond: 5 }, { goblin: 4, chicken: 2, pig: 2, cow: 2, deer: 2 }],
       lootPool: ['stick', 'stick', 'stick', 'wood', 'wood', 'stone', 'stone',
                  'scrapMetal', 'scrapMetal', 'leatherScrap', 'bone', 'coal', 'gold'],
-      foilPool: ['axeFlint', 'pickFlint', 'woodenClub', 'fishingNet'],
+      foilPool: ['axeFlint', 'pickFlint', 'woodenClub'],
       cape: 'roadwardenCape',
       needs: { kills: 5 } },
     kharBarak: {
