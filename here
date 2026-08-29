@@ -1,0 +1,66 @@
+  "Stone": "#8b8b85", "Coal": "#2b2622", "Iron Ore": "#a56a52",
+  "Silver Ore": "#c7ccd6", "Gold Ore": "#e0b23c", "Raw Gem": "#7f4fd1",
+  "Tin Ore": "#9fb0ac", "Copper Ore": "#c17a4e", "Platinum Ore": "#d8dde6",
+  "Scorn": "#3a1a2e", "Enchanted Shard": "#63e0d6",
+  "Basalt": "#4a4a52", "Amethyst": "#8f5fd1", "Emerald": "#2f9e5c", "Diamond": "#cdeaf0",
+};
+
+// A second, independent gather loop -- no seeds, no growth stages, just tap
+// and wait. One persistent action rather than one pill per item: what a
+// finished gather actually gives is rolled from the current zone's own
+// pool the moment it resolves, not chosen by the player. Chances within a
+// zone are meant to sum to 1; a zone with no pool falls back to the last
+// entry rather than ever giving nothing.
+export const FORAGE_MS = 2500;   // half the original 5000 -- 2026-08-28
+export const FORAGE_POOLS = {
+  aerendell: [
+    { item: "Red Berries Seeds", chance: 0.10 },
+    { item: "Pine Cones",        chance: 0.10 },
+    { item: "Sticks",            chance: 0.40 },
+    { item: "Flint",             chance: 0.40 },
+  ],
+};
+
+// Foraging XP, first pass -- one flat amount per completed gather, same
+// "small flat amount" shape as Farming's WATER_XP. Speed is milestone-based
+// rather than the continuous per-level curve Farming/Logging use: nothing
+// changes between milestones, then a level unlocks a flat faster time that
+// holds until the next one. FORAGE_MS above is the level 0-4 baseline;
+// FORAGE_SPEED_LEVELS is checked highest-first and the first level the
+// player has actually reached wins. Level 100 is the cap -- xpToNext() in
+// skills.js is uncapped by itself, foraging is just the first skill that
+// actually stops mattering past a point.
+export const FORAGE_XP = 8;
+export const FORAGE_MAX_LEVEL = 100;
+// Halved across the board (2026-08-28) along with FORAGE_MS above -- same
+// milestone shape, every step just twice as fast as it used to be.
+export const FORAGE_SPEED_LEVELS = [
+  { level: 100, ms: 1000 },
+  { level: 75,  ms: 1250 },
+  { level: 50,  ms: 1500 },
+  { level: 25,  ms: 1750 },
+  { level: 10,  ms: 2000 },
+  { level: 5,   ms: 2250 },
+];
+
+// Unlocked at VILLAGER_LEVEL: a one-time Shards purchase (state.villager,
+// see state.js) that keeps the forage bar tapping itself -- the instant one
+// gather finishes, the villager starts the next, whether the player is on
+// another screen or the game is closed entirely. Cost is a first-pass
+// number, not balanced. Hiring and upgrading both happen from the Township
+// screen (src/township.js) now, not an inline button on the forage bar.
+export const VILLAGER_LEVEL = 3;   // was 10 -- 2026-08-28
+export const VILLAGER_COST = 250;
+// The first villager upgrade -- a flat speed multiplier on top of whatever
+// FORAGE_SPEED_LEVELS milestone the player's own level has reached, once
+// bought (state.villager.fastHands). Only one tier exists so far; Township
+// is built to show a list, not one fixed slot, so more can slot in later
+// the same way FORAGE_SPEED_LEVELS' own milestones do.
+export const VILLAGER_UPGRADE_COST = 400;
+export const VILLAGER_UPGRADE_MULT = 0.75;
+// Below this, "away" isn't meaningfully different from just watching the
+// villager work -- the normal ~200ms tick gap (and even a single forage
+// cycle, as short as 1000ms) both land well under it. main.js's
+// reportForageCatchup() only shows the full "welcome back" sheet past this
+// threshold; anything shorter gets the same small in-pill flash a
+// villager-less gather already shows.
