@@ -29,11 +29,16 @@ export const PLACES = [
   { id: "combat",    icon: "\u{2694}\u{FE0F}", name: "Combat", note: "Fight what's out there", ready: true, hub: true },
   { id: "sawmill",       icon: "\u{1FA9A}", name: "Sawmill",        note: "Turn pine logs into pine planks", ready: true, hub: true },
   { id: "township",  icon: "\u{1F465}", name: "Township",  note: "Villagers and their upgrades", ready: true, hub: true },
+  // Not a BUILDINGS entry -- there's no structure to build, just water to
+  // fish. Gated by location like a built station (hub.js's
+  // fishingAvailableHere()), but on LOCATIONS[...].fishing rather than
+  // needing to be "built" first.
+  { id: "fishing",   icon: "\u{1F3A3}", name: "Fishing",   note: "Rod, net, or trap -- see what bites", ready: true, hub: true },
   { id: "market",    icon: "\u{2696}\u{FE0F}", name: "Market", note: "Sell what you've gathered", ready: true, hub: false },
   { id: "inventory", icon: "\u{1F392}", name: "Inventory", note: "What you're carrying",   ready: true,  hub: false },
   { id: "skills",    icon: "\u{1F4D4}", name: "Journal",   note: "Skills and your collection", ready: true,  hub: false },
   { id: "town",      icon: "\u{1F3D8}", name: "Aerendell", note: "Villagers and trade",    ready: false, hub: false },
-  { id: "map",       icon: "\u{1F5FA}", name: "Map",       note: "Beyond the farmstead",   ready: false, hub: false },
+  { id: "map",       icon: "\u{1F5FA}", name: "Map",       note: "Beyond the farmstead",   ready: true,  hub: false },
 ];
 // Foraging isn't a PLACES entry any more -- it's one persistent button
 // pinned above the dock (see index.html's #forage-bar and src/forage.js),
@@ -43,7 +48,7 @@ export const PLACES = [
 // Screens that exist, keyed to a #screen-<id> element and a #<id> URL hash.
 export const SCREEN_IDS = [
   "home", "field", "logging", "mining", "combat", "inventory", "skills", "craft", "market", "campfire",
-  "spinningWheel", "sawmill", "township", "stoneCutter", "tanningStation",
+  "spinningWheel", "sawmill", "township", "stoneCutter", "tanningStation", "map", "fishing",
 ];
 
 // The persistent bottom dock. Home first (left side) so there's always a
@@ -69,6 +74,7 @@ export const SKILLS = {
   milling:  { name: "Woodcutting", icon: "\u{1FA9A}" },
   stonecutting: { name: "Stonecutting", icon: "\u{1FAA8}" },
   tanning: { name: "Tanner", icon: "\u{1F9F5}" },
+  fishing: { name: "Fishing", icon: "\u{1F3A3}" },
 };
 
 export const PLOT_COUNT = 3;   // was 6 -- 2026-08-28, now that plots are a scrollable pill list, not a fixed grid
@@ -141,11 +147,15 @@ export const SEASONS = {
   },
 };
 
-// Local device hours, 24h clock. Night spans midnight (20 -> 6), so the
-// range check in time.js handles the wraparound rather than assuming
-// start < end.
-export const NIGHT_START_HOUR = 20;
-export const NIGHT_END_HOUR = 6;
+// Local device hours, 24h clock. Night spans midnight (21 -> 7, i.e.
+// 9pm-7am -- 2026-08-29), so the range check in time.js handles the
+// wraparound rather than assuming start < end. This is the one shared
+// definition of "night" -- crops already read it through
+// growthMultiplier() below, and Combat's own night difficulty/reward
+// bonus (see COMBAT_NIGHT_MULT below and combat.js) reads the same
+// isNight() rather than inventing a second window.
+export const NIGHT_START_HOUR = 21;
+export const NIGHT_END_HOUR = 7;
 export const NIGHT_GROWTH_MULT = 0.5;
 
 // A crop needs `waters` waterings. Each one starts a timer of `stageSeconds`;
@@ -206,6 +216,10 @@ export const TINTS = {
   "Animal Hide": "#8a6242", "Raw Beef": "#a8434a", "Leather": "#7a5233",
   "Wool": "#e8e2d4", "Raw Mutton": "#c25a5f", "Cloth": "#cfc7ae",
   "Stone Block": "#9a9a92", "Basalt Block": "#55555c",
+  "Fishing Rod": "#8a6a45", "Net": "#d9cba3", "Trap": "#8a6a45",
+  "Worm Bait": "#a8724a", "Shiny Lure": "#d8bd6a",
+  "Minnow": "#9fb8c7", "River Trout": "#6f8f7a", "Catfish": "#5f5a52",
+  "Golden Carp": "#e0b23c", "Moonfin Eel": "#5a6b8a",
 };
 
 // A second, independent gather loop -- no seeds, no growth stages, just tap
@@ -293,6 +307,18 @@ export const RECIPES = {
   woodenBuckler:{ name: "Wooden Buckler", cost: { "Sticks": 20, "Stone": 10 } },
   paddedVest:   { name: "Padded Vest",   cost: { "Sticks": 20, "Flint": 15 } },
   stonePlate:   { name: "Stone Plate",   cost: { "Stone": 25, "Pine Logs": 15 } },
+  // Fishing's three tools -- see FISHING section near the bottom of this
+  // file for what actually tells them apart. Net needs String (Spinning
+  // Wheel output) rather than raw Flax, same "a real conversion chain, not
+  // a shortcut" reasoning every other station-fed recipe already follows.
+  fishingRod: { name: "Fishing Rod", cost: { "Sticks": 15, "String": 5 } },
+  net:        { name: "Net",         cost: { "String": 15, "Sticks": 5 } },
+  trap:       { name: "Trap",        cost: { "Sticks": 20, "Flint": 5 } },
+  // Bait -- Rod-only (see canFishHere()/rollFish() in fishing.js). Net and
+  // Trap don't take bait on purpose: they're the bulk/passive tools, bait
+  // is what makes the skill-based tool worth the extra attention.
+  wormBait:   { name: "Worm Bait",   cost: { "Sticks": 5 } },
+  shinyLure:  { name: "Shiny Lure",  cost: { "Flint": 10, "String": 5 } },
 };
 
 // ------------------------------------------------------------------ equip
@@ -341,6 +367,12 @@ export const EQUIPMENT = {
   "Wooden Pickaxe": "pick",
   "Flint Pickaxe": "pick",
   "Stone Pickaxe": "pick",
+  // The "fishing" slot has sat reserved on the Equipment layout since
+  // before Fishing existed (see EQUIP_SLOTS above) -- this is that slot
+  // finally getting an item. Only the Rod is equipment; Net and Trap are
+  // just owned bag items src/fishing.js checks for directly, since they're
+  // actions you pick on the Fishing screen, not something you wear.
+  "Fishing Rod": "fishing",
   // "arm" is a wildcard -- src/inventory.js's equip picker offers these to
   // *either* armLeft or armRight, whichever the player opened.
   "Flint Dagger": "arm",
@@ -491,6 +523,14 @@ export const COMBAT_PLAYER_MAX_HP = 10;   // was 50 -- 2026-08-28
 // either, but the distinction is there for whenever one does).
 export const FLEE_CHANCE = 0.5;
 
+// Baked into a fight once, at startFight() (same "read once, not
+// retroactive mid-run" rule every other timer/bonus in this game follows)
+// -- night doesn't just make a fight harder, it pays better too, applied
+// symmetrically to the enemy's HP and attack roll on one side and the
+// shard/drop reward on the other. Reads the same isNight() crops already
+// use (see NIGHT_START_HOUR/END_HOUR above), not a separate window.
+export const COMBAT_NIGHT_MULT = 2;
+
 // ------------------------------------------------------------------ market
 //
 // One category per skill, one demand multiplier per category per zone --
@@ -520,6 +560,10 @@ export const CATEGORIES = {
   "Animal Hide": "combat", "Raw Beef": "combat",
   "Wool": "combat", "Raw Mutton": "combat",
   "Leather": "tanning", "Cloth": "sowing",
+  "Fishing Rod": "crafting", "Net": "crafting", "Trap": "crafting",
+  "Worm Bait": "crafting", "Shiny Lure": "crafting",
+  "Minnow": "fishing", "River Trout": "fishing", "Catfish": "fishing",
+  "Golden Carp": "fishing", "Moonfin Eel": "fishing",
 };
 
 // Base sell value in Shards, before demand and stock are applied -- also
@@ -553,12 +597,19 @@ export const BASE_VALUE = {
   "Bones": 4, "Feathers": 3, "Raw Poultry": 8,
   "Animal Hide": 12, "Raw Beef": 14, "Leather": 22,
   "Wool": 10, "Raw Mutton": 12, "Cloth": 18,
+  "Fishing Rod": 1, "Net": 1, "Trap": 1,
+  "Worm Bait": 4, "Shiny Lure": 20,
+  // Common < uncommon < rare < the one night-only catch, same "worth more
+  // because it's harder to get" logic ore/gem tiers already follow.
+  "Minnow": 4, "River Trout": 10, "Catfish": 16,
+  "Golden Carp": 60, "Moonfin Eel": 45,
 };
 
 export const ZONE_DEMAND = {
   aerendell: {
     farming: 1, logging: 1, foraging: 1, crafting: 1, cooking: 1,
     sowing: 1, milling: 1, mining: 1, stonecutting: 1, combat: 1, tanning: 1,
+    fishing: 1,
   },
 };
 
@@ -584,6 +635,16 @@ export const MARKET_K = 8;
 // timestamp, not a background tick, same deadline-not-countdown rule as
 // everything else that grows or decays in this game.
 export const MARKET_HALF_LIFE_MS = 3 * 60 * 1000;
+
+// A market in a "town"-type location (see LOCATIONS below) closes
+// overnight -- 5pm to 9am local device time, the same wraparound-hours
+// shape NIGHT_START_HOUR/END_HOUR already uses, just its own separate
+// window (town hours aren't the same as night hours -- the market shuts
+// before dark and opens well after dawn). A "city"-type location's market
+// is open 24/7 and never checks this at all; landmarks and wilderness
+// don't have a market to close. See time.js's isTownMarketOpen().
+export const TOWN_MARKET_CLOSED_START_HOUR = 17;
+export const TOWN_MARKET_CLOSED_END_HOUR = 9;
 
 // ---------------------------------------------------------------- buildings
 // A one-time cost, paid once, unlocks a permanent station. Only the
@@ -761,4 +822,138 @@ export const MINE_MATERIALS = {
   "Iron Ore":   { minDepth: 400,  weight: 100 },
   "Gold Ore":   { minDepth: 1000, weight: 40 },
   "Diamond":    { minDepth: 2500, weight: 15 },
+};
+
+// -------------------------------------------------------------- the world
+//
+// Foundational data for zones/travel/factions/trade -- laid down now, well
+// ahead of the Map screen or an actual travel mechanic (both later
+// batches), so every other foundational piece (town market hours below,
+// eventually per-location stations/forage pools) has real data to read
+// from instead of a hardcoded "Aerendell" assumption scattered everywhere.
+//
+// `type` decides what a location even has, not a per-location flag list:
+//   - "city"       -- a market (open 24/7, unlike a town's) and a bank.
+//                     Bank contents are meant to be shared across every
+//                     city, not per-location, once banking exists.
+//   - "town"       -- a market (closed overnight, see
+//                     TOWN_MARKET_CLOSED_START_HOUR/END_HOUR) and storage
+//                     (a local crate, NOT shared with any other location).
+//   - "landmark"   -- no market, no storage. A place things happen, not a
+//                     place to restock.
+//   - "wilderness" -- same as landmark: no market, no storage.
+// `stations` and `forage` are placeholders (empty) for every location
+// except Aerendell until the spreadsheet's real content comes back --
+// same "real spot, nothing behind it yet" treatment the Furnace/Stone
+// Cutter hub cards used before they were real.
+//
+// Coordinates straight off the hand-drawn map (2026-08-29): Aerendell --
+// Forest Road -- Thal-Barak -- Stilltide Pass -- Duun-Vael Bridge --
+// Riverhold, one linear road so far. `locked` is a reason string shown to
+// the player, or `true` for a lock the player isn't told the reason for
+// (the sketch's own "some locks don't show why" rule) -- absent/false
+// means open. Nothing is locked yet; every one of these fields is real,
+// load-bearing shape for whenever a location actually needs to be.
+//
+// `pos` is a grid coordinate (not pixels -- src/map.js does that
+// conversion), y increasing upward with 0 at Aerendell, matching the
+// sketch's own "the road climbs away from home" layout and the Map
+// screen's "starting location at the bottom" rule. It's a free x/y grid,
+// not just an index along one chain, on purpose -- the sketch itself
+// already branches sideways off Thal-Barak, so a location needs to be
+// placeable anywhere around its neighbors, not just stacked in a line.
+export const LOCATIONS = {
+  aerendell: {
+    name: "Aerendell", type: "town", pos: { x: 0, y: 0 },
+    stations: ["campfire", "spinningWheel", "sawmill", "stoneCutter", "tanningStation", "township"],
+    forage: "aerendell", fishing: "aerendell",
+  },
+  forestRoad: { name: "Forest Road", type: "wilderness", pos: { x: 1, y: 1 }, stations: [], forage: null, fishing: null },
+  thalBarak: { name: "Thal-Barak", type: "city", pos: { x: 0, y: 2 }, stations: [], forage: null, fishing: null },
+  stilltidePass: { name: "Stilltide Pass", type: "wilderness", pos: { x: 1, y: 3 }, stations: [], forage: null, fishing: null },
+  duunVaelBridge: { name: "Duun-Vael Bridge", type: "landmark", pos: { x: 0, y: 4 }, stations: [], forage: null, fishing: null },
+  riverhold: { name: "Riverhold", type: "city", pos: { x: 1, y: 5 }, stations: [], forage: null, fishing: null },
+};
+
+// One road per connection, not two (aerendell<->forestRoad is a single
+// entry, travel works either direction along it) -- `minutes` is real
+// game-clock travel time for whenever a travel mechanic reads this;
+// `locked` (a reason string, or `true` for an unexplained lock, or absent
+// for open) overrides `minutes` on the Map screen's own display, showing
+// a padlock instead of a time, per the sketch. Numbers below are read
+// straight off the hand-drawn map -- first-pass, meant to be tuned once
+// the location spreadsheet comes back, not a balanced economy yet.
+export const ROADS = [
+  { from: "aerendell", to: "forestRoad", minutes: 5 },
+  { from: "forestRoad", to: "thalBarak", minutes: 15 },
+  { from: "thalBarak", to: "stilltidePass", minutes: 5 },
+  { from: "stilltidePass", to: "duunVaelBridge", minutes: 15 },
+  { from: "duunVaelBridge", to: "riverhold", minutes: 15 },
+];
+
+// ----------------------------------------------------------------- fishing
+//
+// Three tools, three different *kinds* of interaction, not three tiers of
+// the same one -- each deliberately reuses a mechanic this game already
+// has, rather than inventing a fourth:
+//   - Rod   -- the reflex minigame (src/fishing.js's castRod()/resolveBite()):
+//              cast, wait for a bite, tap the short window. The only tool
+//              that can land a `rare` or `nightOnly` fish, and the only one
+//              bait affects -- skill and prep both matter here, so it's the
+//              one worth paying attention to.
+//   - Net   -- a tap-swing, same shape as Mining's dig or Foraging's swing:
+//              tap FISH_NET_CLICKS_PER_SWING times, no bite-timing at all.
+//              Common fish only, but two per completed swing -- bulk over
+//              precision.
+//   - Trap  -- a deadline timer, same shape as Travel or a cooking Campfire
+//              item: set it (FISH_TRAP_MS out), walk away, it resolves and
+//              banks itself the instant it's ready, no tap required at
+//              all. Common fish only, lowest value -- the cost of zero
+//              attention.
+// Bait only ever touches the Rod roll; Net/Trap don't take bait, which is
+// what makes bait worth crafting in the first place (see BAITS below).
+export const FISH_XP_ROD = 12;
+export const FISH_XP_NET = 8;
+export const FISH_XP_TRAP = 5;
+
+export const FISH_NET_CLICKS_PER_SWING = 6;
+export const FISH_TRAP_MS = 10 * 60 * 1000;   // 10 minutes, set-and-forget
+
+// Cast, then a random wait before the bite window opens, then a short
+// window to tap it -- miss either end (didn't tap in time) and the fish
+// gets away with nothing gained. Deadline-based (biteAt/expiresAt are real
+// timestamps, not a running countdown), same as every other timer in this
+// game, so backgrounding the tab mid-cast just means the window may have
+// already passed by the time it's looked at again -- a miss, not a bug.
+export const FISH_BITE_DELAY_MIN_MS = 1500;
+export const FISH_BITE_DELAY_MAX_MS = 4500;
+export const FISH_BITE_WINDOW_MS = 750;
+
+// Reweights specific fish for the Rod roll only -- a flat multiplier on
+// that fish's own `chance`, applied before the weighted roll (see
+// rollFish() in fishing.js), not a separate guaranteed-catch mechanic.
+// Consumed one per cast, same "spent on commit" rule everything else
+// spendable in this game follows.
+export const BAITS = {
+  "Worm Bait": { boosts: { "River Trout": 2, "Catfish": 2 } },
+  "Shiny Lure": { boosts: { "Golden Carp": 5 } },
+};
+
+// One pool per location with `fishing` set (LOCATIONS above) -- same shape
+// as FORAGE_POOLS, plus two flags a forage pool has no equivalent for:
+//   `rare`      -- Rod-only (Net/Trap filter these out entirely).
+//   `nightOnly` -- excluded from every roll unless isNight() (src/time.js)
+//                  is true; Rod-only in practice too, since Net/Trap's own
+//                  common-only filter already drops it regardless of time.
+// Weights don't need to sum to 1 -- rollFish() sums whatever's left after
+// filtering and rolls against that total, so excluding nightOnly by day
+// doesn't silently bias the remaining odds.
+export const FISH_POOLS = {
+  aerendell: [
+    { item: "Minnow",      chance: 0.45 },
+    { item: "River Trout", chance: 0.30 },
+    { item: "Catfish",     chance: 0.16 },
+    { item: "Golden Carp", chance: 0.05, rare: true },
+    { item: "Moonfin Eel", chance: 0.04, nightOnly: true },
+  ],
 };

@@ -1565,6 +1565,434 @@ instead of resetting to all-undiscovered.
 No incentive is wired to finishing a section yet -- this is deliberately
 just the log itself, ready for whatever reward system comes next.
 
+## Fixed: mobile browsers reading rapid taps as double-tap-to-zoom
+
+**Reported as "unplayable" on a phone** -- Mining's swings, Forage, and
+chopping all depend on tapping the same small spot rapidly and
+repeatedly, which is exactly the gesture mobile Safari/Chrome read as
+"double-tap to zoom in here" with no way for a web page to opt out by
+default. Two changes, both needed (either alone has been known to not
+fully work on some browser/OS combination in the wild):
+
+- **The viewport meta tag** (`index.html`) gained `maximum-scale=1,
+  user-scalable=no` -- the browser can no longer zoom the page at all,
+  double-tap or otherwise.
+- **`touch-action: manipulation`** is now set globally (the `*` rule in
+  `style.css`) -- normal single-finger scrolling/panning still works
+  everywhere the page actually scrolls; only double-tap-zoom and
+  pinch-zoom are given up, and as a bonus this also removes the ~300ms
+  tap-delay some mobile browsers add while waiting to see if a second tap
+  is coming, which was working against rapid-tap mechanics anyway.
+
+Verified live: the viewport meta and `touch-action` both read back
+correctly from the page, and ordinary taps/navigation still work exactly
+as before -- this only removes a gesture, not any input handling.
+
+## Night difficulty/rewards, town market hours, and the world's foundation
+
+**Night is redefined as 9pm-7am** (`NIGHT_START_HOUR`/`NIGHT_END_HOUR` in
+`data.js`, was 8pm-6am) -- one shared window, not a separate one invented
+per system. Crops already read this through `growthMultiplier()`'s
+existing `NIGHT_GROWTH_MULT` (0.5x), so moving the window immediately
+retimed crop growth to match with no other change needed.
+
+**Combat is 2x harder and pays 2x better at night** (`COMBAT_NIGHT_MULT`
+in `data.js`) -- baked into `state.combat` once, at `startFight()`
+(`nightBoost: true`), the same "read once, not retroactive mid-run" rule
+every other timer/bonus in this game follows, so a fight that happens to
+straddle the real-world day/night boundary doesn't have its difficulty
+shift mid-fight. Doubles the enemy's HP and attack roll on one side and
+the shard reward and every drop quantity on the other -- verified live
+with the clock mocked to 10pm: a Chicken's HP read 10 (base 5), and its
+attacks landed for 1-6 rather than the base 1-3 range. A gold "🌙 (2x)"
+tag appears on the enemy's name in the arena, the result panel notes
+"(night bonus applied)," and the idle enemy-picker shows a standing
+"enemies are tougher, but reward more" note whenever it's currently
+night, so the player knows before they tap in, not just after.
+
+**A new `LOCATIONS`/`ROADS` foundation in `data.js`** -- laid down well
+ahead of an actual Map screen or travel mechanic (both later batches), so
+other foundational pieces have real data to read instead of a hardcoded
+"Aerendell" assumption. `LOCATIONS` gives every location a `type`
+(`city`/`town`/`landmark`/`wilderness`) that decides what it even has --
+a city gets a market (open 24/7) and a bank (shared across every city,
+once banking exists); a town gets a market (closed overnight) and its own
+local, unshared storage; a landmark or wilderness gets neither. The six
+locations existing today are exactly what the hand-drawn map shows:
+Aerendell (town), Forest Road (wilderness), Thal-Barak (city), Stilltide
+Pass (wilderness), Duun-Vael Bridge (landmark), Riverhold (city), one
+linear road chain between them with the sketch's own travel-time numbers.
+Every location past Aerendell has empty `stations`/`forage` placeholders
+-- the same "real spot, nothing behind it yet" treatment the Furnace hub
+card used before it was real -- ready for the location spreadsheet's
+answers, not yet reachable or visible to the player.
+
+**Aerendell's market now actually closes overnight** -- 5pm-9am
+(`TOWN_MARKET_CLOSED_START_HOUR`/`END_HOUR`), a separate window from
+night itself (a market can't be assumed to close exactly at dark or open
+exactly at dawn). `time.js`'s new `isTownMarketOpen()` and `market.js`'s
+`marketOpenHere()` read `LOCATIONS.aerendell.type === "town"` rather than
+hardcoding the closed-hours check -- a city's market, once one exists to
+visit, is open 24/7 by type alone and never calls the clock at all.
+Closed hours replace the whole Sell/Purchase list with a plain notice
+rather than disabling individual rows, so there's nothing left to tap and
+no extra guard needed anywhere else. Verified live at every boundary
+hour: closed at 8am and 5pm, open at 9am and 4pm.
+
+This is deliberately just the data/mechanics layer -- no Map screen, no
+travel, no per-location content yet. See the batch plan (and the
+location spreadsheet) delivered alongside this pass for what's next.
+
+## The Map screen: batch 2, read-only
+
+The second batch of the world-foundation plan: a real Map screen, reading
+straight off the `LOCATIONS`/`ROADS` data the previous batch laid down.
+`PLACES.map` flips to `ready: true` and `"map"` joins `SCREEN_IDS` --
+that's the whole unlock, since the dock and hub already treat any listed
+screen id as a real destination rather than a "shake, not built yet"
+button.
+
+**A real freeform 2D layout, not a list.** Every `LOCATIONS` entry now
+carries a grid `pos: {x, y}` (data.js), with y increasing upward from
+Aerendell at 0 -- matching both the sketch's "the road climbs away from
+home" shape and the rule that the starting location sits at the bottom of
+the map, not the top. `src/map.js` converts that grid into pixels and
+drops each location as a circular node onto an absolutely-positioned
+`#map-canvas`, with a dashed SVG line per `ROADS` entry connecting node
+centers. A grid (not a single chain array) on purpose: the sketch itself
+already branches sideways off Thal-Barak, so a location needs to be
+placeable anywhere around its neighbors, not just stacked in one
+direction -- something a vertical list genuinely couldn't have grown into
+without a rewrite. A green-ringed node marks `state.currentLocation` with
+a "You are here" label.
+
+**Travel time sits directly on the road**, not off to the side -- a
+`.map-road-badge` positioned at each line's exact midpoint, the same way
+the hand-drawn sketch circles a number right on top of the dashed path.
+`ROADS[i].locked` (a reason string, `true` for an unexplained lock, or
+absent for open) swaps that badge for a padlock instead, per the sketch's
+own "some locks don't show why" rule -- nothing is locked yet, same "real
+shape, nothing behind it yet" treatment the `LOCATIONS`/`ROADS`
+foundation itself got last batch.
+
+**The canvas can be bigger than the screen, so it's draggable.** Six
+locations already need more height than one viewport, and any branch off
+the main chain will need width too -- rather than caping the layout to
+what fits, `#map-viewport` is a fixed-size window onto a larger
+`#map-canvas`, panned by hand in `src/map.js` (mouse or touch both arrive
+as pointer events, so one code path covers both) instead of relying on
+the browser's native scroll. The screen opens already centered on the
+player's current location rather than the canvas's top-left corner. A
+tap is told apart from a drag at `pointerdown`, by which node (if any)
+was directly under the pointer *before* any movement happened, since
+`setPointerCapture` -- needed so a drag started on a node doesn't stop
+tracking once the pointer moves off it -- retargets every event after it
+(including the click that would normally follow) to the viewport itself,
+making `event.target` useless for figuring out what got tapped by the
+time a click fires. Move past a small threshold and it pans; stay under
+it and the node's sheet opens.
+
+**`state.currentLocation`** is a new persisted field, seeded to
+`"aerendell"` and with no way to change it yet -- travel itself is the
+next batch, not this one. It exists now so that batch has something real
+to move instead of also having to invent where the player starts.
+
+**Tapping a node opens the shared bottom sheet** (the same one Field's
+seed picker and Logging's cone picker already use) with what's known
+about that location: its type, the type's market/storage rule spelled out
+in plain language, its station list and whether foraging is available
+there, and either "You are here" or "Travel isn't open yet" depending on
+whether it's the current location. Nothing here is a button that does
+anything yet -- it's read-only, matching the batch plan.
+
+Verified live: all six locations and five roads render with the sketch's
+own travel times sitting on their lines, Aerendell opens at the bottom of
+the view with its "You are here" badge and real station list, dragging
+the canvas in any direction pans to reveal the rest of the chain, and a
+tap right after a drag still opens the correct node's sheet rather than
+being swallowed by the gesture that came before it.
+
+A placeholder location, `thalBarakBranch` ("Unnamed Branch"), was added
+off to the side of Thal-Barak purely to prove a location can sit anywhere
+around its neighbors instead of only stacking in the main chain -- the
+sketch itself tears off right where its real branch would have been
+named, so this stands in for that until the real one is decided. Both it
+and its one road are marked in `data.js` for easy removal or renaming
+once that's settled.
+
+## Travel: batch 3, moving between locations for real
+
+The third batch: locations are no longer just a map to look at.
+`src/travel.js` is the whole mechanic -- `state.travel` (`{ from, to,
+readyAt }` or `null`) is a deadline like every other timer in this game,
+so a trip already under way keeps progressing correctly across a reload
+or the tab being closed outright, and `settleTravel()` slots into the
+same boot/tick "catch up, then draw" shape `settleCombat()` and the rest
+already use. One trip in flight at a time; only a direct, unlocked road
+(`roadBetween()`) can be traveled -- no multi-hop routing yet, so
+reaching a location two roads away means arriving at the one in between
+first.
+
+**The Map screen's sheet gained a Travel button.** Tapping a location
+that isn't where the player already is now shows one of: a "Travel (X
+min)" button (a direct, unlocked road exists); "No direct road from here
+yet" (no road connects them); the road's lock reason, or a bare "Locked"
+if the road doesn't say why (`ROADS[i].locked`); or, if a trip is already
+under way, either "Already on the way here" (tapping the destination
+itself) or a note naming where the player *is* headed (tapping anywhere
+else) -- travel can't be redirected mid-trip. Tapping Travel starts the
+trip, closes the sheet, and rebuilds the map immediately so the change is
+visible without waiting for the next tick.
+
+**A trip in flight is visible on the map itself**, not just inside a
+sheet: the destination node and the one road it's traveling turn gold
+(`.map-node.traveling`, `.map-road-line.traveling`), labeled "Arriving..."
+in place of its usual type, while the departure node keeps its green
+"You are here" ring the whole time -- `state.currentLocation` doesn't
+flip until the trip actually resolves. A gold countdown banner
+(`#map-travel-note`, styled like Combat's own night-warning note) sits
+above the map showing "Traveling to X -- Mm Ss," refreshed every tick
+while the Map screen is open the same way Combat's own countdown numbers
+are, without rebuilding the whole canvas just for one line of text.
+Arriving (`readyAt` passing) does trigger a full rebuild, since the
+"You are here" ring, the note, and the gold highlighting all need to move
+at once.
+
+Verified live: starting a trip from Aerendell to Forest Road shows the
+gold destination/road and the live countdown banner immediately; fast-
+forwarding `readyAt` resolves the trip on the very next tick, flipping
+"You are here" onto Forest Road, restoring Aerendell's plain type label,
+and clearing the banner; Aerendell's own sheet then correctly offers a
+Travel button back; and a location with no direct road from the new
+current location (Riverhold, from Forest Road) correctly reports that
+rather than offering a button.
+
+Deliberately still narrow: arriving only changes `state.currentLocation`
+-- nothing yet reads it to gate which stations, markets, or forage pools
+are actually usable from wherever the player physically is. That's
+per-location content, batch 4, waiting on the location spreadsheet's real
+answers before there's anything meaningful to gate.
+
+The placeholder branch off Thal-Barak (`thalBarakBranch`, "Unnamed
+Branch") from the last pass has been removed, along with its one road, now
+that its job -- proving the Map screen handles a location off to the side
+of the main chain -- is done.
+
+## Batch 4: per-location content actually gates things
+
+Everywhere `state.currentLocation` was inert scenery through batches 2-3,
+it now decides what's real:
+
+**Built stations only work where they were built.** Every `BUILDINGS`
+entry (Campfire, Spinning Wheel, Sawmill, Stone Cutter, Tanning Station,
+Township) already corresponds to a `LOCATIONS[...].stations` entry --
+`hub.js`'s `builtHere()` checks both `state.buildings[id]` *and*
+`LOCATIONS[state.currentLocation].stations.indexOf(id) >= 0` before the
+hub shows its card, and `buildings.js`'s `belongsHere()` applies the same
+rule to the "Build ___" prompt itself, so you can't even start building a
+station somewhere it doesn't belong. Travel away from Aerendell today and
+every built station's card disappears along with any remaining build
+prompts; travel back and they're all there again. Field, Logging, Mining,
+Craft Bench, and Combat aren't `BUILDINGS` entries and aren't listed under
+any location's `stations` array, so none of this touches them -- they
+stay available everywhere, which is a real (if implicit) design choice:
+LOCATIONS never modeled "the farmstead's plots" as a station, only the
+built conversion stations it explicitly lists, so extending the gate to
+farming/logging/mining/crafting/combat wasn't this batch's call to make
+without the spreadsheet saying so.
+
+**Foraging only works where `LOCATIONS[...].forage` names a pool.**
+`forage.js`'s `canForageHere()` reads the current location instead of a
+hardcoded zone; everywhere without a pool assigned yet (every location but
+Aerendell, for now) greys the forage bar out ("Nothing to forage here")
+and its tap becomes a no-op. The hired villager is the one deliberate
+exception: they keep foraging from Aerendell's own pool
+(`VILLAGER_HOME_POOL`) no matter where the player currently is, since they
+didn't come along on the trip -- they're still back at the Township
+working. The player's own tap still only lands wherever they actually are,
+which in practice means "tap along with the villager" only ever applies
+at Aerendell today, exactly like before this batch, since that's the only
+place with a pool to combine into.
+
+**The Market is per-location now, not Aerendell's alone.** `market.js`'s
+old hardcoded `ZONE` constant is `zone()`, reading `state.currentLocation`
+fresh on every call. A location's `type` decides what shows at all:
+landmark/wilderness gets "There's no market here"; a town gets the
+existing closed-overnight behavior with its own name in the notice; a city
+is open 24/7 and additionally gets a **Bank** tab. `ZONE_DEMAND` still
+only has real numbers for Aerendell -- `demandFor()` falls back to neutral
+(1x) demand on every other zone rather than crashing on the missing entry,
+same "first-pass, not a balanced economy" numbers every zone's content
+already carries. `state.market.stock` stays one shared table across every
+location for now rather than one per zone -- a simplification worth
+revisiting once a second location actually has priced goods of its own to
+diverge on.
+
+**Banking is one shared `state.bank`, not one per city** -- exactly what
+"items in the bank can be accessed from any other city" (the original ask)
+means, since there's nothing to key per-city in the first place. The Bank
+tab (only shown at a `type: "city"` location) lists what's already banked
+(tap to withdraw) above what's currently carried across bag and storage
+(tap to deposit), each opening the same quantity-slider sheet the
+Sell/Buy flow uses, just with no price attached -- moving a stack between
+two piles isn't a sale.
+
+**Arriving refreshes everything gated on location, not just the Map
+screen.** `main.js`'s tick loop already special-cased "a trip resolved
+this tick" for the Map's own canvas; it now also re-runs `drawMenu()`,
+`drawBuildPrompts()`, and `refreshForage()`, plus `buildMarket()` if the
+Market screen happens to be open -- so walking into Aerendell mid-tick
+while sitting on the Home screen shows the newly-available stations
+immediately, not just after the next screen change.
+
+Verified live: traveling from Aerendell to Forest Road hides every built
+station's hub card and every remaining build prompt, and greys out
+foraging; traveling back restores all of it. A Sticks stack deposited at
+Thal-Barak's Bank shows up immediately at Riverhold's. Aerendell (a town)
+shows Sell/Purchase only, no Bank tab, and still respects its overnight
+closed hours; Thal-Barak and Riverhold (cities) are open with all three
+tabs regardless of the clock; Stilltide Pass (wilderness) shows "There's
+no market here." A trip resolving while idle on the Home screen -- no
+reload, no screen change -- updated the forage bar the instant it landed.
+
+This closes out the four-batch world-foundation plan (night/market-hours
+data, the Map screen, travel, and now per-location gating). What's left is
+squarely the location spreadsheet's job: real `stations`/`forage` lists
+for Thal-Barak/Stilltide Pass/Duun-Vael Bridge/Riverhold, their own
+`ZONE_DEMAND`/pricing, and whatever locks the spreadsheet actually wants
+on the roads leading to them.
+
+## Fishing: three tools, three different mechanics
+
+A new hub screen, gated by location the same way a built station is
+(`LOCATIONS[...].fishing`, mirroring `.forage` exactly) -- only Aerendell
+has a pool assigned so far. The design choice this whole feature hangs
+on: Rod, Net, and Trap aren't three tiers of one fishing action, they're
+three *different* interactions, each deliberately reusing a mechanic this
+game already had rather than inventing a fourth:
+
+- **Rod** -- a real reflex minigame (`src/fishing.js`'s `castRod()`/
+  `resolveBite()`). Cast, wait a random delay, a "BITE! Tap now!" window
+  flashes gold for `FISH_BITE_WINDOW_MS` (750ms), tap it in time or the
+  fish gets away. Deadline-based like everything else in this game --
+  `biteAt`/`expiresAt` are real timestamps, not a countdown, so
+  backgrounding the tab mid-cast just means the window may have already
+  closed by the time it's looked at again. The only tool that can land a
+  `rare` or `nightOnly` fish, and the only one bait affects -- skill and
+  prep both matter here, which is what justifies it being the one tool
+  worth paying attention to.
+- **Net** -- a tap-swing, identical shape to Mining's dig or Foraging's
+  swing: `FISH_NET_CLICKS_PER_SWING` taps, no bite-timing at all. Common
+  fish only, but two rolled per completed swing -- bulk over precision.
+- **Trap** -- a deadline timer, identical shape to a cooking Campfire
+  item: set it (`FISH_TRAP_MS`, 10 minutes), walk away -- even leave the
+  location, even close the tab -- and it resolves and banks itself the
+  instant it's ready, no tap required, wherever the player happens to be.
+  The pool it rolls against is captured at set-time (`state.fishing.trap.
+  poolId`), not read fresh at resolution, so a trap left out still
+  resolves against the water it was actually set at even if the player
+  has since traveled elsewhere. Common fish only, lowest value -- the
+  price of zero attention.
+
+**Bait is Rod-only, on purpose.** `BAITS` (Worm Bait, Shiny Lure) reweight
+specific fish for the Rod's roll, consumed one per cast; Net and Trap
+don't take bait at all, which is what makes bait worth crafting in the
+first place -- it's the one thing that rewards choosing the tool that
+takes actual attention.
+
+**Rare and night-only fish only ever come from the Rod.** Each
+`FISH_POOLS` entry can carry `rare: true` and/or `nightOnly: true`;
+`rollFish()`'s `full` flag (true for Rod, false for Net/Trap) is what
+filters those out for the bulk tools, and `nightOnly` additionally checks
+`isNight()` (the same day/night window Combat and crops already read) --
+excluded by day regardless of which tool asks. Weights don't need to sum
+to 1: `rollFish()` sums whatever's left after filtering and rolls against
+that total, so excluding `nightOnly` entries by day doesn't silently bias
+the rest of the odds the way assuming a fixed sum would.
+
+**The Rod/Net/Trap toggle sits at the bottom of the screen**, in thumb
+reach, rather than up top under the XP bar -- the same bottom-pinned
+layout Inventory's own Equipment/Bag/Storage switch already uses.
+`#screen-fishing` needed the same `height: 100dvh; overflow: hidden;`
+treatment `#screen-inventory` has for it to work: `.inv-toggle`'s
+`margin-top: auto` only pins to the bottom against a fixed-height flex
+column, and a new `.fish-pages` wrapper (flex:1, min-height:0,
+overflow-y:auto) is what soaks up the remaining space above it, so the
+toggle doesn't just get pushed to the bottom of an ever-growing page.
+
+**The Fishing Rod finally fills a slot that's been sitting reserved.**
+`EQUIP_SLOTS` has had a real "Fishing Rod" tool slot on the Equipment
+layout since before Fishing existed, with nothing to put in it -- same
+"real spot, nothing behind it yet" treatment Furnace's hub card got. Net
+and Trap are deliberately *not* equipment -- they're bag items the
+Fishing screen checks for directly, since they're actions you pick per
+visit, not something you wear.
+
+Verified live: a full Rod cycle (cast → wait → gold bite flash → tapped
+in time → "Caught a River Trout!" → item and XP both granted); a Net
+sweep completing at 6 taps and granting two fish at once; a Trap set,
+fast-forwarded, and resolving into the bag on its own while sitting idle
+on the Home screen -- no tap, no Fishing screen even open; the Fishing
+hub card appearing at Aerendell and disappearing at Forest Road; and all
+five new Craft Bench recipes (Fishing Rod, Net, Trap, Worm Bait, Shiny
+Lure) crafting correctly, cost text auto-populated the same way every
+other recipe's already is, and automatically picking up per-item crafting
+mastery with no extra wiring needed.
+
+Deliberately simple for this pass: the Rod's cast/bite state and the
+Net's swing progress aren't persisted (a mid-cast/mid-swing reset on
+reload is an acceptable simplification for something this short-lived) --
+only the Trap's deadline and the selected bait are saved. There's also no
+"reel" phase after a successful bite -- one well-timed tap is the whole
+catch. Both are easy follow-ups if the Rod ever feels too thin on its own.
+
+## Fixed: the forage bar sinking under the dock on mobile
+
+`.forage-bar`'s `bottom` was `var(--dock-h)` alone -- but `--dock-h` is
+only the dock's icon+label *content* height, not the real dock, which is
+taller than that by its own bottom padding's `env(safe-area-inset-bottom)`
+(the iOS home-indicator inset). On any phone with a non-zero safe area,
+that gap sank the forage bar's bottom edge that many pixels into the
+dock's actual territory -- and since the dock sits at a higher z-index,
+that's the half of the bar that vanished. Fixed by adding the same
+`env(safe-area-inset-bottom)` term to the forage bar's own `bottom`
+(`calc(var(--dock-h) + env(safe-area-inset-bottom))`), matching where the
+dock's content actually starts rather than where `--dock-h` alone would
+put it. A no-op on a browser with no safe area (desktop, most Android),
+which is why this didn't show up until it was actually tried on an iPhone.
+
+## Fixed: Craft/station screens showing stale "not enough materials"
+
+Real bug, not what it first looked like: `canAfford()`/`spendCost()`
+(`costDisplay.js`) were both already correct, reading Bag+Storage fresh
+every call -- crafting would have actually gone through even while the
+pill displayed a "you don't have enough" some digits behind. The pill's
+*displayed* cost text and afford styling, though, were only ever
+recomputed when that exact recipe/station finished a cycle
+(`settleCraft()`/`settleStations()`'s own per-item `refreshCraft(item)`/
+`refreshStation(id)` calls) -- never on simply navigating to the screen,
+and never on a tick while sitting there. `screens.js`'s `show()` had no
+case for `"craft"` or the four conversion-station screens at all (every
+other screen with something worth refreshing already had one), so the
+display just kept showing whatever it last showed -- which could be from
+boot, hours and several harvests ago, if the player hadn't visited that
+exact screen since. Worse, the persistent Forage bar's hired villager
+ticks unconditionally in the background regardless of which screen is
+open, so the bag could drift out from under the display even while
+sitting right there watching it.
+
+Fixed in two layers, matching the shape Mining/Combat's own screens
+already use: `show()` now calls `refreshCraft()`/`refreshAllStations()`
+the instant either kind of screen opens, and `main.js`'s tick loop now
+also redraws Craft (or whichever station screen is open) on every tick
+the player is still sitting there and nothing just finished -- "just
+arrived" and "still watching" both covered, not just "something you were
+brewing happens to complete right now." Verified live: zeroed the bag,
+confirmed Craft Bench correctly read unaffordable; left the screen,
+granted materials without reloading, came back, and the pill immediately
+read `20/20 Flint · 20/20 Sticks` / `affordable-ready` instead of the
+stale pre-grant numbers -- same fix confirmed on the Spinning Wheel.
+
 ## Adding to it
 
 A new crop, tree, or recipe is one entry in `src/data.js`; a new zone's

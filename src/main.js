@@ -8,7 +8,7 @@
 import { RECIPES, AWAY_POPUP_MS } from "./data.js";
 import { state, load, save } from "./state.js";
 import { probeSprites } from "./sprites.js";
-import { showFromHash } from "./screens.js";
+import { showFromHash, STATION_SCREENS } from "./screens.js";
 import {
   drawMenu, drawBag, updateWalletNote, updateHubAttention, updateSeasonNote, updateDaytimeBadge,
 } from "./hub.js";
@@ -32,6 +32,12 @@ import {
 } from "./stations.js";
 import { refreshMining, drawMiningXp, applyMiningSprites } from "./mining.js";
 import { settleCombat, refreshCombat, drawCombatXp, syncTimerBars } from "./combat.js";
+import { settleTravel } from "./travel.js";
+import { buildMap, refreshMap } from "./map.js";
+import { buildMarket } from "./market.js";
+import {
+  buildFishing, refreshFishing, settleFishingTrap, drawFishingXp, applyFishingSprites,
+} from "./fishing.js";
 import { el } from "./dom.js";
 
 // Foraging's own settle() can resolve more than one gather in a single
@@ -68,6 +74,7 @@ function start() {
   applyStationSprites();
   applyCampfireSprites();
   applyMiningSprites();
+  applyFishingSprites();
   settle();
   drawField();
   drawXp();
@@ -112,10 +119,29 @@ function start() {
   drawMiningXp();
   refreshMining();
 
+  drawFishingXp();
+  // Catches up a Trap left out while the tab was closed, same shape as
+  // Campfire's own boot-time settle just above -- it banks itself, no tap
+  // needed, regardless of whether the Fishing screen is what's about to
+  // show.
+  settleFishingTrap();
+
   settleCombat();
   drawCombatXp();
   refreshCombat();
   syncTimerBars();
+
+  // Catches up a trip that finished while the tab was closed, same as
+  // every other settle() above -- state.currentLocation is already
+  // correct by the time showFromHash() below decides what to draw. The
+  // hub/build-prompt/forage redraws right after are what actually apply
+  // that location everywhere gated on it; showFromHash() itself handles
+  // the Market screen (buildMarket() reads state.currentLocation fresh)
+  // if that's what the URL hash points back to.
+  settleTravel();
+  drawMenu();
+  drawBuildPrompts();
+  refreshForage();
 
   updateHubAttention();
   updateSeasonNote();
@@ -146,11 +172,25 @@ function start() {
       doneCraft.forEach(function (item) { refreshCraft(item); popCount(item); });
       drawBag();
     }
+    // The villager's own forage tick (settleForage(), a few lines up) runs
+    // unconditionally regardless of which screen is showing, so the bag
+    // can change while the player is sitting on the Craft screen watching
+    // it -- without this, a recipe's cost text and afford styling would
+    // only catch up the moment that exact recipe happens to finish
+    // (doneCraft above), not when something else made it affordable.
+    // screens.js's show() covers "just navigated here"; this is "still
+    // sitting here."
+    else if (!el("screen-craft").classList.contains("hidden")) refreshCraft();
 
     const doneStations = settleStations();
     if (doneStations.length) {
       doneStations.forEach(function (id) { refreshStation(id); popCount(id); });
       drawBag();
+    }
+    // Same reasoning as Craft just above, for the four conversion-station
+    // screens (Spinning Wheel, Sawmill, Stone Cutter, Tanning Station).
+    else if (STATION_SCREENS.some(function (id) { return !el("screen-" + id).classList.contains("hidden"); })) {
+      refreshAllStations();
     }
 
     // Digging and surfacing are both synchronous now (see mining.js) --
@@ -173,6 +213,38 @@ function start() {
     const cooked = settleCampfire();
     if (cooked) drawBag();
     if (campfireVisible) refreshCampfire();
+
+    // Same shape as Campfire just above: a Trap banks itself into the bag
+    // the instant it's ready, no tap needed, wherever the player is
+    // looking. Only the Fishing screen itself needs an explicit redraw.
+    const fishingVisible = !el("screen-fishing").classList.contains("hidden");
+    const trapCatch = settleFishingTrap();
+    if (trapCatch) drawBag();
+    if (fishingVisible) refreshFishing();
+
+    // A resolved trip needs the whole canvas rebuilt (new "You are here"
+    // node, new road highlighted); still in flight, only the countdown
+    // banner needs touching -- same "full rebuild vs. light refresh" split
+    // every other visible-screen check above already makes.
+    const arrived = settleTravel();
+    const mapVisible = !el("screen-map").classList.contains("hidden");
+    if (mapVisible) { if (arrived) buildMap(); else refreshMap(); }
+
+    // Arriving can add/remove hub cards (a built station only shows where
+    // it was built), open/close a build prompt, and turn foraging on or
+    // off -- all location-gated, so all three need a fresh look the
+    // instant a trip actually resolves, wherever the player happens to be
+    // looking when it does. The unconditional refreshForage() a few lines
+    // up already ran this same tick against the *old* location -- redone
+    // here so the forage bar doesn't sit stale for one extra tick.
+    if (arrived) {
+      drawMenu();
+      drawBuildPrompts();
+      refreshForage();
+      const marketVisible = !el("screen-market").classList.contains("hidden");
+      if (marketVisible) buildMarket();
+      if (fishingVisible) buildFishing();
+    }
 
     updateHubAttention();
     updateSeasonNote();

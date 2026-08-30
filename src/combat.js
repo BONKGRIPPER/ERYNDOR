@@ -31,13 +31,21 @@
 
 import {
   COMBAT_UNARMED, COMBAT_BASE_DEFENSE, COMBAT_BASE_RECOVERY_MS, COMBAT_XP,
-  COMBAT_PLAYER_MAX_HP, FLEE_CHANCE, WEAPONS, ARMORS, SHIELDS, FOODS, ENEMIES,
+  COMBAT_PLAYER_MAX_HP, FLEE_CHANCE, COMBAT_NIGHT_MULT, WEAPONS, ARMORS, SHIELDS, FOODS, ENEMIES,
 } from "./data.js";
 import { state, save, gainItem } from "./state.js";
 import { levelProgress, levelFromXp } from "./skills.js";
+import { isNight } from "./time.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { drawBag, updateWalletNote, updateSkillsNote } from "./hub.js";
+
+// Baked into the fight once, at startFight() -- see state.combat.nightBoost
+// below. Every place that reads an enemy's raw hp/atk/reward numbers reads
+// this multiplier alongside it, rather than calling isNight() again mid-
+// fight (a fight that happens to straddle the real-world day/night
+// boundary shouldn't have its difficulty shift under the player's feet).
+function nightMult(c) { return c.nightBoost ? COMBAT_NIGHT_MULT : 1; }
 
 // Left and Right Hand are interchangeable -- a weapon or a shield can sit
 // in either, so these check both rather than one fixed slot. Checking
@@ -147,20 +155,23 @@ function startFight(enemyKey) {
   // screen's own choice, which no longer reflects what's on screen.
   const key = enemyKey || state.combat.enemyKey;
   const enemy = ENEMIES[key];
+  const night = isNight();
+  const hpMult = night ? COMBAT_NIGHT_MULT : 1;
   combatLog = [];
   state.combat = {
     enemyKey: key,
-    enemyHP: enemy.hp,
-    enemyMaxHP: enemy.hp,
+    enemyHP: enemy.hp * hpMult,
+    enemyMaxHP: enemy.hp * hpMult,
     playerHP: COMBAT_PLAYER_MAX_HP,
     playerMaxHP: COMBAT_PLAYER_MAX_HP,
     enemyNextAttackAt: Date.now() + enemy.attackMs,
     playerCooldownUntil: Date.now(),
     braced: false,
     over: null,
+    nightBoost: night,
   };
   save();
-  log(enemy.name + " blocks the path.", "system");
+  log(enemy.name + " blocks the path." + (night ? " It looks tougher in the dark." : ""), "system");
   refreshCombat();
   syncTimerBars();
 }
@@ -191,7 +202,8 @@ export function settleCombat() {
 
 function resolveEnemyAttack(enemy) {
   const c = state.combat;
-  let dmg = Math.max(1, roll(enemy.atkMin, enemy.atkMax) - totalDefense());
+  const mult = nightMult(c);
+  let dmg = Math.max(1, roll(enemy.atkMin * mult, enemy.atkMax * mult) - totalDefense());
   if (c.braced) {
     dmg = Math.max(1, Math.ceil(dmg * (0.5 - shieldStats().block)));
     c.braced = false;
@@ -271,12 +283,13 @@ function flee() {
 function endFight(won) {
   const c = state.combat;
   const enemy = ENEMIES[c.enemyKey];
+  const mult = nightMult(c);
   c.over = won ? "won" : "lost";
   if (won) {
     state.combatXp += COMBAT_XP;
-    state.shards += enemy.shardReward;
+    state.shards += enemy.shardReward * mult;
     const drops = enemy.drops || {};
-    Object.keys(drops).forEach(function (item) { gainItem(item, drops[item]); });
+    Object.keys(drops).forEach(function (item) { gainItem(item, drops[item] * mult); });
     log("The " + enemy.name + " is defeated.", "system");
     updateSkillsNote();
     updateWalletNote();
@@ -314,13 +327,14 @@ export function refreshCombat() {
     idle.classList.remove("hidden");
     arena.classList.add("hidden");
     result.classList.remove("show");
+    el("combat-night-note").classList.toggle("hidden", !isNight());
     return;
   }
   idle.classList.add("hidden");
   arena.classList.remove("hidden");
 
   const enemy = ENEMIES[c.enemyKey];
-  el("combat-enemy-name").textContent = enemy.name;
+  el("combat-enemy-name").textContent = enemy.name + (c.nightBoost ? " \u{1F319} (2x)" : "");
   el("combat-enemy-hp-num").textContent = c.enemyHP;
   el("combat-enemy-maxhp-num").textContent = c.enemyMaxHP;
   el("combat-enemy-hp-fill").style.width = (c.enemyHP / c.enemyMaxHP * 100) + "%";
@@ -364,13 +378,15 @@ export function refreshCombat() {
     if (c.over === "won") {
       el("combat-result-headline").textContent = "Victory";
       el("combat-result-headline").className = "result-headline win";
+      const mult = nightMult(c);
       const drops = enemy.drops || {};
       const dropText = Object.keys(drops).map(function (item) {
-        return "+" + drops[item] + " " + item;
+        return "+" + (drops[item] * mult) + " " + item;
       }).join(", ");
       el("combat-result-sub").textContent =
-        "+" + COMBAT_XP + " Combat XP, +" + enemy.shardReward + " Shards" +
-        (dropText ? ", " + dropText + "." : ".");
+        "+" + COMBAT_XP + " Combat XP, +" + (enemy.shardReward * mult) + " Shards" +
+        (dropText ? ", " + dropText + "." : ".") +
+        (c.nightBoost ? " (night bonus applied)" : "");
     } else if (c.over === "fled") {
       el("combat-result-headline").textContent = "Fled";
       el("combat-result-headline").className = "result-headline fled";

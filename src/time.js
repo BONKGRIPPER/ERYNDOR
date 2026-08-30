@@ -18,6 +18,7 @@
 
 import {
   SEASONS, SEASON_ORDER, NIGHT_START_HOUR, NIGHT_END_HOUR, NIGHT_GROWTH_MULT,
+  TOWN_MARKET_CLOSED_START_HOUR, TOWN_MARKET_CLOSED_END_HOUR,
 } from "./data.js";
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
@@ -33,6 +34,19 @@ export function isNight(date) {
     return hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR;
   }
   return hour >= NIGHT_START_HOUR && hour < NIGHT_END_HOUR;
+}
+
+// A town-type location's market (see LOCATIONS in data.js) closes
+// overnight -- its own separate window from night itself, checked the
+// same wraparound way. A city's market never calls this at all (open
+// 24/7 by type, not by hours); landmarks/wilderness have no market to
+// open or close.
+export function isTownMarketOpen(date) {
+  const hour = (date || new Date()).getHours();
+  const closed = TOWN_MARKET_CLOSED_START_HOUR > TOWN_MARKET_CLOSED_END_HOUR
+    ? (hour >= TOWN_MARKET_CLOSED_START_HOUR || hour < TOWN_MARKET_CLOSED_END_HOUR)
+    : (hour >= TOWN_MARKET_CLOSED_START_HOUR && hour < TOWN_MARKET_CLOSED_END_HOUR);
+  return !closed;
 }
 
 // Guards against a clock that's somehow behind startedAt (a corrupted save,

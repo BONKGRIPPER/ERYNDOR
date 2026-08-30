@@ -112,6 +112,7 @@ export const state = {
   millingXp: 0,
   stonecuttingXp: 0,
   tanningXp: 0,
+  fishingXp: 0,
   // One active cycle per conversion station, keyed by STATIONS id -- null
   // while idle, {startedAt,readyAt} while running. See src/stations.js.
   stations: {},
@@ -166,6 +167,34 @@ export const state = {
   // survive the item later being spent/consumed/sold, unlike state.bag
   // itself. Set once, in gainItem() below, never unset.
   discoveredItems: {},
+  // Which LOCATIONS key the player is currently at. The Map screen
+  // (src/map.js) highlights this one with "You are here"; src/travel.js
+  // is what's allowed to change it, once a trip finishes.
+  currentLocation: "aerendell",
+  // null when not traveling. Otherwise { from, to, readyAt } -- readyAt is
+  // an absolute deadline like every other timer in this game, not a
+  // countdown, so a trip keeps progressing correctly across a reload or
+  // the tab being closed outright. One trip in flight at a time; see
+  // src/travel.js.
+  travel: null,
+  // One shared bank, not one per city -- exactly what "items in the bank
+  // can be accessed from any other city" (the original ask) means: there's
+  // nothing to key per-city in the first place. Same {name: qty} shape as
+  // state.bag/storage. Only reachable from the Market screen while at a
+  // "city"-type location (src/market.js).
+  bank: {},
+  // `trap`: null, or { poolId, readyAt } once one's been set -- poolId is
+  // captured at set-time (not read fresh at resolution) so a trap left out
+  // resolves against the location it was actually set at, even if the
+  // player has since traveled elsewhere. One trap in flight at a time.
+  // `bait`: the bait item name currently selected for the Rod, or null --
+  // persisted purely as a convenience so it doesn't reset to "none" on
+  // every reload; the Rod's cast/bite state itself is intentionally NOT
+  // persisted here (see src/fishing.js), same reasoning a mid-swing
+  // Mining/Foraging tap sequence would be if this game ever stopped
+  // persisting those -- a short enough window that resetting it on reload
+  // isn't worth the extra save-shape complexity.
+  fishing: { trap: null, bait: null },
 };
 
 // The one place every producer (foraging, crafting, cooking, mining,
@@ -241,6 +270,7 @@ export function save() {
       crafting: state.crafting,
       sowingXp: state.sowingXp, millingXp: state.millingXp,
       stonecuttingXp: state.stonecuttingXp, tanningXp: state.tanningXp,
+      fishingXp: state.fishingXp, fishing: state.fishing,
       stations: state.stations,
       itemLevels: state.itemLevels,
       miningXp: state.miningXp,
@@ -251,6 +281,9 @@ export function save() {
       combatXp: state.combatXp, combat: state.combat,
       hubOrder: state.hubOrder,
       discoveredItems: state.discoveredItems,
+      currentLocation: state.currentLocation,
+      travel: state.travel,
+      bank: state.bank,
     }));
   } catch (e) { /* no storage available */ }
 }
@@ -375,6 +408,13 @@ export function load() {
     if (typeof data.millingXp === "number") state.millingXp = data.millingXp;
     if (typeof data.stonecuttingXp === "number") state.stonecuttingXp = data.stonecuttingXp;
     if (typeof data.tanningXp === "number") state.tanningXp = data.tanningXp;
+    if (typeof data.fishingXp === "number") state.fishingXp = data.fishingXp;
+    if (data.fishing && typeof data.fishing === "object") {
+      state.fishing.bait = typeof data.fishing.bait === "string" ? data.fishing.bait : null;
+      state.fishing.trap = (data.fishing.trap && typeof data.fishing.trap.readyAt === "number")
+        ? data.fishing.trap
+        : null;
+    }
     if (data.stations) {
       Object.keys(STATIONS).forEach(function (id) {
         const c = data.stations[id];
@@ -397,6 +437,13 @@ export function load() {
       state.combat = null;
     }
     if (Array.isArray(data.hubOrder)) state.hubOrder = data.hubOrder;
+    if (typeof data.currentLocation === "string") state.currentLocation = data.currentLocation;
+    if (data.travel && typeof data.travel.readyAt === "number") {
+      state.travel = data.travel;
+    } else {
+      state.travel = null;
+    }
+    if (data.bank && typeof data.bank === "object") state.bank = data.bank;
     if (data.discoveredItems && typeof data.discoveredItems === "object") {
       state.discoveredItems = data.discoveredItems;
     } else {

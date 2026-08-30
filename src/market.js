@@ -1,21 +1,34 @@
 // =================================================================== market
 //
-// Aerendell's market, now both directions. Sell shows everything you own
-// across your bag *and* storage combined (this is the market at Aerendell,
-// where the storage crate already sits); Purchase shows what the market
-// itself keeps in stock to sell you (see BUYABLE in data.js). Both share
-// one pricing curve off one stock number per item: selling pushes that
-// item's stock up (price falls), buying draws it back down (price rises) --
-// a real loop, not two independent numbers invented separately.
+// One market per location, not just Aerendell's -- ZONE was a hardcoded
+// constant through batch 2; it's state.currentLocation now, read fresh
+// every call via zone() below, same "read live, don't cache" rule the rest
+// of this game's location-aware code follows. Sell shows everything you
+// own across your bag *and* storage combined (a town's local storage
+// crate, specifically -- see costDisplay.js's own combinedOwned() for the
+// unrelated bag+storage-for-costs rule elsewhere in the game); Purchase
+// shows what the market itself keeps in stock to sell you (BUYABLE in
+// data.js, still one flat list -- no zone has its own stock list yet).
+// Both share one pricing curve off one stock number per item: selling
+// pushes that item's stock up (price falls), buying draws it back down
+// (price rises) -- a real loop, not two independent numbers invented
+// separately. `state.market.stock` is one shared table across every
+// location for now, not one per zone -- a simplification worth revisiting
+// once a second location actually has its own priced goods to diverge on.
+//
+// A city additionally gets a Bank tab (`type === "city"`) -- one shared
+// state.bank, not one per city, since "accessed from any other city" (the
+// original ask) means there's nothing to key per-city in the first place.
 //
 // Tapping a row no longer commits instantly -- it opens a quantity slider
-// (openQtyPicker) so a stack can be sold or bought partially, with the
-// total shown live as the slider moves, same "see the number before you
-// commit" idea as everything else that spends resources in this game.
+// (openQtyPicker/openBankPicker) so a stack can be sold, bought, deposited,
+// or withdrawn partially, with the total shown live as the slider moves,
+// same "see the number before you commit" idea as everything else that
+// spends resources in this game.
 
 import {
   CATEGORIES, BASE_VALUE, BUYABLE, ZONE_DEMAND, MARKET_FLOOR, MARKET_K,
-  MARKET_HALF_LIFE_MS, TINTS,
+  MARKET_HALF_LIFE_MS, TINTS, LOCATIONS,
 } from "./data.js";
 import { state, save, gainItem } from "./state.js";
 import { useSprite, slug } from "./sprites.js";
@@ -23,10 +36,34 @@ import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { drawBag, updateWalletNote } from "./hub.js";
 import { openSheet, closeSheet } from "./sheet.js";
+import { isTownMarketOpen } from "./time.js";
 
-const ZONE = "aerendell";   // the only one that exists -- a real id, not a magic string scattered everywhere
+function zone() {
+  return state.currentLocation;
+}
 
-let view = "sell";   // "sell" | "buy"
+function locationHasMarket(loc) {
+  return !!loc && (loc.type === "city" || loc.type === "town");
+}
+
+// A city's market is open 24/7 by type alone -- only a "town" ever checks
+// the clock at all. Meaningless (never called) for a landmark/wilderness,
+// which has no market to open in the first place -- see
+// locationHasMarket() above, checked first in buildMarket().
+function marketOpenHere() {
+  return LOCATIONS[zone()].type !== "town" || isTownMarketOpen();
+}
+
+// ZONE_DEMAND only has an entry for Aerendell so far -- everywhere else
+// falls back to neutral (1x) demand on every category rather than
+// crashing on a missing zone, same "real shape, nothing behind it yet"
+// treatment as an empty `stations`/`forage` list.
+function demandFor(item) {
+  const table = ZONE_DEMAND[zone()];
+  return (table && table[CATEGORIES[item]]) || 1;
+}
+
+let view = "sell";   // "sell" | "buy" | "bank"
 
 // Effective stock right now, decayed from whatever it was last set to.
 // Stored as a level + a timestamp rather than ticked down in the
@@ -56,8 +93,7 @@ function saturation(stock) {
 
 function unitPrice(item, stock) {
   const base = BASE_VALUE[item] || 0;
-  const demand = ZONE_DEMAND[ZONE][CATEGORIES[item]] || 1;
-  return Math.max(1, Math.round(base * demand * saturation(stock)));
+  return Math.max(1, Math.round(base * demandFor(item) * saturation(stock)));
 }
 
 // Walks the sale one unit at a time so the price actually declines across
@@ -104,6 +140,51 @@ function maxAffordable(item, shards) {
 
 function combinedOwned(name) {
   return (state.bag[name] || 0) + (state.storage[name] || 0);
+}
+
+function bankQty(name) {
+  return state.bank[name] || 0;
+}
+
+// Same bag-then-storage draw order sellQty() uses -- which container an
+// item comes out of doesn't matter, only that the total banked matches
+// what actually left the player's hands.
+function depositQty(name, qty) {
+  const owned = combinedOwned(name);
+  qty = Math.min(qty, owned);
+  if (qty <= 0) return;
+
+  const fromBag = Math.min(qty, state.bag[name] || 0);
+  const fromStorage = qty - fromBag;
+  if (fromBag > 0) {
+    state.bag[name] -= fromBag;
+    if (state.bag[name] <= 0) delete state.bag[name];
+  }
+  if (fromStorage > 0) {
+    state.storage[name] -= fromStorage;
+    if (state.storage[name] <= 0) delete state.storage[name];
+  }
+  state.bank[name] = (state.bank[name] || 0) + qty;
+  save();
+  marketHint("Deposited " + qty + " " + name + ".");
+  drawBag();
+  buildMarket();
+}
+
+// Withdrawing goes straight to the bag, same as any other gainItem() --
+// there's no "which city withdrew it" to track, it's one shared bank.
+function withdrawQty(name, qty) {
+  const owned = bankQty(name);
+  qty = Math.min(qty, owned);
+  if (qty <= 0) return;
+
+  state.bank[name] -= qty;
+  if (state.bank[name] <= 0) delete state.bank[name];
+  gainItem(name, qty);
+  save();
+  marketHint("Withdrew " + qty + " " + name + ".");
+  drawBag();
+  buildMarket();
 }
 
 // Draws from the carried bag first, then storage for whatever's left --
@@ -250,7 +331,121 @@ function buildBuyList() {
   });
 }
 
+// Shown instead of any list when a town's market is closed for the night
+// -- replacing the list entirely (rather than just disabling rows) means
+// there's nothing left to tap, no extra guard needed in
+// openQtyPicker/sellQty/buyQty for the closed case.
+function buildClosedNotice() {
+  const list = el("market-list");
+  list.replaceChildren();
+  const notice = document.createElement("div");
+  notice.className = "inv-empty";
+  notice.textContent = LOCATIONS[zone()].name + "'s market is closed for the night. It reopens at 9 AM.";
+  list.append(notice);
+  el("market-hint").textContent = "";
+}
+
+// A landmark or wilderness location has no market at all, day or night --
+// distinct from buildClosedNotice() above, which is specifically "there
+// is one, come back later."
+function buildNoMarketNotice() {
+  const list = el("market-list");
+  list.replaceChildren();
+  const notice = document.createElement("div");
+  notice.className = "inv-empty";
+  notice.textContent = "There's no market here.";
+  list.append(notice);
+  el("market-hint").textContent = "";
+}
+
+function bankRow(name, qty, label, onClick) {
+  const row = document.createElement("button");
+  row.className = "pill";
+  const body = document.createElement("span");
+  body.className = "pill-body";
+  const nameEl = document.createElement("span");
+  nameEl.className = "pill-name";
+  nameEl.textContent = name;
+  const sub = document.createElement("span");
+  sub.className = "pill-sub";
+  sub.textContent = qty + " " + label;
+  body.append(nameEl, sub);
+  const action = document.createElement("span");
+  action.className = "pill-count";
+  action.textContent = label === "banked" ? "Withdraw" : "Deposit";
+  row.append(iconFor(name), body, action);
+  row.addEventListener("click", onClick);
+  return row;
+}
+
+// A city only -- see locationHasMarket()/setView() below for how the tab
+// itself is gated. Two lists rather than one combined view: what's
+// already banked (withdraw) and what's currently carried (deposit),
+// mirroring Inventory's own Bag/Storage split instead of inventing a new
+// layout for the same "move items between two piles" idea.
+function buildBankList() {
+  const list = el("market-list");
+  list.replaceChildren();
+  el("market-hint").textContent = "Banked items are the same in every city.";
+
+  const bankHeading = document.createElement("div");
+  bankHeading.className = "market-section-label";
+  bankHeading.textContent = "In the bank";
+  list.append(bankHeading);
+
+  const banked = Object.keys(state.bank).filter(function (n) { return bankQty(n) > 0; });
+  if (banked.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "inv-empty";
+    empty.textContent = "Nothing banked yet.";
+    list.append(empty);
+  } else {
+    banked.forEach(function (name) {
+      list.append(bankRow(name, bankQty(name), "banked", function () { openBankPicker(name, "withdraw"); }));
+    });
+  }
+
+  const carryHeading = document.createElement("div");
+  carryHeading.className = "market-section-label";
+  carryHeading.textContent = "Carrying";
+  list.append(carryHeading);
+
+  const carried = Object.keys(BASE_VALUE).filter(function (n) { return combinedOwned(n) > 0; });
+  if (carried.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "inv-empty";
+    empty.textContent = "Nothing to deposit.";
+    list.append(empty);
+  } else {
+    carried.forEach(function (name) {
+      list.append(bankRow(name, combinedOwned(name), "carried", function () { openBankPicker(name, "deposit"); }));
+    });
+  }
+}
+
+function updateMarketHeader() {
+  const sub = el("market-sub");
+  if (sub) sub.textContent = LOCATIONS[zone()].name;
+}
+
+function syncMarketTabs() {
+  const loc = LOCATIONS[zone()];
+  const bankBtn = el("market-view-bank");
+  const showBank = !!loc && loc.type === "city";
+  bankBtn.classList.toggle("hidden", !showBank);
+  if (view === "bank" && !showBank) view = "sell";   // left a city with the Bank tab open
+  el("market-view-sell").classList.toggle("active", view === "sell");
+  el("market-view-purchase").classList.toggle("active", view === "buy");
+  bankBtn.classList.toggle("active", view === "bank");
+}
+
 export function buildMarket() {
+  updateMarketHeader();
+  syncMarketTabs();
+  const loc = LOCATIONS[zone()];
+  if (!locationHasMarket(loc)) { buildNoMarketNotice(); return; }
+  if (view === "bank") { buildBankList(); return; }
+  if (!marketOpenHere()) { buildClosedNotice(); return; }
   if (view === "buy") buildBuyList(); else buildSellList();
 }
 
@@ -312,10 +507,63 @@ function openQtyPicker(name, mode) {
   openSheet(mode === "sell" ? "Sell " + name : "Buy " + name);
 }
 
+// No price on either side -- banking doesn't sell or buy anything, it
+// just moves a stack between the player's own hands and the shared bank.
+// Same slider shape as openQtyPicker() above rather than a fork of it,
+// since there's no pricing math running through the "sell"/"buy" branches
+// for this to actually share.
+function openBankPicker(name, mode) {
+  const max = mode === "deposit" ? combinedOwned(name) : bankQty(name);
+  if (max < 1) return;
+
+  const body = el("sheet-body");
+  body.replaceChildren();
+
+  const wrap = document.createElement("div");
+  wrap.className = "qty-picker";
+
+  const nameEl = document.createElement("div");
+  nameEl.className = "qty-picker-name";
+  nameEl.textContent = name;
+
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.className = "qty-slider";
+  slider.min = "1";
+  slider.max = String(max);
+  slider.value = String(max);   // both directions default to moving the whole stack
+
+  const row = document.createElement("div");
+  row.className = "qty-picker-row";
+  const count = document.createElement("span");
+  count.className = "qty-count";
+  row.append(count);
+
+  const accept = document.createElement("button");
+  accept.className = "qty-accept";
+
+  function refresh() {
+    const qty = Number(slider.value);
+    count.textContent = qty + (qty === 1 ? " unit" : " units");
+    accept.textContent = (mode === "deposit" ? "Deposit " : "Withdraw ") + qty;
+  }
+  slider.addEventListener("input", refresh);
+  refresh();
+
+  accept.addEventListener("click", function () {
+    const qty = Number(slider.value);
+    if (mode === "deposit") depositQty(name, qty); else withdrawQty(name, qty);
+    closeSheet();
+  });
+
+  wrap.append(nameEl, slider, row, accept);
+  body.append(wrap);
+
+  openSheet((mode === "deposit" ? "Deposit " : "Withdraw ") + name);
+}
+
 function setView(next) {
   view = next;
-  el("market-view-sell").classList.toggle("active", view === "sell");
-  el("market-view-purchase").classList.toggle("active", view === "buy");
   buildMarket();
 }
 
@@ -326,11 +574,14 @@ function marketHint(text) {
   marketHintTimer = setTimeout(function () {
     el("market-hint").textContent = view === "sell"
       ? "Tap an item to choose how many to sell."
-      : "Tap an item to choose how many to buy.";
+      : view === "buy"
+      ? "Tap an item to choose how many to buy."
+      : "Banked items are the same in every city.";
   }, 2600);
 }
 
 el("market-view-sell").addEventListener("click", function () { setView("sell"); });
 el("market-view-purchase").addEventListener("click", function () { setView("buy"); });
+el("market-view-bank").addEventListener("click", function () { setView("bank"); });
 
 el("back-market").addEventListener("click", function () { show("home"); });

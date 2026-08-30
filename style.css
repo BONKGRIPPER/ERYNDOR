@@ -10,7 +10,17 @@
   --warn: #e0684f;
 }
 
-* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* touch-action: manipulation is the CSS half of killing mobile Safari/
+   Chrome's double-tap-to-zoom -- this game is tapped rapidly and
+   repeatedly by design (Mining's swings, Forage, chopping), and a phone
+   browser reading two of those taps as "zoom in here" made it genuinely
+   unplayable. Still allows normal single-finger scrolling/panning; only
+   the double-tap and pinch-zoom gestures are the ones given up. The
+   other half is the viewport meta tag's own maximum-scale=1,
+   user-scalable=no in index.html -- belt and suspenders, since either
+   one alone has been enough to not work on some browser/OS combination
+   in the wild. */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 
 html, body { margin: 0; height: 100%; }
 
@@ -902,18 +912,28 @@ body {
 /* =============================== forage bar ============================= */
 /* Fixed and global, same idea as the dock below but for the one persistent
    gather action -- pinned just above it rather than behind a hub card or a
-   screen of its own, since it's always available from anywhere. */
+   screen of its own, since it's always available from anywhere.
+   `--dock-h` is only the dock's own icon+label content height -- the real
+   dock is taller than that by its bottom padding's own
+   env(safe-area-inset-bottom) (the iOS home-indicator inset), which this
+   bar's own `bottom` needs to add too, or it sinks that many px into the
+   dock's territory and gets covered by it (the dock sits at a higher
+   z-index) on any phone with a non-zero safe area. */
 .forage-bar {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: var(--dock-h);
+  bottom: calc(var(--dock-h) + env(safe-area-inset-bottom));
   z-index: 14;
   padding: 8px max(10px, calc((100% - 480px) / 2)) 6px;
   background: var(--bg);
   border-top: 1px solid var(--line);
 }
 .forage-bar .pill { margin: 0; }
+/* Wherever LOCATIONS[currentLocation].forage has no pool assigned --
+   see src/forage.js's canForageHere(). Greyed out rather than hidden, so
+   the bar's layout doesn't jump as the player travels around. */
+.pill.forage-disabled { opacity: 0.45; pointer-events: none; }
 
 /* the brief "here's what you got" flash after a gather completes */
 .pill.result .pill-sub { color: var(--gold); font-weight: 700; }
@@ -965,6 +985,20 @@ body {
 }
 .villager-hire.unaffordable { opacity: 0.55; }
 .villager-hire.shake { animation: nope 0.32s ease; }
+
+/* Shown on Combat's idle screen only while isNight() is true (see
+   combat.js's refreshCombat()) -- warns the player what they're walking
+   into before they tap an enemy card, not just after the fight starts. */
+.combat-night-note {
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--gold);
+  background: rgba(216, 189, 106, 0.08);
+  border: 1px solid rgba(216, 189, 106, 0.3);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
 
 /* ============================== township ================================= */
 .township-list {
@@ -1023,6 +1057,61 @@ body {
 }
 
 .mine-carried { margin: 2px 0 4px; }
+
+/* ============================== fishing =================================== */
+/* Rod/Net/Trap sits at the bottom, in thumb reach, same "bottom-pinned
+   toggle" shape Inventory's Equipment/Bag/Storage switch already uses --
+   .inv-toggle's own `margin-top: auto` only actually pins to the bottom
+   against a *fixed*-height flex column, though, so this screen needs the
+   same height:100dvh/overflow:hidden treatment #screen-inventory has,
+   with .fish-pages as the flex:1/min-height:0/overflow-y:auto zone that
+   soaks up whatever room is left above the toggle. */
+#screen-fishing {
+  height: 100dvh;
+  overflow: hidden;
+}
+.fish-pages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Bait chips -- same pill-ish "tap to select" idea as .inv-view-btn, just a
+   free-flowing row instead of an even-split toggle, since the number of
+   owned baits varies. */
+.fish-bait-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+.fish-bait-chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--dim);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 640;
+  cursor: pointer;
+}
+.fish-bait-chip.active { background: var(--gold); color: var(--bg); border-color: var(--gold); }
+
+/* The bite window itself -- needs to read as urgent and impossible to
+   miss, since it's only open for FISH_BITE_WINDOW_MS. A fast, repeating
+   gold pulse rather than the one-shot flashes elsewhere in this game
+   (cave-ins, level-ups), since this one has to keep demanding attention
+   for its whole (short) duration, not just mark a moment that already
+   passed. */
+.pill.bite-flash {
+  animation: bite-flash 0.5s ease-in-out infinite;
+}
+.pill.bite-flash .pill-name { color: var(--gold); }
+@keyframes bite-flash {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(216, 189, 106, 0.55); }
+  50%      { box-shadow: 0 0 0 5px rgba(216, 189, 106, 0); }
+}
 
 /* ================================== dock ================================ */
 /* Fixed and global -- one instance in the DOM, present no matter which
@@ -1126,6 +1215,19 @@ body {
   cursor: pointer;
 }
 .inv-view-btn.active { background: var(--green); color: var(--bg); border-color: var(--green); }
+
+/* Section headers inside the Bank tab's list (src/market.js's
+   buildBankList()) -- "In the bank" / "Carrying" -- same weight/spacing
+   language as .map-sheet-type rather than a new label style. */
+.market-section-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  margin: 14px 2px 6px;
+}
+.market-section-label:first-child { margin-top: 2px; }
 
 /* Bag/Storage grid -- denser and smaller than before on purpose (5 columns,
    not 3), so a card is now mostly its sprite and a compact count, not a
@@ -1356,4 +1458,164 @@ body {
   color: var(--dim);
   font-weight: 500;
   text-decoration: underline;
+}
+
+/* ================================== map =================================== */
+/* A freeform 2D layout, not a list -- LOCATIONS[id].pos (data.js) is a
+   grid coordinate, converted to pixels in src/map.js and dropped onto an
+   absolutely-positioned canvas. Aerendell sits at the bottom (grid y: 0)
+   and the road climbs upward from there, matching the sketch; a location
+   can sit anywhere around its neighbors rather than only stacking in one
+   direction, since the sketch itself branches sideways off Thal-Barak.
+   The canvas can be larger than the screen in either direction, so
+   #map-viewport is a fixed-size window onto it that's dragged (mouse or
+   touch, both arrive as pointer events -- see src/map.js) rather than
+   grown to fit, the same way any other pannable map works. Read-only for
+   now: tapping a node opens a sheet, it doesn't travel anywhere yet. */
+#screen-map {
+  height: 100dvh;
+  overflow: hidden;
+}
+.map-viewport {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden; /* src/map.js drives scrollLeft/scrollTop by hand */
+  touch-action: none; /* no native touch-scroll fighting the drag handler */
+  -webkit-user-select: none;
+  user-select: none;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  cursor: grab;
+}
+.map-viewport:active { cursor: grabbing; }
+.map-canvas { position: relative; }
+.map-svg { position: absolute; top: 0; left: 0; pointer-events: none; }
+.map-road-line { stroke: var(--line); stroke-width: 2; stroke-dasharray: 6 6; }
+.map-road-line.locked { stroke: var(--warn); }
+
+/* A badge sitting right on top of its road's midpoint, like the number
+   circled directly on the dashed path in the hand-drawn sketch, rather
+   than off to one side of it. */
+.map-road-badge {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.map-road-badge.locked { color: var(--warn); border-color: var(--warn); }
+
+.map-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 92px;
+  padding: 4px;
+  background: none;
+  border: none;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+.map-node-circle {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  background: var(--panel-2);
+  border: 2px solid var(--line);
+}
+.map-node.current .map-node-circle {
+  border-color: var(--green);
+  box-shadow: 0 0 0 4px rgba(159, 208, 122, 0.18);
+}
+.map-node-label { font-size: 11.5px; font-weight: 650; text-align: center; line-height: 1.2; }
+.map-node-type { font-size: 9.5px; color: var(--dim); text-align: center; }
+.map-node.current .map-node-type {
+  color: var(--green);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+/* A trip in flight: the destination node and the one road it's on both
+   pick up gold instead of the usual dim/green -- separate color from
+   .current on purpose, since the departure node keeps its green ring
+   the whole trip (state.currentLocation doesn't flip until arrival). */
+.map-node.traveling .map-node-circle {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 4px rgba(216, 189, 106, 0.18);
+}
+.map-node.traveling .map-node-type {
+  color: var(--gold);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.map-road-line.traveling { stroke: var(--gold); }
+.map-road-badge.traveling { color: var(--gold); border-color: var(--gold); }
+
+/* Live countdown banner, shown only while state.travel is set (see
+   src/map.js's updateTravelNote()) -- same warm note-box language as
+   Combat's own isNight() banner. */
+.map-travel-note {
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--gold);
+  background: rgba(216, 189, 106, 0.08);
+  border: 1px solid rgba(216, 189, 106, 0.3);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.map-travel-btn {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--gold);
+  border-radius: 10px;
+  padding: 10px 16px;
+  color: var(--gold);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.map-sheet-type {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  margin-bottom: 10px;
+}
+.map-sheet-fact {
+  font-size: 13px;
+  color: var(--text);
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.map-sheet-fact:first-of-type { border-top: none; }
+.map-sheet-here {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-weight: 650;
+  color: var(--green);
+  text-align: center;
 }

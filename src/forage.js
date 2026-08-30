@@ -27,7 +27,7 @@
 
 import {
   FORAGE_POOLS, FORAGE_XP, FORAGE_MAX_LEVEL, FORAGE_CLICKS_PER_SWING,
-  VILLAGER_TICK_MS, VILLAGER_UPGRADE_MULT,
+  VILLAGER_TICK_MS, VILLAGER_UPGRADE_MULT, LOCATIONS,
 } from "./data.js";
 import { state, save, gainItem } from "./state.js";
 import { levelFromXp } from "./skills.js";
@@ -37,10 +37,28 @@ import { el } from "./dom.js";
 import { openSheet } from "./sheet.js";
 import { updateSkillsNote } from "./hub.js";
 
-const ZONE = "aerendell";   // the only one that exists -- same pattern as market.js
+// Which FORAGE_POOLS key applies at the player's current location --
+// LOCATIONS[...].forage, not a hardcoded zone. null wherever a pool hasn't
+// been assigned yet (every location but Aerendell, for now), treated as
+// "nothing to forage here," not "forage from nothing."
+function currentPoolId() {
+  const loc = LOCATIONS[state.currentLocation];
+  return loc ? loc.forage : null;
+}
 
-function rollDrop() {
-  const pool = FORAGE_POOLS[ZONE];
+function canForageHere() {
+  return !!currentPoolId();
+}
+
+// The hired villager forages at Aerendell's Township regardless of where
+// the player currently is -- they didn't come along on the trip, they're
+// still back home working. Hardcoded rather than read off the player's
+// location on purpose; the villager's own "home" only ever needs to move
+// if Township becomes buildable somewhere else, which it isn't yet.
+const VILLAGER_HOME_POOL = "aerendell";
+
+function rollDrop(poolId) {
+  const pool = FORAGE_POOLS[poolId];
   const roll = Math.random();
   let acc = 0;
   for (let i = 0; i < pool.length; i++) {
@@ -84,21 +102,25 @@ export function drawForageProgress() {
 // own taps (tapForage(), below) and the villager's automatic ones
 // (settleForage()). Returns the item gathered if this tap completed the
 // swing, or null if the swing is still in progress.
-function addForageTap() {
+function addForageTap(poolId) {
   state.forageProgress += 1;
   if (state.forageProgress < FORAGE_CLICKS_PER_SWING) return null;
   state.forageProgress = 0;
-  const item = rollDrop();
+  const item = rollDrop(poolId);
   gainItem(item, 1);
   state.foragingXp += FORAGE_XP;
   return item;
 }
 
-// The player's own tap on the pill -- always available, villager or not.
-// Resolved synchronously, same as Mining's tapDig(): no deadline, nothing
-// to settle later.
+// The player's own tap on the pill -- available whenever the current
+// location actually has a forage pool assigned (LOCATIONS[...].forage),
+// villager or not. A no-op everywhere else rather than rolling from
+// nothing; refreshForage() below already disables the pill visually so
+// this is a defensive backstop, not the only guard. Resolved synchronously,
+// same as Mining's tapDig(): no deadline, nothing to settle later.
 function tapForage() {
-  const item = addForageTap();
+  if (!canForageHere()) return;
+  const item = addForageTap(currentPoolId());
   save();
   setSwingFill(state.forageProgress / FORAGE_CLICKS_PER_SWING * 100);
   if (item) {
@@ -114,14 +136,16 @@ function tapForage() {
 // can cross several VILLAGER_TICK_MS at once, each one either advancing the
 // swing or completing it and rolling an item, exactly like a very fast
 // series of taps. Returns every item produced, in order. A no-op with no
-// villager hired, or before one's first tick has ever been scheduled.
+// villager hired, or before one's first tick has ever been scheduled --
+// keeps ticking at VILLAGER_HOME_POOL even while the player has wandered
+// off somewhere with no pool of its own, since the villager never left.
 export function settleForage() {
   const results = [];
   if (!state.villager.owned || state.villagerNextTickAt === null) return results;
   let changed = false;
   while (Date.now() >= state.villagerNextTickAt) {
     changed = true;
-    const item = addForageTap();
+    const item = addForageTap(VILLAGER_HOME_POOL);
     if (item) results.push(item);
     state.villagerNextTickAt += villagerTickMs();
   }
@@ -191,10 +215,18 @@ export function showAwayPopup(items, awayMs) {
 // which reverts on its own timeout. Hiring/upgrading the villager lives on
 // the Township screen now (src/township.js), not here -- this only
 // reflects whether one's already working, and invites the player to tap
-// along when it is.
+// along when it is. Greyed out (and the pill's own click becomes a no-op
+// via tapForage()'s own guard) wherever the current location has no
+// forage pool assigned yet.
 export function refreshForage() {
   const pill = pillFor("forage");
+  pill.classList.toggle("forage-disabled", !canForageHere());
   if (pill.classList.contains("result")) return;
+  if (!canForageHere()) {
+    pill.querySelector(".pill-sub").textContent = "Nothing to forage here";
+    pill.querySelector(".pill-name").textContent = "Forage";
+    return;
+  }
   pill.querySelector(".pill-sub").textContent = state.villager.owned
     ? "Villager taps every " + (villagerTickMs() / 1000) + "s — tap to help"
     : "Tap to forage";

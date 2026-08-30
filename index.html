@@ -2,7 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- maximum-scale=1, user-scalable=no is what actually stops a mobile
+         browser's double-tap-to-zoom gesture -- this game is tapped
+         rapidly and repeatedly by design (Mining's swings, Forage,
+         chopping), and every one of those taps landing in roughly the
+         same spot is exactly what a phone browser reads as "zoom" without
+         this. touch-action: manipulation in style.css is the second half
+         of the fix (see the top of that file). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#14110e" />
     <title>Eryndor</title>
     <link rel="stylesheet" href="style.css" />
@@ -230,6 +237,91 @@
       <div id="mine-hint" class="hint">Tap Dig to descend.</div>
     </div>
 
+    <!-- ============================ FISHING ================================ -->
+    <div id="screen-fishing" class="screen hidden">
+
+      <header class="field-head">
+        <button id="back-fishing" class="back" aria-label="Back">‹</button>
+        <div>
+          <div class="field-title">Fishing</div>
+          <div class="field-sub">Rod, net, or trap -- see what bites</div>
+        </div>
+      </header>
+
+      <div class="xp">
+        <div class="xp-row">
+          <span id="fishing-xp-level" class="xp-level">Fishing — Level 0</span>
+          <span id="fishing-xp-count" class="xp-count">0 / 60</span>
+        </div>
+        <div class="bar xp-bar"><div id="fishing-xp-fill" class="xp-fill"></div></div>
+      </div>
+
+      <div class="fish-pages">
+        <div id="fish-rod-page">
+          <div id="fish-bait-row" class="fish-bait-row"></div>
+
+          <div class="craft-list">
+            <button class="pill" data-item="fish-cast">
+              <div class="pill-fill"></div>
+              <span class="pill-icon">
+                <img class="sprite-img" alt="" draggable="false">
+                <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 20 18 6" />
+                  <path d="M18 6c2.5 0 3.5 2 2 4.5" />
+                </svg>
+              </span>
+              <span class="pill-body">
+                <span class="pill-name">Cast</span>
+                <span class="pill-sub">Equip a Fishing Rod first</span>
+              </span>
+            </button>
+          </div>
+
+          <div id="fish-rod-hint" class="hint">Tap Cast, then tap fast when it bites.</div>
+        </div>
+
+        <div id="fish-net-page" class="hidden">
+          <div class="craft-list">
+            <button class="pill" data-item="fish-net">
+              <div class="pill-fill"></div>
+              <span class="pill-icon">
+                <img class="sprite-img" alt="" draggable="false">
+                <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="8.5" />
+                  <path d="M5 5 19 19" />
+                  <path d="M19 5 5 19" />
+                </svg>
+              </span>
+              <span class="pill-body">
+                <span class="pill-name">Throw Net</span>
+                <span class="pill-sub">You need a Net</span>
+              </span>
+            </button>
+          </div>
+
+          <div id="fish-net-hint" class="hint">Tap repeatedly to complete the sweep.</div>
+        </div>
+
+        <div id="fish-trap-page" class="hidden">
+          <button id="fish-trap-btn" class="villager-hire">
+            <span class="villager-hire-icon">🪤</span>
+            <span class="villager-hire-body">
+              <span class="villager-hire-name" id="fish-trap-name">Set Trap</span>
+              <span class="villager-hire-sub" id="fish-trap-sub">You need a Trap</span>
+            </span>
+          </button>
+
+          <div id="fish-trap-hint" class="hint">Set it and check back later -- no tapping required.</div>
+        </div>
+      </div>
+
+      <div class="inv-toggle">
+        <button id="fish-tool-rod" class="inv-view-btn active">Rod</button>
+        <button id="fish-tool-net" class="inv-view-btn">Net</button>
+        <button id="fish-tool-trap" class="inv-view-btn">Trap</button>
+      </div>
+    </div>
+
     <!-- ============================= COMBAT ================================ -->
     <div id="screen-combat" class="screen hidden">
 
@@ -250,6 +342,7 @@
       </div>
 
       <div id="combat-idle">
+        <div id="combat-night-note" class="combat-night-note hidden">🌙 Night: enemies are tougher, but reward more.</div>
         <div id="combat-enemy-list" class="township-list"></div>
       </div>
 
@@ -361,6 +454,24 @@
 
       <div id="collection-page" class="hidden">
         <div id="collection-list" class="collection-list"></div>
+      </div>
+    </div>
+
+    <!-- =============================== MAP ================================ -->
+    <div id="screen-map" class="screen hidden">
+
+      <header class="field-head">
+        <button id="back-map" class="back" aria-label="Back">‹</button>
+        <div>
+          <div class="field-title">Map</div>
+          <div class="field-sub">Beyond the farmstead</div>
+        </div>
+      </header>
+
+      <div id="map-travel-note" class="map-travel-note hidden"></div>
+
+      <div id="map-viewport" class="map-viewport">
+        <div id="map-canvas" class="map-canvas"></div>
       </div>
     </div>
 
@@ -516,6 +627,97 @@
           </span>
           <span class="pill-count">0</span>
         </button>
+
+        <button class="pill" data-item="fishingRod">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 20 18 6" />
+              <path d="M18 6c2.5 0 3.5 2 2 4.5" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Fishing Rod</span>
+            <span class="pill-sub">15 Sticks · 5 String</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="net">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8.5" />
+              <path d="M5 5 19 19" />
+              <path d="M19 5 5 19" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Net</span>
+            <span class="pill-sub">15 String · 5 Sticks</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="trap">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 9 12 4 19 9" />
+              <path d="M5 9V19H19V9" />
+              <path d="M9 19V13H15V19" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Trap</span>
+            <span class="pill-sub">20 Sticks · 5 Flint</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="wormBait">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 14c2-4 4 4 6 0s4 4 6 0 3 3 4 1" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Worm Bait</span>
+            <span class="pill-sub">5 Sticks</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="shinyLure">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 4 16.5 12 12 20 7.5 12Z" />
+              <path d="M12 2v2M12 20v2M2 12h2M20 12h2" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Shiny Lure</span>
+            <span class="pill-sub">10 Flint · 5 String</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
       </div>
     </div>
 
@@ -526,13 +728,14 @@
         <button id="back-market" class="back" aria-label="Back">‹</button>
         <div>
           <div class="field-title">Market</div>
-          <div class="field-sub">Aerendell</div>
+          <div id="market-sub" class="field-sub">Aerendell</div>
         </div>
       </header>
 
       <div class="inv-toggle">
         <button id="market-view-purchase" class="inv-view-btn">Purchase</button>
         <button id="market-view-sell" class="inv-view-btn active">Sell</button>
+        <button id="market-view-bank" class="inv-view-btn hidden">Bank</button>
       </div>
 
       <div id="market-list" class="craft-list"></div>

@@ -23,8 +23,8 @@ export function buildDock() {
     btn.append(icon, label);
     btn.addEventListener("click", function () {
       if (SCREEN_IDS.indexOf(id) >= 0) { show(id); return; }
-      // Skills and Map exist as destinations but not as screens yet -- the
-      // dock says so the same quiet way the hub cards do.
+      // Anything still missing a #screen-<id> (none currently) shakes the
+      // same quiet way the hub cards do, rather than navigating nowhere.
       btn.classList.remove("shake");
       void btn.offsetWidth;
       btn.classList.add("shake");
