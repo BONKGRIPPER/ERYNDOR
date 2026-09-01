@@ -33,8 +33,6 @@
         <div id="note-season" class="skills-note">Spring · Day 1 · Year 1</div>
       </div>
 
-      <div id="build-prompts" class="menu"></div>
-
       <div id="reorder-bar" class="reorder-bar hidden">
         <span class="reorder-label">Drag a card to reorder</span>
         <button id="reorder-done" class="reorder-done">Done</button>
@@ -100,17 +98,11 @@
             <i class="can-pip"></i><i class="can-pip"></i><i class="can-pip"></i><i class="can-pip"></i>
           </span>
         </button>
-        <button class="tool" data-tool="scythe">
-          <span class="tool-icon">
-            <img class="sprite-img" alt="" draggable="false">
-            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 20.5 16.5 5.5" />
-              <path d="M8.5 15.5l2.6 2.2" />
-              <path d="M16.5 5.5c-4.2.6-7.7 3-9.4 6.6 4.4 1 8.2-1.6 9.4-6.6Z" />
-            </svg>
-          </span>
-          <span class="tool-label">Scythe</span>
-        </button>
+        <!-- Scythe tool removed (2026-08-31) -- harvesting a ripe plot is
+             now a single instant tap, no tool needed. See field.js's
+             touchPlot(); "Wooden Scythe" is gone from data.js entirely,
+             not just this button, since there was only ever one tier of
+             it and nothing left to differentiate. -->
       </div>
       </div>
 
@@ -136,50 +128,14 @@
         <div class="bar xp-bar"><div id="log-xp-fill" class="xp-fill"></div></div>
       </div>
 
-      <div class="field-grid">
+      <div class="log-axe-row">
+        <span class="log-axe-label">Axe:</span>
+        <span id="log-axe-name" class="log-axe-name">No axe equipped</span>
+      </div>
+
       <div id="log-plots" class="plots"></div>
 
-      <!-- the three tools -->
-      <div class="tools">
-        <button class="tool" data-tool="cone">
-          <span class="tool-icon">
-            <img class="sprite-img" alt="" draggable="false">
-            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3c-3 2-4 5-4 9 0 5 2 8 4 9 2-1 4-4 4-9 0-4-1-7-4-9Z" />
-              <path d="M9 9h6M8.4 12.5h7.2M9 16h6" />
-            </svg>
-          </span>
-          <span>Pine Cones</span>
-        </button>
-        <button class="tool" data-tool="water">
-          <span class="tool-icon">
-            <img class="sprite-img" alt="" draggable="false">
-            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6 11h9v6.5A2.5 2.5 0 0 1 12.5 20h-4A2.5 2.5 0 0 1 6 17.5V11Z" />
-              <path d="M15 12.5 19 9.5" />
-              <path d="M17.6 7.6 21 11.4" />
-              <path d="M8.6 11V9.2a2.4 2.4 0 0 1 4.8 0V11" />
-            </svg>
-          </span>
-          <span class="tool-label">Watering Can</span>
-          <span class="can-meter">
-            <i class="can-pip"></i><i class="can-pip"></i><i class="can-pip"></i><i class="can-pip"></i>
-          </span>
-        </button>
-        <button class="tool" data-tool="axe">
-          <span class="tool-icon">
-            <img class="sprite-img" alt="" draggable="false">
-            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6 20 15 9" />
-              <path d="M15 9 21 4 20 10 14 13Z" />
-            </svg>
-          </span>
-          <span class="tool-label">Axe</span>
-        </button>
-      </div>
-      </div>
-
-      <div id="log-hint" class="hint">Pick a tool to begin.</div>
+      <div id="log-hint" class="hint">Tap a grown Pine to chop it.</div>
     </div>
 
     <!-- ============================== MINING =============================== -->
@@ -193,6 +149,7 @@
         </div>
       </header>
 
+      <!-- XP bar sits above the art banner now (2026-08-31, was below it). -->
       <div class="xp">
         <div class="xp-row">
           <span id="mining-xp-level" class="xp-level">Mining — Level 0</span>
@@ -201,40 +158,72 @@
         <div class="bar xp-bar"><div id="mining-xp-fill" class="xp-fill"></div></div>
       </div>
 
-      <div id="mine-status" class="mine-status">
-        <div class="mine-depth">Depth <span id="mine-depth-num">0</span>m</div>
-        <div class="mine-pickaxe" id="mine-pickaxe-name">Rusty Pickaxe</div>
+      <!-- The current depth zone's own illustration -- one custom image per
+           MINE_ZONES entry (src/data.js), dropped in at
+           assets/sprites/mining/zones/<slug>.png with no code changes (see
+           mining.js's drawMineArt()). Falls back to a plain vector pick-axe
+           until real art exists, same "never a broken image" rule every
+           other sprite slot in this game follows. The depth/pickaxe status
+           row moved inside this frame's own bottom overlay (2026-08-31,
+           was its own row below the art) -- it sits above the zone's name,
+           both riding the same gradient. -->
+      <div id="mine-art" class="mine-art">
+        <img class="sprite-img" alt="" draggable="false">
+        <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 20 13 11" />
+          <path d="M13 11 19 5 21 9 15 15Z" />
+          <path d="M9 15l2 2" />
+        </svg>
+        <div class="mine-art-overlay">
+          <div id="mine-status" class="mine-status">
+            <div class="mine-depth">Depth <span id="mine-depth-num">0</span>m</div>
+            <div class="mine-pickaxe" id="mine-pickaxe-name">Rusty Pickaxe</div>
+          </div>
+          <div id="mine-art-label" class="mine-art-label">Stone</div>
+        </div>
       </div>
 
       <div id="mine-carried" class="bag-items mine-carried"></div>
 
-      <div class="craft-list">
-        <button class="pill" data-item="mine-dig">
-          <div class="pill-fill"></div>
-          <span class="pill-icon">
-            <img class="sprite-img" alt="" draggable="false">
-            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 20 13 11" />
-              <path d="M13 11 19 5 21 9 15 15Z" />
-              <path d="M9 15l2 2" />
-            </svg>
-          </span>
-          <span class="pill-body">
-            <span class="pill-name">Dig Deeper</span>
-            <span class="pill-sub">Next: 2% cave-in risk</span>
+      <!-- Pinned to the bottom of the screen (margin-top: auto, same trick
+           Farm's own .tools row uses) -- the button that actually needs
+           tapping over and over sits in easy thumb reach, below the big
+           art banner and status readouts rather than fighting them for
+           space above the fold. -->
+      <div class="mine-actions">
+        <div class="craft-list">
+          <button class="pill" data-item="mine-dig">
+            <div class="pill-fill"></div>
+            <span class="pill-icon">
+              <img class="sprite-img" alt="" draggable="false">
+              <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 20 13 11" />
+                <path d="M13 11 19 5 21 9 15 15Z" />
+                <path d="M9 15l2 2" />
+              </svg>
+            </span>
+            <span class="pill-body">
+              <span class="pill-name">Dig Deeper</span>
+              <span class="pill-sub">Next: 2% cave-in risk</span>
+            </span>
+          </button>
+        </div>
+
+        <button id="mine-surface-btn" class="villager-hire">
+          <!-- The same post-surface cooldown that already blocks the next
+               Dig (state.mineCooldownUntil) now also shows here as a
+               filling yellow bar -- "time to surface" -- see mining.js's
+               refreshMining(). -->
+          <div class="pill-fill mine-surface-fill"></div>
+          <span class="villager-hire-icon">🪜</span>
+          <span class="villager-hire-body">
+            <span class="villager-hire-name">Surface &amp; Bank</span>
+            <span class="villager-hire-sub" id="mine-bank-preview">Nothing carried yet</span>
           </span>
         </button>
+
+        <div id="mine-hint" class="hint">Tap Dig to descend.</div>
       </div>
-
-      <button id="mine-surface-btn" class="villager-hire">
-        <span class="villager-hire-icon">⬆️</span>
-        <span class="villager-hire-body">
-          <span class="villager-hire-name">Surface &amp; Bank</span>
-          <span class="villager-hire-sub" id="mine-bank-preview">Nothing carried yet</span>
-        </span>
-      </button>
-
-      <div id="mine-hint" class="hint">Tap Dig to descend.</div>
     </div>
 
     <!-- ============================ FISHING ================================ -->
@@ -394,7 +383,15 @@
           </button>
         </div>
 
-        <div id="combat-log" class="combat-log"></div>
+        <!-- The scrolling combat log is pulled from the screen (2026-08-30)
+             -- it cluttered the fight view more than it earned its place.
+             src/combat.js's log()/drawLog()/combatLog are all untouched
+             and still run every attack; drawLog() already no-ops safely
+             the moment el("combat-log") can't find this element, so
+             nothing needed to change on the JS side. Reintroduce by
+             putting a #combat-log element back somewhere (not necessarily
+             here) -- the logic underneath is ready as soon as there's
+             something for it to write into. -->
 
         <div id="combat-result" class="combat-result">
           <div id="combat-result-headline" class="result-headline">Victory</div>
@@ -485,6 +482,10 @@
           <div class="field-sub">Tools from raw material</div>
         </div>
       </header>
+
+      <div id="craft-stations" class="menu"></div>
+
+      <div class="market-section-label">Recipes</div>
 
       <div class="craft-list">
         <button class="pill" data-item="flintAxe">
@@ -594,130 +595,18 @@
           <span class="pill-count">0</span>
         </button>
 
-        <button class="pill" data-item="paddedVest">
-          <div class="pill-fill"></div>
-          <div class="pill-level-fill"></div>
-          <span class="pill-level-badge">0</span>
-          <span class="pill-icon">
-            <img class="sprite-img" alt="" draggable="false">
-            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M8 4 12 6 16 4 18 8 16 20H8L6 8Z" />
-            </svg>
-          </span>
-          <span class="pill-body">
-            <span class="pill-name">Padded Vest</span>
-            <span class="pill-sub">20 Sticks · 15 Flint</span>
-          </span>
-          <span class="pill-count">0</span>
-        </button>
-
-        <button class="pill" data-item="stonePlate">
-          <div class="pill-fill"></div>
-          <div class="pill-level-fill"></div>
-          <span class="pill-level-badge">0</span>
-          <span class="pill-icon">
-            <img class="sprite-img" alt="" draggable="false">
-            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M8 4 12 6 16 4 18 8 16 20H8L6 8Z" />
-            </svg>
-          </span>
-          <span class="pill-body">
-            <span class="pill-name">Stone Plate</span>
-            <span class="pill-sub">25 Stone · 15 Pine Logs</span>
-          </span>
-          <span class="pill-count">0</span>
-        </button>
-
-        <button class="pill" data-item="fishingRod">
-          <div class="pill-fill"></div>
-          <div class="pill-level-fill"></div>
-          <span class="pill-level-badge">0</span>
-          <span class="pill-icon">
-            <img class="sprite-img" alt="" draggable="false">
-            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 20 18 6" />
-              <path d="M18 6c2.5 0 3.5 2 2 4.5" />
-            </svg>
-          </span>
-          <span class="pill-body">
-            <span class="pill-name">Fishing Rod</span>
-            <span class="pill-sub">15 Sticks · 5 String</span>
-          </span>
-          <span class="pill-count">0</span>
-        </button>
-
-        <button class="pill" data-item="net">
-          <div class="pill-fill"></div>
-          <div class="pill-level-fill"></div>
-          <span class="pill-level-badge">0</span>
-          <span class="pill-icon">
-            <img class="sprite-img" alt="" draggable="false">
-            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="8.5" />
-              <path d="M5 5 19 19" />
-              <path d="M19 5 5 19" />
-            </svg>
-          </span>
-          <span class="pill-body">
-            <span class="pill-name">Net</span>
-            <span class="pill-sub">15 String · 5 Sticks</span>
-          </span>
-          <span class="pill-count">0</span>
-        </button>
-
-        <button class="pill" data-item="trap">
-          <div class="pill-fill"></div>
-          <div class="pill-level-fill"></div>
-          <span class="pill-level-badge">0</span>
-          <span class="pill-icon">
-            <img class="sprite-img" alt="" draggable="false">
-            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M5 9 12 4 19 9" />
-              <path d="M5 9V19H19V9" />
-              <path d="M9 19V13H15V19" />
-            </svg>
-          </span>
-          <span class="pill-body">
-            <span class="pill-name">Trap</span>
-            <span class="pill-sub">20 Sticks · 5 Flint</span>
-          </span>
-          <span class="pill-count">0</span>
-        </button>
-
-        <button class="pill" data-item="wormBait">
-          <div class="pill-fill"></div>
-          <div class="pill-level-fill"></div>
-          <span class="pill-level-badge">0</span>
-          <span class="pill-icon">
-            <img class="sprite-img" alt="" draggable="false">
-            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 14c2-4 4 4 6 0s4 4 6 0 3 3 4 1" />
-            </svg>
-          </span>
-          <span class="pill-body">
-            <span class="pill-name">Worm Bait</span>
-            <span class="pill-sub">5 Sticks</span>
-          </span>
-          <span class="pill-count">0</span>
-        </button>
-
-        <button class="pill" data-item="shinyLure">
-          <div class="pill-fill"></div>
-          <div class="pill-level-fill"></div>
-          <span class="pill-level-badge">0</span>
-          <span class="pill-icon">
-            <img class="sprite-img" alt="" draggable="false">
-            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 4 16.5 12 12 20 7.5 12Z" />
-              <path d="M12 2v2M12 20v2M2 12h2M20 12h2" />
-            </svg>
-          </span>
-          <span class="pill-body">
-            <span class="pill-name">Shiny Lure</span>
-            <span class="pill-sub">10 Flint · 5 String</span>
-          </span>
-          <span class="pill-count">0</span>
-        </button>
+        <!-- Padded Vest, Stone Plate, Fishing Rod, Net, Trap, Worm Bait
+             and Shiny Lure are pulled from Aerendell's Craft Bench
+             (2026-08-30) -- same "markup gone, logic untouched" removal
+             combat's own log just got. Their RECIPES/ARMORS/EQUIPMENT/
+             BAITS entries in data.js are all still there: anyone who
+             already owns one keeps using it exactly as before (equipping
+             armor, casting a Rod, setting a Trap), and craft.js's own
+             `document.querySelectorAll("#screen-craft .pill")` wiring
+             just finds fewer pills to bind, no special-casing needed.
+             Reintroducing any of them -- here, a different station, or a
+             different location's own Craft Bench once that's a real
+             distinction -- is a markup change, not a logic one. -->
       </div>
     </div>
 
@@ -945,6 +834,79 @@
       </div>
     </div>
 
+    <!-- ============================ ARMOR BENCH ============================= -->
+    <div id="screen-armorBench" class="screen hidden">
+
+      <header class="field-head">
+        <button id="back-armorBench" class="back" aria-label="Back">‹</button>
+        <div>
+          <div class="field-title">Armor Bench</div>
+          <div class="field-sub">Sew cloth into armor</div>
+        </div>
+      </header>
+
+      <div class="xp">
+        <div class="xp-row">
+          <span id="highlandCloak-xp-level" class="xp-level">Tailoring — Level 0</span>
+          <span id="highlandCloak-xp-count" class="xp-count">0 / 60</span>
+        </div>
+        <div class="bar xp-bar"><div id="highlandCloak-xp-fill" class="xp-fill"></div></div>
+      </div>
+
+      <div class="craft-list">
+        <button class="pill" data-item="highlandCloak">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3 19 7v3c0 5-3 8-7 10-4-2-7-5-7-10V7Z" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Highland Cloak</span>
+            <span class="pill-sub">4 Cloth</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="highlandChest">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 4 12 6 16 4 18 8 16 20H8L6 8Z" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Highland Chest</span>
+            <span class="pill-sub">6 Cloth</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="highlandLegs">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 4h10l1 8-3 8h-3l-1-9-1 9H7l-3-8Z" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Highland Legs</span>
+            <span class="pill-sub">6 Cloth</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+      </div>
+    </div>
+
     <!-- ========================== TANNING STATION =========================== -->
     <div id="screen-tanningStation" class="screen hidden">
 
@@ -1010,11 +972,31 @@
       </div>
     </div>
 
+    <!-- ========================== ZONE LEVEL-UP ========================== -->
+    <!-- A zone leveling up spins this for a random resource -- see
+         src/zoneWheel.js. Tap anywhere to dismiss early; it also
+         auto-closes a few seconds after landing. -->
+    <div id="zonewheel" class="zonewheel hidden">
+      <div class="zw-card">
+        <div id="zw-zone" class="zw-zone">Aerendell leveled up!</div>
+        <div id="zw-lv" class="zw-lv">Level 2</div>
+        <div class="zw-reels">
+          <div class="zw-reel"><div id="zw-strip-0" class="zw-strip"></div></div>
+          <div class="zw-reel"><div id="zw-strip-1" class="zw-strip"></div></div>
+          <div class="zw-reel"><div id="zw-strip-2" class="zw-strip"></div></div>
+        </div>
+        <div id="zw-result" class="zw-result">Spinning…</div>
+        <div class="zw-hint">Tap to continue</div>
+      </div>
+    </div>
+
     <!-- Persistent -- above the dock on every screen, not a place you
          navigate to. See src/forage.js. -->
     <div id="forage-bar" class="forage-bar">
       <button class="pill" data-item="forage">
         <div class="pill-fill"></div>
+        <div class="pill-level-fill"></div>
+        <span class="pill-level-badge">0</span>
         <span class="pill-icon">
           <img class="sprite-img" alt="" draggable="false">
           <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">

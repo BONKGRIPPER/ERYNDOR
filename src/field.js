@@ -1,11 +1,13 @@
 // =================================================================== field
 
-import { CROPS, WATER_TAPS_NEEDED, HARVEST_MS } from "./data.js";
-import { state, save, gainItem } from "./state.js";
+import { CROPS, WATER_TAPS_NEEDED, PLOT_EXPAND_COST, PLOT_COUNT, LOCATIONS } from "./data.js";
+import { state, save, gainItem, gainSkillXp } from "./state.js";
+import { openZoneWheel } from "./zoneWheel.js";
 import { GROWTH_PER_LEVEL, WATER_XP, levelFromXp, levelProgress } from "./skills.js";
 import { growthMultiplier } from "./time.js";
 import { tryStartCanRefill, settleCanRefill, drawCanMeter } from "./canmeter.js";
-import { useSprite, slug } from "./sprites.js";
+import { canAfford, buildCostNodes, spendCost } from "./costDisplay.js";
+import { useSprite } from "./sprites.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { drawBag, updateSkillsNote } from "./hub.js";
@@ -45,12 +47,94 @@ export function buildPlots() {
     node.addEventListener("click", function () { touchPlot(i); });
     wrap.append(node);
   });
+  drawExpandCard();
 }
 
-/** empty | thirsty | growing | ripe | cutting */
+// ------------------------------------------------------------- plot expand
+//
+// Same mechanic as Logging's own (src/logging.js) -- doubles for every
+// plot bought past the starting PLOT_COUNT, only offered at a
+// non-wilderness location. Kept as its own small copy rather than a
+// shared helper, same "kept separate on purpose" reasoning this file's
+// own header already gives for not sharing more with Logging.
+function expandCost() {
+  const bought = state.plots.length - PLOT_COUNT;
+  const mult = Math.pow(2, Math.max(0, bought));
+  const cost = {};
+  Object.keys(PLOT_EXPAND_COST).forEach(function (item) {
+    cost[item] = PLOT_EXPAND_COST[item] * mult;
+  });
+  return cost;
+}
+
+function canExpandHere() {
+  const loc = LOCATIONS[state.currentLocation];
+  return !!loc && loc.type !== "wilderness";
+}
+
+function buyPlot() {
+  if (!canExpandHere()) return;
+  const cost = expandCost();
+  if (!canAfford(cost)) { shakeExpand(); return; }
+  spendCost(cost);
+  state.plots.push({
+    crop: null, stage: 0, startedAt: 0, readyAt: null, waterProgress: 0,
+  });
+  save();
+  drawBag();
+  buildPlots();
+  drawField();
+}
+
+function shakeExpand() {
+  const card = el("field-expand-card");
+  if (!card) return;
+  card.classList.remove("shake");
+  void card.offsetWidth;
+  card.classList.add("shake");
+  // Unlike a plot's own flash() (which resets its whole card, including
+  // this class, on every redraw), the expand card's drawExpandCard() only
+  // ever touches its afford/text state -- never "shake" -- and it's
+  // called every tick this screen is open (that's the whole point of it).
+  // Without an explicit removal, the class just sits there forever once
+  // added, and a DOM mutation on an animating element (drawExpandCard()'s
+  // own replaceChildren() every tick) can restart a still-present CSS
+  // animation in some browsers -- which is exactly what "shakes and never
+  // stops" was. 340ms clears it just after the 320ms animation ends.
+  setTimeout(function () { card.classList.remove("shake"); }, 340);
+}
+
+function drawExpandCard() {
+  let card = el("field-expand-card");
+  if (!canExpandHere()) {
+    if (card) card.remove();
+    return;
+  }
+  const wrap = el("plots");
+  if (!card) {
+    card = document.createElement("button");
+    card.id = "field-expand-card";
+    card.className = "pill plot-expand";
+    card.addEventListener("click", buyPlot);
+  }
+  wrap.append(card);
+  const cost = expandCost();
+  const affordable = canAfford(cost);
+  card.classList.toggle("unaffordable", !affordable);
+  card.classList.toggle("affordable-ready", affordable);
+  card.replaceChildren();
+  const label = document.createElement("span");
+  label.className = "plot-expand-label";
+  label.textContent = "+ New Farm Plot";
+  const cost_ = document.createElement("span");
+  cost_.className = "plot-expand-cost";
+  cost_.replaceChildren.apply(cost_, buildCostNodes(cost));
+  card.append(label, cost_);
+}
+
+/** empty | thirsty | growing | ripe */
 function plotStatus(plot) {
   if (!plot.crop) return "empty";
-  if (plot.reapReadyAt !== null) return "cutting";
   if (plot.stage >= CROPS[plot.crop].waters) return "ripe";
   return plot.readyAt === null ? "thirsty" : "growing";
 }
@@ -59,22 +143,17 @@ function plotStatus(plot) {
 // a deadline rather than a countdown, this is also all that offline growth
 // needs -- come back tomorrow and the same line catches everything up. The
 // can's own refill deadline is the same idea, just one shared timer instead
-// of six. A cut left running through a reload resolves here too, the same
-// as a chop landing in Logging's settleLogging() -- resolveHarvest() itself
-// decides whether there's a visible node worth animating.
+// of six. Harvesting itself is a single instant tap now (2026-08-31, see
+// touchPlot() below) -- nothing to settle for it, a ripe plot just sits
+// ripe until tapped, same as it always would while waiting.
 export function settle() {
   let changed = false;
   const now = Date.now();
-  const visible = !el("screen-field").classList.contains("hidden");
-  state.plots.forEach(function (plot, i) {
+  state.plots.forEach(function (plot) {
     if (plot.readyAt !== null && now >= plot.readyAt) {
       plot.stage += 1;
       plot.readyAt = null;
       plot.waterProgress = 0;   // the next stage (if any) needs its own four taps
-      changed = true;
-    }
-    if (plot.reapReadyAt !== null && now >= plot.reapReadyAt) {
-      resolveHarvest(i, plot, visible);
       changed = true;
     }
   });
@@ -101,13 +180,12 @@ export function drawField() {
     node.classList.toggle("watering", status === "thirsty");
     node.classList.toggle("thirsty", status === "thirsty");
     node.classList.toggle("ripe", status === "ripe");
-    node.classList.toggle("cutting", status === "cutting");
 
     // The fill bar does the same double duty the old ring did: watering
     // progress before the growth timer starts, growth progress once it
-    // has, then the single Scythe cut's own countdown -- same element,
-    // same width, just a different color per status (see
-    // .plot.watering/.plot.ripe in style.css).
+    // has -- same element, same width, just a different color per status
+    // (see .plot.watering/.plot.ripe in style.css). Nothing left to show
+    // once ripe but full -- one tap harvests it outright.
     const fill = node.querySelector(".pill-fill");
     if (status === "growing") {
       const span = plot.readyAt - plot.startedAt;
@@ -115,9 +193,6 @@ export function drawField() {
       fill.style.width = (p * 100).toFixed(1) + "%";
     } else if (status === "thirsty") {
       fill.style.width = (plot.waterProgress / WATER_TAPS_NEEDED * 100).toFixed(1) + "%";
-    } else if (status === "cutting") {
-      const p = Math.min(1, (now - (plot.reapReadyAt - HARVEST_MS)) / HARVEST_MS);
-      fill.style.width = (p * 100).toFixed(1) + "%";
     } else if (status === "ripe") {
       fill.style.width = "100%";
     } else {
@@ -140,35 +215,27 @@ export function drawField() {
       status === "empty" ? "" :
       status === "thirsty" ? "Watering " + plot.waterProgress + "/" + WATER_TAPS_NEEDED :
       status === "growing" ? "Growing…" :
-      status === "cutting" ? "Cutting…" :
       "Ripe — tap to harvest";
 
-    // highlight what the held tool can actually be used on
-    const can = canUse(state.tool, status);
+    // A ripe plot is always actionable, tool or not -- harvesting needs no
+    // tool selected any more. Otherwise, highlight what the held tool can
+    // actually be used on, same as before.
+    const can = status === "ripe" || canUse(state.tool, status);
     node.classList.toggle("actionable", can);
     node.classList.toggle("wet-target", can && state.tool === "water");
-    node.classList.toggle("reap-target", can && state.tool === "scythe");
   });
 
   drawCanMeter("screen-field", state.wateringCan);
-  drawEquippedScythe();
-}
-
-// The Scythe tool shows whatever's actually equipped in that slot -- name
-// and sprite -- rather than a fixed "Scythe" label, same reasoning as the
-// watering can showing its equipped tier in canmeter.js.
-function drawEquippedScythe() {
-  const btn = document.querySelector('#screen-field .tool[data-tool="scythe"]');
-  if (!btn) return;
-  const item = state.equipment.scythe;
-  btn.querySelector(".tool-label").textContent = item || "Scythe";
-  if (item) useSprite(btn.querySelector(".tool-icon"), "items/" + slug(item));
+  // Keeps the expand card's afford styling current every tick this screen
+  // is visible, not just right after buildPlots() rebuilds it -- same
+  // "don't let it go stale while sitting here" fix Craft/the conversion
+  // stations just got.
+  drawExpandCard();
 }
 
 function canUse(tool, status) {
   if (tool === "seeds") return status === "empty";
   if (tool === "water") return status === "thirsty";
-  if (tool === "scythe") return status === "ripe";
   return false;
 }
 
@@ -186,12 +253,16 @@ function touchPlot(i) {
   const node = el("plots").children[i];
   const status = plotStatus(plot);
 
+  // Ripe plots harvest on a single tap, no tool needed at all -- checked
+  // before the tool gate below, same "always available" treatment the old
+  // Scythe's one job used to get, just without a tool to hold first.
+  if (status === "ripe") { resolveHarvest(i, plot); save(); drawField(); drawBag(); return; }
+
   if (!state.tool) { hint("Pick a tool first."); flash(node, "nope", 340); return; }
   if (!canUse(state.tool, status)) { wrongTool(node, status); return; }
 
   if (state.tool === "seeds") plant(i, plot, node);
   else if (state.tool === "water") water(plot, node);
-  else if (state.tool === "scythe") startReap(plot);
 
   save();
   drawField();
@@ -246,21 +317,14 @@ function water(plot, node) {
   gainXp(WATER_XP);
 }
 
-// One tap starts the cut -- HARVEST_MS later, settle() (in the tick loop,
-// or the very next boot if the game was closed) calls resolveHarvest()
-// itself. Nothing here pays anything out; it only sets the deadline.
-function startReap(plot) {
-  plot.reapReadyAt = Date.now() + HARVEST_MS;
-  hint("Cutting… ready in " + (HARVEST_MS / 1000) + "s.");
-}
-
-// The payout, once the cut's own timer lands -- split out of the old tap
-// handler the same way Logging's fellTree() is split out of chopTree(),
-// so an offline catch-up (no visible node to animate) and a cut finishing
-// while the screen is open both resolve through the same one function.
-function resolveHarvest(i, plot, visible) {
+// The full payout, on the single tap that harvests a ripe plot -- no
+// timer, no settle() step, instant the same tick it's tapped (2026-08-31).
+// Called only from touchPlot() now, always with a real node to flash --
+// there's no offline "cut left running" case any more to reach this
+// without one.
+function resolveHarvest(i, plot) {
   const crop = CROPS[plot.crop];
-  const node = visible ? el("plots").children[i] : null;
+  const node = el("plots").children[i];
   const parts = [];
   Object.keys(crop.gives).forEach(function (item) {
     gainItem(item, crop.gives[item]);
@@ -272,23 +336,18 @@ function resolveHarvest(i, plot, visible) {
     plot.stage = 0;
     plot.readyAt = null;
     plot.waterProgress = 0;
-    plot.reapReadyAt = null;
     save();
     drawField();
     drawBag();
   }
 
-  if (node) {
-    // Same "result" flash Foraging's own pill uses -- gold, bold pill-sub
-    // text for a beat before the plot goes back to normal. drawField()'s
-    // own per-plot loop skips a node still showing this.
-    node.querySelector(".pill-sub").textContent = parts.join(" · ");
-    node.classList.add("result");
-    flash(node, "reaping", 400);
-    setTimeout(function () { node.classList.remove("result"); reset(); }, 1400);
-  } else {
-    reset();
-  }
+  // Same "result" flash Foraging's own pill uses -- gold, bold pill-sub
+  // text for a beat before the plot goes back to normal. drawField()'s
+  // own per-plot loop skips a node still showing this.
+  node.querySelector(".pill-sub").textContent = parts.join(" · ");
+  node.classList.add("result");
+  flash(node, "reaping", 400);
+  setTimeout(function () { node.classList.remove("result"); reset(); }, 1400);
 
   hint("Harvested " + crop.name + ".");
   gainXp(crop.xp);
@@ -299,8 +358,9 @@ function resolveHarvest(i, plot, visible) {
 // need a moment where they visibly mean something.
 function gainXp(amount) {
   const before = levelFromXp(state.farmingXp);
-  state.farmingXp += amount;
+  const zoneLevels = gainSkillXp("farmingXp", amount);
   const after = levelFromXp(state.farmingXp);
+  if (zoneLevels) openZoneWheel(state.currentLocation, zoneLevels);
   drawXp();
   updateSkillsNote();
   if (after > before) {
@@ -313,10 +373,11 @@ function gainXp(amount) {
 }
 
 function wrongTool(node, status) {
+  // status === "ripe" never reaches here any more -- touchPlot() handles it
+  // before the tool gate, tool or not (see its own comment).
   const why = {
-    seeds:  { thirsty: "Already sown.", growing: "Already growing.", ripe: "That's ripe — use the scythe.", cutting: "Already cutting." },
-    water:  { empty: "Nothing planted here.", growing: "Already watered.", ripe: "That's ripe — use the scythe.", cutting: "Already cutting." },
-    scythe: { empty: "Nothing to cut.", thirsty: "Not grown yet.", growing: "Not grown yet.", cutting: "Already cutting." },
+    seeds: { thirsty: "Already sown.", growing: "Already growing." },
+    water: { empty: "Nothing planted here.", growing: "Already watered." },
   };
   hint((why[state.tool] && why[state.tool][status]) || "Not that one.");
   flash(node, "nope", 340);
@@ -325,9 +386,8 @@ function wrongTool(node, status) {
 // ==================================================================== tools
 
 const HINTS = {
-  seeds:  "Tap an empty plot to sow.",
-  water:  "Tap a sown plot to water it.",
-  scythe: "Tap a ripe plot to harvest.",
+  seeds: "Tap an empty plot to sow.",
+  water: "Tap a sown plot to water it.",
 };
 
 let hintTimer = 0;

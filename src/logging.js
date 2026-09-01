@@ -1,21 +1,24 @@
 // ================================================================= logging
 //
-// Farming's mirror: plant a pine cone, water it, chop it once it's ripe.
-// Same deadline-timer machinery, same tool-bar pattern, its own skill and
-// its own plot grid -- kept separate from Field's rather than shared, so
-// leaving Farm with Water selected and going to chop in Logging doesn't
-// touch what Farm was doing.
+// Reworked 2026-08-30: no cones, no watering can, no tool to pick at all --
+// every plot is always a Pine, and the instant one falls it starts growing
+// again on its own. The only action left is the chop itself (tap a ripe
+// plot), same "no tool-select step" shape Mining's own Dig pill already
+// uses. Growth is still a real deadline (readyAt), so it keeps progressing
+// while the game is closed, exactly like every other timer in this game.
 
-import { TREES, WATER_TAPS_NEEDED, AXES } from "./data.js";
-import { state, save, gainItem } from "./state.js";
-import { GROWTH_PER_LEVEL, WATER_XP, levelFromXp, levelProgress } from "./skills.js";
+import { TREES, AXES, PLOT_EXPAND_COST, PLOT_COUNT, LOCATIONS } from "./data.js";
+import { state, save, gainItem, gainSkillXp } from "./state.js";
+import { openZoneWheel } from "./zoneWheel.js";
+import { GROWTH_PER_LEVEL, levelFromXp, levelProgress } from "./skills.js";
 import { growthMultiplier } from "./time.js";
-import { tryStartCanRefill, settleCanRefill, drawCanMeter } from "./canmeter.js";
-import { useSprite, slug } from "./sprites.js";
+import { canAfford, buildCostNodes, spendCost } from "./costDisplay.js";
+import { useSprite } from "./sprites.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { drawBag, updateSkillsNote } from "./hub.js";
-import { openSheet, closeSheet } from "./sheet.js";
+
+const TREE = TREES.pine;
 
 const TREE_SVG =
   '<svg viewBox="0 0 40 40" aria-hidden="true">' +
@@ -52,76 +55,79 @@ export function buildLogPlots() {
     node.addEventListener("click", function () { touchLogPlot(i); });
     wrap.append(node);
   });
+  drawExpandCard();
 }
 
-/** empty | thirsty | growing | ripe */
+/** growing | ripe */
 function logPlotStatus(plot) {
-  if (!plot.crop) return "empty";
-  if (plot.stage >= TREES[plot.crop].waters) return "ripe";
-  return plot.readyAt === null ? "thirsty" : "growing";
+  return plot.chopHealth !== null ? "ripe" : "growing";
 }
 
-// Same free-offline-growth trick as Field's settle(). Chopping itself is
-// instant per tap now (see chopTree() below) -- there's no timer left to
-// catch up here, just growth and the can's refill.
+// How fast a fresh growth cycle runs -- read once, at the moment it
+// starts (either a fresh plot at boot, or the instant a tree falls), and
+// baked into that cycle's own readyAt. Doesn't speed up or slow down
+// retroactively if the player levels up or the sun sets mid-grow, same
+// rule Farm's own water() follows.
+function growthMs() {
+  const levelSpeed = 1 + levelFromXp(state.loggingXp) * GROWTH_PER_LEVEL;
+  const timeSpeed = growthMultiplier(state.startedAt, "logging");
+  return (TREE.stageSeconds * 1000) / (levelSpeed * timeSpeed);
+}
+
+function startGrowing(plot) {
+  plot.startedAt = Date.now();
+  plot.readyAt = plot.startedAt + growthMs();
+  plot.chopHealth = null;
+}
+
+// Rolls any finished growth timers forward -- the only thing left to
+// settle now that chopping is instant (see chopTree()). Same "a deadline,
+// not a countdown, is what makes offline growth free" reasoning as
+// Field's own settle().
 export function settleLogging() {
   let changed = false;
   const now = Date.now();
 
   state.logPlots.forEach(function (plot) {
     if (plot.readyAt !== null && now >= plot.readyAt) {
-      plot.stage += 1;
       plot.readyAt = null;
-      plot.waterProgress = 0;   // the next stage (if any) needs its own four taps
-      // Freshly ripe -- full health, untouched, ready for the axe.
-      if (plot.stage >= TREES[plot.crop].waters) plot.chopHealth = TREES[plot.crop].health;
+      plot.chopHealth = TREE.health;
       changed = true;
     }
   });
 
-  if (settleCanRefill(state.logWateringCan)) changed = true;
   if (changed) save();
 }
 
-// The payoff once the last chop lands -- split out of the tap handler
-// because it can now also fire from an offline catch-up, when there's no
-// visible node to animate.
-function fellTree(i, plot, visible) {
-  const tree = TREES[plot.crop];
-  const node = visible ? el("log-plots").children[i] : null;
+// The payoff once the last chop lands. Immediately starts the next growth
+// cycle -- there's no empty/idle state for a plot to sit in any more.
+function fellTree(i, plot, node) {
   const parts = [];
-  Object.keys(tree.gives).forEach(function (item) {
-    gainItem(item, tree.gives[item]);
-    parts.push("+" + tree.gives[item] + " " + item);
+  Object.keys(TREE.gives).forEach(function (item) {
+    gainItem(item, TREE.gives[item]);
+    parts.push("+" + TREE.gives[item] + " " + item);
   });
 
-  function reset() {
-    plot.crop = null;
-    plot.stage = 0;
-    plot.readyAt = null;
-    plot.waterProgress = 0;
-    plot.chopHealth = null;
-    save();
-    drawLogging();
-    drawBag();
-  }
+  startGrowing(plot);
 
   if (node) {
-    // Same "result" flash Field's resolveHarvest() uses -- drawLogging()'s own
-    // per-plot loop skips a node still showing this.
     node.querySelector(".pill-sub").textContent = parts.join(" · ");
     node.classList.add("result");
     flashLog(node, "reaping", 400);
     setTimeout(function () {
       node.classList.remove("result");
-      reset();
+      save();
+      drawLogging();
+      drawBag();
     }, 1400);
   } else {
-    reset();
+    save();
+    drawLogging();
+    drawBag();
   }
 
-  logHint("Chopped " + tree.name + ".");
-  gainLogXp(tree.xp);
+  logHint("Chopped " + TREE.name + ". A new one's already taking root.");
+  gainLogXp(TREE.xp);
 }
 
 export function drawLogging() {
@@ -131,87 +137,51 @@ export function drawLogging() {
     const node = el("log-plots").children[i];
     if (!node) return;
     // Same guard Field's drawField() uses -- a just-felled plot is showing
-    // its "+3 Pine Logs" flash (see fellTree() below) and skips the normal
+    // its "+3 Pine Logs" flash (see fellTree() above) and skips the normal
     // redraw until that's done.
     if (node.classList.contains("result")) return;
     const status = logPlotStatus(plot);
-    const tree = plot.crop ? TREES[plot.crop] : null;
-    // Health remaining -- set fresh the moment a tree turns ripe (see
-    // settleLogging()); falls back to full health for a plot loaded from
-    // an old save that never had this field. Never negative -- the last
-    // chop that reaches 0 fells the tree in the same tap, see chopTree().
-    const chopHealth = tree && status === "ripe"
-      ? (plot.chopHealth === null || plot.chopHealth === undefined ? tree.health : plot.chopHealth)
-      : 0;
+    const chopHealth = status === "ripe" ? plot.chopHealth : 0;
 
     node.classList.toggle("growing", status === "growing");
-    node.classList.toggle("watering", status === "thirsty");
-    node.classList.toggle("thirsty", status === "thirsty");
     node.classList.toggle("ripe", status === "ripe");
+    node.classList.toggle("actionable", status === "ripe");
 
-    // The fill bar covers three different progress meters depending on
-    // status -- partial watering, growth, or (new) chop damage dealt so
-    // far -- same element, just a different source per status. Chop
-    // damage fills up from 0% (full health) toward 100% (about to fall),
-    // same direction watering's own bar already fills.
+    // Growth progress before it's ripe, chop damage dealt once it is --
+    // same element, same width, just a different meaning (and color, see
+    // .plot.ripe .pill-fill in style.css) per status.
     const fill = node.querySelector(".pill-fill");
     if (status === "growing") {
       const span = plot.readyAt - plot.startedAt;
       const p = span > 0 ? Math.min(1, (now - plot.startedAt) / span) : 1;
       fill.style.width = (p * 100).toFixed(1) + "%";
-    } else if (status === "thirsty") {
-      fill.style.width = (plot.waterProgress / WATER_TAPS_NEEDED * 100).toFixed(1) + "%";
-    } else if (status === "ripe") {
-      const dealt = tree.health - chopHealth;
-      fill.style.width = (dealt / tree.health * 100).toFixed(1) + "%";
     } else {
-      fill.style.width = "0%";
+      const dealt = TREE.health - chopHealth;
+      fill.style.width = (dealt / TREE.health * 100).toFixed(1) + "%";
     }
 
     const icon = node.querySelector(".pill-icon");
-    if (!tree) {
-      icon.classList.remove("using-sprite");
-      icon.querySelector(".sprite-img").removeAttribute("src");
-    } else {
-      const frame = Math.min(plot.stage, tree.waters);
-      if (!useSprite(icon, "trees/" + plot.crop + "/" + frame)) {
-        icon.querySelector(".fruit").setAttribute("fill", tree.tint);
-      }
+    const frame = status === "ripe" ? 1 : 0;
+    if (!useSprite(icon, "trees/pine/" + frame)) {
+      icon.querySelector(".fruit").setAttribute("fill", TREE.tint);
     }
 
-    node.querySelector(".pill-name").textContent = tree ? tree.name : "Empty Plot";
+    node.querySelector(".pill-name").textContent = TREE.name;
     node.querySelector(".pill-sub").textContent =
-      status === "empty" ? "" :
-      status === "thirsty" ? "Watering " + plot.waterProgress + "/" + WATER_TAPS_NEEDED :
-      status === "growing" ? "Growing…" :
-      chopHealth + "/" + tree.health + " HP — tap to chop";
-
-    const can = canUseLog(state.logTool, status);
-    node.classList.toggle("actionable", can);
-    node.classList.toggle("wet-target", can && state.logTool === "water");
-    node.classList.toggle("reap-target", can && state.logTool === "axe");
+      status === "growing" ? "Growing…" : chopHealth + "/" + TREE.health + " HP — tap to chop";
   });
 
-  drawCanMeter("screen-logging", state.logWateringCan);
   drawEquippedAxe();
+  drawExpandCard();
 }
 
-// The Axe tool shows whatever's actually equipped in that slot -- name and
-// sprite -- rather than a fixed "Axe" label, same reasoning as the
-// watering can showing its equipped tier in canmeter.js.
+// A small non-interactive line -- there's no tool to *pick* any more
+// (chopping is just tapping a ripe plot directly), but the player still
+// wants to see which axe is actually driving the numbers.
 function drawEquippedAxe() {
-  const btn = document.querySelector('#screen-logging .tool[data-tool="axe"]');
-  if (!btn) return;
-  const item = state.equipment.axe;
-  btn.querySelector(".tool-label").textContent = item || "Axe";
-  if (item) useSprite(btn.querySelector(".tool-icon"), "items/" + slug(item));
-}
-
-function canUseLog(tool, status) {
-  if (tool === "cone")  return status === "empty";
-  if (tool === "water") return status === "thirsty";
-  if (tool === "axe")   return status === "ripe";
-  return false;
+  const sub = el("log-axe-name");
+  if (!sub) return;
+  sub.textContent = state.equipment.axe || "No axe equipped";
 }
 
 // -------------------------------------------------------------- plot actions
@@ -228,60 +198,14 @@ function touchLogPlot(i) {
   const node = el("log-plots").children[i];
   const status = logPlotStatus(plot);
 
-  if (!state.logTool) { logHint("Pick a tool first."); flashLog(node, "nope", 340); return; }
-  if (!canUseLog(state.logTool, status)) { wrongLogTool(node, status); return; }
-
-  if (state.logTool === "cone") plantTree(i, plot, node);
-  else if (state.logTool === "water") waterTree(plot, node);
-  else if (state.logTool === "axe") chopTree(i, plot, node);
-
+  if (status !== "ripe") {
+    logHint("Still growing.");
+    flashLog(node, "nope", 340);
+    return;
+  }
+  chopTree(i, plot, node);
   save();
-  drawLogging();
   drawBag();
-}
-
-function plantTree(i, plot, node) {
-  const tree = TREES[state.logSeed];
-  if (!tree || (state.bag[tree.seed] || 0) < 1) {
-    logHint("No " + (tree ? tree.seed.toLowerCase() : "cones") + " left.");
-    flashLog(node, "nope", 340);
-    return;
-  }
-  state.bag[tree.seed] -= 1;
-  plot.crop = state.logSeed;
-  plot.stage = 0;
-  plot.readyAt = null;
-  plot.waterProgress = 0;
-  plot.chopHealth = null;
-  logHint(tree.name + " cone planted. It needs water.");
-}
-
-// One tap == one charge == one splash, same rule as Field's watering can --
-// WATER_TAPS_NEEDED of these before the growth timer actually starts.
-function waterTree(plot, node) {
-  if (state.logWateringCan.charges < 1) {
-    logHint("The can is empty. Tap it to refill.");
-    flashLog(node, "nope", 340);
-    return;
-  }
-
-  state.logWateringCan.charges -= 1;
-  plot.waterProgress += 1;
-  flashLog(node, "watering", 700);
-
-  if (plot.waterProgress < WATER_TAPS_NEEDED) {
-    logHint("Watered " + plot.waterProgress + "/" + WATER_TAPS_NEEDED + ".");
-    return;
-  }
-
-  const tree = TREES[plot.crop];
-  const levelSpeed = 1 + levelFromXp(state.loggingXp) * GROWTH_PER_LEVEL;
-  const timeSpeed = growthMultiplier(state.startedAt, "logging");
-  const speed = levelSpeed * timeSpeed;
-  plot.startedAt = Date.now();
-  plot.readyAt = plot.startedAt + (tree.stageSeconds / speed) * 1000;
-  logHint("Fully watered. Stage " + (plot.stage + 1) + " of " + tree.waters + ".");
-  gainLogXp(WATER_XP);
 }
 
 // Whatever's equipped in the Axe slot -- falls back to a bare hand's worth
@@ -297,24 +221,22 @@ function axeDamage() {
 // Straight HP off the tree: every tap deals the equipped axe's damage,
 // and the tree falls the instant health reaches 0 in that same tap.
 function chopTree(i, plot, node) {
-  const tree = TREES[plot.crop];
-  if (plot.chopHealth === null || plot.chopHealth === undefined) plot.chopHealth = tree.health;
-
   const dmg = axeDamage();
   plot.chopHealth -= dmg;
   flashLog(node, "chop-hit", 220);
 
   if (plot.chopHealth <= 0) {
-    fellTree(i, plot, true);
+    fellTree(i, plot, node);
     return;
   }
-  logHint("-" + dmg + " HP (" + plot.chopHealth + "/" + tree.health + " left).");
+  logHint("-" + dmg + " HP (" + plot.chopHealth + "/" + TREE.health + " left).");
 }
 
 function gainLogXp(amount) {
   const before = levelFromXp(state.loggingXp);
-  state.loggingXp += amount;
+  const zoneLevels = gainSkillXp("loggingXp", amount);
   const after = levelFromXp(state.loggingXp);
+  if (zoneLevels) openZoneWheel(state.currentLocation, zoneLevels);
   drawLogXp();
   updateSkillsNote();
   if (after > before) {
@@ -326,107 +248,98 @@ function gainLogXp(amount) {
   }
 }
 
-function wrongLogTool(node, status) {
-  const why = {
-    cone:  { thirsty: "Already planted.", growing: "Already growing.", ripe: "That's grown — use the axe." },
-    water: { empty: "Nothing planted here.", growing: "Already watered.", ripe: "That's grown — use the axe." },
-    axe:   { empty: "Nothing to chop.", thirsty: "Not grown yet.", growing: "Not grown yet." },
-  };
-  logHint((why[state.logTool] && why[state.logTool][status]) || "Not that one.");
-  flashLog(node, "nope", 340);
-}
-
-// ---------------------------------------------------------------------- tools
-
-const LOG_HINTS = {
-  cone:  "Tap an empty plot to plant.",
-  water: "Tap a planted plot to water it.",
-  axe:   "Tap a grown plot to chop it.",
-};
+// ---------------------------------------------------------------------- hint
 
 let logHintTimer = 0;
 function logHint(text) {
   el("log-hint").textContent = text;
   clearTimeout(logHintTimer);
   logHintTimer = setTimeout(function () {
-    el("log-hint").textContent = state.logTool ? LOG_HINTS[state.logTool] : "Pick a tool to begin.";
+    el("log-hint").textContent = "Tap a grown Pine to chop it.";
   }, 2200);
 }
 
-function setLogTool(tool) {
-  state.logTool = tool;
-  document.querySelectorAll("#screen-logging .tool").forEach(function (b) {
-    b.classList.toggle("active", b.dataset.tool === tool);
+// ------------------------------------------------------------- plot expand
+
+// Doubles for every plot bought past the starting PLOT_COUNT -- the 1st
+// purchased plot costs PLOT_EXPAND_COST outright, the 2nd costs double
+// that, and so on. Wilderness locations don't get this at all (see
+// drawExpandCard() below) -- what's there is a fixed, set amount to
+// harvest, by design, not a farmstead that grows with the player.
+function expandCost() {
+  const bought = state.logPlots.length - PLOT_COUNT;
+  const mult = Math.pow(2, Math.max(0, bought));
+  const cost = {};
+  Object.keys(PLOT_EXPAND_COST).forEach(function (item) {
+    cost[item] = PLOT_EXPAND_COST[item] * mult;
   });
-  el("log-hint").textContent = tool
-    ? (tool === "cone" ? TREES[state.logSeed].name + " — " + LOG_HINTS.cone : LOG_HINTS[tool])
-    : "Pick a tool to begin.";
+  return cost;
+}
+
+function canExpandHere() {
+  const loc = LOCATIONS[state.currentLocation];
+  return !!loc && loc.type !== "wilderness";
+}
+
+function buyPlot() {
+  if (!canExpandHere()) return;
+  const cost = expandCost();
+  if (!canAfford(cost)) {
+    shakeExpand();
+    return;
+  }
+  spendCost(cost);
+  const plot = { startedAt: 0, readyAt: null, chopHealth: null };
+  startGrowing(plot);
+  state.logPlots.push(plot);
+  save();
+  drawBag();
+  buildLogPlots();
   drawLogging();
 }
 
-document.querySelectorAll("#screen-logging .tool").forEach(function (btn) {
-  btn.addEventListener("click", function () {
-    const tool = btn.dataset.tool;
-    if (tool === "water" && tryStartCanRefill(state.logWateringCan)) {
-      save();
-      setLogTool("water");
-      logHint("Refilling the can…");
-      return;
-    }
-    if (state.logTool === tool) { setLogTool(null); return; }
-    if (tool === "cone") { openCones(); return; }
-    setLogTool(tool);
-  });
-});
+function shakeExpand() {
+  const card = el("log-expand-card");
+  if (!card) return;
+  card.classList.remove("shake");
+  void card.offsetWidth;
+  card.classList.add("shake");
+  // See field.js's own shakeExpand() for why this explicit removal
+  // matters here specifically -- drawExpandCard() never touches "shake"
+  // itself but does run every tick this screen is open, which without
+  // this cleanup left "shake" applied forever after the first failed tap.
+  setTimeout(function () { card.classList.remove("shake"); }, 340);
+}
 
-// ------------------------------------------------------------------- sheet
-
-function openCones() {
-  const body = el("sheet-body");
-  body.replaceChildren();
-
-  Object.keys(TREES).forEach(function (id) {
-    const tree = TREES[id];
-    const count = state.bag[tree.seed] || 0;
-
-    const row = document.createElement("button");
-    row.className = "seed-row";
-    row.disabled = count < 1;
-
-    const dot = document.createElement("span");
-    dot.className = "dot";
-    dot.style.background = tree.tint;
-
-    const text = document.createElement("div");
-    const name = document.createElement("div");
-    name.className = "seed-name";
-    name.textContent = tree.name;
-    const meta = document.createElement("div");
-    meta.className = "seed-meta";
-    meta.textContent = tree.waters + " watering" + (tree.waters > 1 ? "s" : "") +
-      " · " + tree.stageSeconds + "s each";
-    text.append(name, meta);
-
-    const count_ = document.createElement("span");
-    count_.className = "seed-count";
-    count_.textContent = count + " left";
-
-    row.append(dot, text, count_);
-    row.addEventListener("click", function () {
-      state.logSeed = id;
-      closeSheet();
-      setLogTool("cone");
-    });
-    body.append(row);
-  });
-
-  openSheet("Choose what to plant");
+// A trailing card after the real plots, same "add another" idea as a
+// build prompt -- hidden outright in a wilderness rather than shown
+// disabled, since there's nothing there to ever expand.
+function drawExpandCard() {
+  let card = el("log-expand-card");
+  if (!canExpandHere()) {
+    if (card) card.remove();
+    return;
+  }
+  const wrap = el("log-plots");
+  if (!card) {
+    card = document.createElement("button");
+    card.id = "log-expand-card";
+    card.className = "pill plot-expand";
+    card.addEventListener("click", buyPlot);
+  }
+  wrap.append(card);   // keep it last even as buildLogPlots() rebuilds around it
+  const cost = expandCost();
+  const affordable = canAfford(cost);
+  card.classList.toggle("unaffordable", !affordable);
+  card.classList.toggle("affordable-ready", affordable);
+  card.replaceChildren();
+  const label = document.createElement("span");
+  label.className = "plot-expand-label";
+  label.textContent = "+ New Pine Plot";
+  const cost_ = document.createElement("span");
+  cost_.className = "plot-expand-cost";
+  cost_.replaceChildren.apply(cost_, buildCostNodes(cost));
+  card.append(label, cost_);
 }
 
 el("back-logging").addEventListener("click", function () { show("home"); updateSkillsNote(); });
-
-export function applyLogToolSprites() {
-  document.querySelectorAll("#screen-logging .tool").forEach(function (btn) {
-    useSprite(btn.querySelector(".tool-icon"), "tools/" + btn.dataset.tool);
-  });
-}

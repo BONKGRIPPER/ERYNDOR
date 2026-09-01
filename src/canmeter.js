@@ -9,9 +9,9 @@
 //
 // Capacity comes from whatever's equipped in the Inventory's Watering Can
 // slot (CANS in data.js), not a flat constant -- Farm and Logging share the
-// one equipped can, same as they'd share a better axe or scythe once those
-// exist. CAN_CAPACITY is still the fallback for the (should-never-happen)
-// unequipped case.
+// one equipped can, same as they'd share a better axe once a second tier of
+// one exists. CAN_CAPACITY is still the fallback for the (should-never-
+// happen) unequipped case.
 
 import { CAN_CAPACITY, CAN_REFILL_MS, CANS } from "./data.js";
 import { state } from "./state.js";

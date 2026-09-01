@@ -1993,6 +1993,513 @@ granted materials without reloading, came back, and the pill immediately
 read `20/20 Flint · 20/20 Sticks` / `affordable-ready` instead of the
 stale pre-grant numbers -- same fix confirmed on the Spinning Wheel.
 
+## A large pass: Forest rework, Craft Bench reorg, food, zones, upkeep
+
+Seven changes landed together this pass -- listed separately since each is
+independent, but verified together against one save.
+
+**Logging drops seeds and watering entirely.** Every plot is always a
+Pine; the instant one falls, the next one starts growing on its own
+(`src/logging.js`'s `startGrowing()`), no cone to plant, no can to fill.
+The only action left is tapping a ripe plot to chop it, same "no tool to
+pick first" shape Mining's Dig pill already uses -- the whole Cone/
+Watering Can tool row is gone from the screen, replaced by a plain "Axe:
+\<equipped\>" status line. `state.logPlots` shrank to `{startedAt, readyAt,
+chopHealth}`; a save from before this still has the old `crop`/`stage`/
+`waterProgress` shape, detected by `"crop" in plot` and reset fresh rather
+than half-migrated into a shape that can't represent "always growing."
+
+**Farm and Forest plots are both expandable now, town-only.** A trailing
+"+ New Farm/Pine Plot" card (`PLOT_EXPAND_COST`: 5 Stone Block + 5 Pine
+Planks) sits after the real plots in both screens; each purchase doubles
+the next one's cost. Gated on `LOCATIONS[currentLocation].type !==
+"wilderness"` -- the card doesn't even render at Forest Road, since a
+wilderness is a fixed, set amount to harvest by design, not a farmstead
+that grows with the player. Plots stay one global array today (not
+per-location), so the practical effect is "expandable everywhere except a
+wilderness location," which is what the ask was for the two locations
+that currently have any content at all.
+
+**Every built station moved off the Home hub into Craft Bench.**
+Campfire, Spinning Wheel, Sawmill, Stone Cutter, Tanning Station and
+Township never get a Home card at all any more, built or not --
+`hub.js`'s `visiblePlaces()` excludes every `BUILDINGS`-keyed place
+outright. `src/buildings.js`'s `drawStationCards()` renders the same
+cards (a dashed "Build ___" prompt, or a real card into the station's own
+screen once built) into a new `#craft-stations` grid at the top of the
+Craft Bench screen instead, with the existing recipe list continuing
+below under a "Recipes" label. Home now reads as just the core loop --
+Farm, Forest, Mining, Craft Bench, Combat (Fishing, wherever it next
+belongs) -- and Craft Bench is the one stop for everything about making
+things, stations included.
+
+**Food is rebalanced, and raw meat can't be eaten at all.** Berries
+(either source -- foraged or "Red Berries" from farming) heal 1 raw, 3
+cooked (`Cooked Berries`, `FOODS` in data.js); Raw Poultry/Beef/Mutton
+have no `FOODS` entry whatsoever, so they can't be equipped or eaten
+raw -- only their new cooked forms (`Cooked Poultry`/`Cooked Beef`/
+`Cooked Mutton`, all new `COOKABLES` entries) can, each healing 5.
+Verified live: the Food equip picker offers Red Berries and Cooked
+Berries but not Raw Poultry; cooking Raw Poultry at the Campfire produces
+Cooked Poultry; eating it in Combat restored exactly 5 HP.
+
+**Forest Road has its own forage pool** (Flax Seeds, Flax, Sticks -- no
+Flint, deliberately, so it reads as a different pocket of the world, not
+a copy of Aerendell's). `LOCATIONS.forestRoad.forage` points at it now
+instead of `null`.
+
+**A hired villager is tied to wherever they were actually hired**, not
+the player's current location. `state.villager.homeLocation` is set once,
+at hire (`township.js`), and `forage.js`'s `villagerPoolId()` reads that
+instead of `state.currentLocation` -- hire in Aerendell, travel to Forest
+Road, and the villager keeps working Aerendell's own pool the whole
+time, never Forest Road's. Verified live: with the villager hired at
+Aerendell, the player standing at Forest Road still only picked up
+Aerendell-only items (Flint) from the villager's own ticks, while the
+player's own taps at Forest Road correctly stayed on Forest Road's pool.
+
+**A villager now needs upkeep, or they stop working.** Every
+`VILLAGE_UPKEEP_MS` (24h), the village draws `VILLAGE_UPKEEP_FOOD` (30)
+food units and `VILLAGE_UPKEEP_HEAT` (15) heat units from whatever's been
+donated (`state.village.food`/`heat`) -- food units come straight off
+`FOODS[item].heal` (1 HP healed = 1 unit, not a second number to keep in
+sync), heat off a new `VILLAGE_HEAT_VALUE` map (Sticks/Pine Logs = 1,
+Coal/Charcoal = 3). Falling short on either freezes `nextUpkeepAt` in the
+past and sets `state.village.starved` -- the villager's own auto-forage
+tick checks that flag and simply doesn't advance while it's true (the
+player's own taps are unaffected). Township's new "Village Upkeep" card
+shows the current stockpile and countdown, with a Donate Food/Donate Heat
+button each opening a plain quantity-slider sheet (no pricing -- it's not
+a sale) over whatever's eligible in the bag/storage. Verified live: a
+40-Berries donation read as 40 food units; letting upkeep fire drew it
+down to 10 correctly; forcing a shortfall set `starved` and froze the
+villager's tick; topping the stockpile back up cleared it and caught the
+missed cycle up in the same tick.
+
+**Fishing (and, once it's real, the Furnace) don't belong at Aerendell or
+Forest Road.** `LOCATIONS.aerendell.fishing` is `null` now instead of
+`"aerendell"` -- `FISH_POOLS.aerendell`'s data is left in place, just
+unreferenced, so whichever location does end up with fishing can point
+straight at it without rebuilding anything. No location has a fish pool
+at the moment, so the Fishing hub card doesn't show up anywhere until one
+does -- expected, not a regression, given the ask.
+
+## Fixed: the "+ New Plot" card shaking forever on a failed buy
+
+`shakeExpand()` (both `field.js` and `logging.js`) added the "shake"
+class on a denied purchase but never removed it, unlike every other
+shake in this game (`hub.js`'s card shake, `forage.js`'s pill shake) --
+those get away with the same omission because nothing else keeps
+touching that element afterward. The expand card is the first shake
+target whose own screen redraws it on *every tick* while open
+(`drawExpandCard()`, added for the same "don't go stale" reasoning as the
+Craft Bench fix two batches back) -- and a DOM mutation on an element
+mid-CSS-animation (its `replaceChildren()` every 200ms) can restart a
+still-present animation before it ever finishes, in some browsers. Fixed
+by clearing "shake" on a 340ms timeout, same cleanup pattern `flash()`/
+`flashLog()` already use elsewhere for exactly this reason. Verified
+live: class list showed `shake` immediately after a denied buy, and was
+gone again after the timeout despite `drawExpandCard()` still ticking
+every 200ms underneath it.
+
+## Pickaxes: risk is now the only thing that changes between tiers
+
+Wooden/Flint/Stone Pickaxe used to differ in `clicksPerSwing` and
+`depthPerSwing` too; now all three share `clicksPerSwing: 12,
+depthPerSwing: 5, maxDepth: 100` and differ only in `riskPerSwing` --
+20%/10%/5% respectively. Progression through Tier 1 is purely "safer,"
+not "faster or deeper."
+
+## A second station pass: Armor Bench, and a forage cleanup
+
+**Pine Cones dropped out of Aerendell's forage pool.** Nothing plants a
+cone any more (Logging's trees regrow on their own), so there's nothing
+left to forage one for -- the freed 0.10 weight went to Red Berries
+Seeds (0.10 → 0.20), Sticks/Flint unchanged at 0.40/0.40. The item itself
+is untouched everywhere else (still sellable/buyable) -- worth knowing
+it's effectively decorative inventory now, nothing consumes it, if that
+ever needs a second look.
+
+**A new build-gated station, same shape as Sawmill/Stone Cutter.** Armor
+Bench (`BUILDINGS.armorBench`, 9 Basalt Block + 12 Pine Planks to build)
+adds three `STATIONS` recipes on one screen -- Highland Cloak (4 Cloth),
+Highland Chest (6 Cloth), Highland Legs (6 Cloth) -- all under a new
+Tailoring skill (`tailoringXp`), the same "one skill drives every recipe
+on this screen" shape Stone Cutter's Stone Block/Basalt Block pair
+already has. Each sells for 25 Shards and grants 1 defense
+(`ARMORS`), for 3 total if all three are worn -- Highland Cloak fills the
+Helm slot, Chest and Legs fill their own matching slots, all three
+reserved on the Equipment layout with nothing in them until now.
+
+**Armor's defense now stacks across all three body slots, not just
+Chest.** `combat.js`'s `armorStats()` took no argument before (it only
+ever read `state.equipment.chest`) -- Helm and Legs armor existed in the
+data model and even said so in this file's own comments ("Helm and Legs
+would work the same way if/when armor exists for them"), but nothing
+actually read those slots in combat. `armorStats(slot)` now reads
+whichever slot it's asked about, and `totalDefense()`/`recoveryMs()` sum/
+multiply across Helm, Chest and Legs the same way defense already summed
+with a shield's. Padded Vest and Stone Plate (Chest-only) are unaffected
+-- Helm and Legs simply contributed 0 defense and a neutral 1x recovery
+before there was anything to equip there. Verified live: with all three
+Highland pieces equipped (1 defense each, +1 base = 4 total), a Grey
+Wolf's 8-14 raw attack roll landed as 4 and 7 damage taken -- exactly
+`roll - 4` both times.
+
+## Mining's depth-0 tier rebalanced: gems are actually rare now
+
+`MINE_MATERIALS`' weights at the surface (and every gem below it) --
+Stone 100, Basalt 100 → 50, Coal 100 → 25, Amethyst/Emerald/Diamond 15 →
+5 each. Ore was never touched. Each material used to be roughly as common
+as the next; now every step down is a real drop-off, and a gem is a
+clear rare find rather than a near-coinflip against Basalt at the depths
+where they used to overlap. Verified live: a 200-swing sample at depth 0
+came back roughly 6:2.5:1 Stone:Basalt:Coal, in line with the new 4:2:1
+target weights for a sample this size.
+
+## Combat's scrolling log is pulled, not deleted
+
+The `#combat-log` element is gone from the fight screen (2026-08-30) --
+it was cluttering the view more than it earned its place, sitting between
+the action buttons and the result panel on every single fight. Nothing in
+`src/combat.js` changed: `log()` still records every attack/defend/eat/
+flee into `combatLog`, and `drawLog()` still runs after each one -- it
+already guarded on `el("combat-log")` coming back null before this
+(`if (!wrap) return;`), so removing the element was the entire change,
+verified live by starting and winning a fight with no console errors and
+the log simply absent. Reintroducing it later is a markup change, not a
+logic one -- put a `#combat-log` element somewhere (not necessarily back
+in the same spot) and it starts filling in again on its own.
+
+## Seven recipes pulled from Craft Bench, and a real bug that hid behind it
+
+Padded Vest, Stone Plate, Fishing Rod, Net, Trap, Worm Bait and Shiny
+Lure are gone from Aerendell's Craft Bench -- same non-destructive
+removal the combat log just got: their `RECIPES`/`ARMORS`/`EQUIPMENT`/
+`BAITS` entries in data.js are all untouched, so anyone who already owns
+one keeps using it exactly as before, and reintroducing any of them
+later (here, a different station, a different location's own bench) is a
+markup change, not a data one.
+
+This one surfaced a real bug that the combat log's removal hadn't:
+`craft.js`'s `refreshCraft()` ran `pillFor(item).classList.toggle(...)`
+for *every* `RECIPES` key with no null check, and it's called
+unconditionally at boot -- pulling a pill while its recipe stays real
+data would have crashed the game on every single load, not just failed
+quietly. `shakePill()` and `pills.js`'s `setPillFill()`/`popCount()` had
+the same gap. All four now guard on the pill actually existing before
+touching it, the same `if (!pill) return;` shape `drawStationXp()` already
+used elsewhere for exactly this "the data's real, the markup might not
+be" situation. Verified live: a fresh boot with the pills removed raised
+no console errors, a normal recipe (Flint Axe) still crafted correctly,
+and -- the sharper edge case -- a save with Padded Vest already mid-craft
+from before the removal finished and banked normally on the next boot
+despite its pill being gone.
+
+## Zone-gated enemies, and a ranged drop that doesn't lie about itself
+
+The Road Goblin (Forest Road only, 2026-08-30) is the first enemy that
+doesn't show up everywhere: `ENEMIES[key]` gained an optional `zone`
+field, and `combat.js`'s `buildCombatIdle()` (now exported, since
+`screens.js` needs to rebuild the list on every visit to Combat, not
+just at boot) filters the idle enemy list down to
+`!zone || zone === state.currentLocation` before drawing it. `main.js`'s
+tick loop calls the same rebuild the instant a trip actually lands
+(`if (arrived && combatVisible) buildCombatIdle();`), so leaving with the
+list open and arriving somewhere the Road Goblin does (or doesn't) belong
+updates it without needing to leave and reopen Combat. A location with no
+zone-gated enemies (everywhere else, for now) behaves exactly as before.
+
+Road Goblin also drops a *range* -- 1-3 Scrap Metal, alongside a flat 1
+Bones -- which the old `drops` shape (a single fixed number per item)
+couldn't express. `ENEMIES[key].drops` now accepts either a number or a
+`[min, max]` pair, resolved by a small `rollDropQty()` helper in
+combat.js. The more important half of this change is *where* that roll
+happens: `endFight()` rolls once, grants the result, and stashes it as
+`state.combat.lastDrops` -- the result panel reads that stashed value
+instead of re-deriving drop text from `enemy.drops` the way it used to,
+which would have shown a second, different random roll next to whatever
+actually landed in the bag. Verified live: forced a win with `enemyHP`
+set to 1, and the result panel's "+1 Bones, +1 Scrap Metal" matched the
+bag's actual contents and `lastDrops` exactly, not just approximately.
+Scrap Metal itself was a forward-referenced item name already sitting
+unused in a `PICKAXES` comment from an earlier session ("needs a
+material this game can't produce yet") -- the Road Goblin is simply the
+first thing that produces it.
+
+## Foraging becomes single-tap-and-timer, like Crafting
+
+Foraging's old swing system (tap FORAGE_CLICKS_PER_SWING times, last tap
+resolves) is gone (2026-08-31), replaced with the exact same shape Crafting
+already uses: one tap starts a `state.forage = { startedAt, readyAt, poolId }`,
+a flat `FORAGE_MS` (3s at base speed) later it resolves on its own in the
+tick loop, no further taps needed. A tap while one's already running is a
+silent no-op, same as tapping an already-running Craft pill. The pool is
+locked in at the moment the gather *starts* (`currentPoolId()`, read once),
+not when it resolves, so wandering off mid-gather still pays out from
+wherever it began.
+
+The hired villager now works the same way, just automated: every
+`VILLAGER_TICK_MS` (30s at base speed, up from the old swing system's
+2.5s-per-tap) it literally taps the same pill on its own -- calls the same
+`startForage()` the player's own tap does, at the villager's own home
+location's pool, and is just as much a no-op if a gather (the player's or
+the villager's own from a moment ago) is already in flight. There's only
+one gather slot total now, not a separate one per actor -- the villager and
+the player share it, same as before, just through the single-timer shape
+instead of a shared swing counter. `fastHands` still applies fresh to every
+scheduled tick, unchanged.
+
+## The Scythe is gone; harvesting is one instant tap
+
+Farming's third tool is gone entirely (2026-08-31) -- only Seeds and the
+Watering Can remain. A ripe plot now pays out the instant it's tapped, no
+tool held at all: `touchPlot()` checks for `status === "ripe"` before the
+tool gate, not after, so it works whether or not Seeds or the Can happens
+to be selected at the time. There was never a second tier of Scythe to
+lose (`"Wooden Scythe"` was it), so this is a full removal, not the
+non-destructive markup-only kind Combat's log and the seven Craft Bench
+recipes got -- `HARVEST_MS`, the `scythe` equip slot, and every `"Wooden
+Scythe"` data entry (`TINTS`/`CATEGORIES`/`BASE_VALUE`/starting bag) are
+gone from `src/data.js`, not just hidden. A save from before this still
+carries a real `Wooden Scythe` in an old bag or equipped in the now-gone
+`scythe` slot -- the equip slot is simply dropped on load (`EQUIP_SLOTS`
+no longer lists it), and a bag copy sits inert with a grey fallback tint,
+same as any other item this game doesn't otherwise know about. A plot mid-
+cut from before this change (a real `reapReadyAt` set) has that field
+dropped on load too -- the crop itself is untouched, still ripe, one tap
+away the normal way.
+
+## Two small Farm fixes: the empty tool square, and a faster can
+
+Two quick ones (2026-08-31), same session as the Scythe's removal above.
+The Farm's tool row (`.tools`) was still a 3-column grid left over from
+Seeds/Water/Scythe -- once Scythe's button was pulled, that third column
+just sat there empty. Dropped to `repeat(2, 1fr)` so Seeds and the
+Watering Can split the row evenly. Separately, `CAN_REFILL_MS` (how long
+an empty can takes to refill once tapped) went from 5s to 3s -- a flat
+constant, no per-tier scaling to touch since there's still only one
+Watering Can.
+
+## Foraging gets its own mastery, separate from the Foraging skill
+
+Foraging now has a second, independent level track (2026-08-31) -- not
+the general Foraging skill XP bar (`state.foragingXp`, shown in the
+Journal, unchanged), but a per-action mastery exactly like a crafted
+item's own (see itemLevels.js): a badge and a bottom-edge bar right on
+the Forage pill itself, one that speeds up gathering the more it's used.
+`state.forageLevel = { level, clicks }` counts every *completed* gather
+(player-tapped or villager-ticked, same as itemLevels.js counting every
+unit produced regardless of which station made it) toward the next level.
+
+Unlike itemLevels.js's one flat number repeated forever,
+`FORAGE_LEVEL_THRESHOLDS` in data.js is an explicit climbing table -- 10,
+25, 50, 100, then order-of-magnitude jumps up to 100,000 -- so the ten
+levels actually mean something further apart as they go, rather than
+staying equally easy forever. The table's last entry is the practical
+level cap; there's no eleventh threshold to climb past it. Each level
+doubles gather speed (`FORAGE_LEVEL_SPEED_MULT` compounds the same way
+`ITEM_LEVEL_SPEED_MULT` does), read fresh the moment a gather starts
+(`forage.js`'s `startForage()`), so a level gained mid-gather only speeds
+up the *next* one. `FORAGE_MS` itself moved from 3s to 10s as part of
+this -- the new "base" speed before mastery starts compounding it down,
+not the endpoint any more.
+
+Verified live: forced `forageLevel` to 9/10 progress and confirmed the
+10th completed gather landed exactly on level 1, the very next gather's
+timer measured exactly 5000ms (half of the 10s base), and the bottom-edge
+bar rendered 10/25 as a 40% fill mid-level.
+
+## A finished pill staying lit forever
+
+Foraging, the conversion stations (Spinning Wheel/Sawmill/Stone Cutter/
+Tanning Station/Armor Bench), and the Campfire all had the same bug
+(2026-08-31): each one's `.pill-fill` gets set to 100% the moment a cycle
+*starts* (so it can visibly tween up to full over the run), but only
+Crafting's own `settleCraft()` ever pointed it back at 0% once that cycle
+*finished* -- everywhere else, a completed pill just sat fully colored
+forever afterward, since nothing else in the whole game ever touches that
+element again until the next cycle starts and resets it manually. The fix
+is the exact one-line pattern craft.js already had: `setPillFill(id, 0, 0)`
+right where each system clears its own finished job (`forage.js`'s
+`resolveForage()`, `stations.js`'s `settleStations()`, `campfire.js`'s
+`settleCampfire()`). Verified live for all three: forced each system's own
+deadline into the past, let it settle, and confirmed `.pill-fill`'s width
+read back `"0%"` immediately after, not the `"100%"` it used to stay stuck at.
+
+## Mining gets a big art banner, and the Dig button moves to thumb reach
+
+Reworked the Mining screen's layout (2026-08-31) around a reference the
+user shared: a large illustration up top, with the actual controls
+compacted below it and pinned to the bottom of the screen rather than
+scattered down the middle. Two real additions make this possible:
+
+- **`MINE_ZONES` (data.js)** -- a purely-cosmetic depth grouping, one
+  entry per MINE_MATERIALS threshold (0/100/400/1000/2500), each named
+  after whichever material newly unlocks there (Stone, Copper, Iron,
+  Gold, Diamond). `mining.js`'s new `currentZone(depth)` picks the
+  deepest one the player's actually reached; what's *actually* rollable
+  at a given depth is still MINE_MATERIALS' own cumulative weighted pool,
+  completely untouched by this -- the zone only decides which
+  illustration and label to show.
+- **`#mine-art`** -- a new banner element, same `useSprite()`/fallback
+  pattern every other sprite slot in this game uses, at
+  `assets/sprites/mining/zones/<slug>.png` (stone/copper/iron/gold/
+  diamond). Drop in real art per zone with no code changes, same as
+  everywhere else; falls back to a plain vector pickaxe icon until then.
+  Unlike every other sprite here, it renders with `object-fit: cover`
+  (see sprites.js's own header comment on the one exception) since it's
+  meant to read as a scene filling its frame, not an icon staying whole.
+  A gradient label along the image's own bottom edge names the zone
+  ("Copper", etc.), directly on the artwork rather than in a separate row.
+
+The rest of the screen (XP bar, depth/pickaxe status, carried chips) sits
+below the banner unchanged in logic, just tighter; the Dig pill and
+Surface & Bank button are now wrapped in `.mine-actions` with `margin-top:
+auto` -- the exact trick Farm's own `.tools` row already uses to sit at
+the bottom of a screen -- so the button that needs repeat tapping is in
+easy thumb reach under the art rather than sharing space with it. The
+banner's own height (`max-height: 30vh` on `.mine-art`) was tuned by
+measuring actual overflow at both a laptop-sized preview and a real
+375×812 phone viewport until the whole screen fit in one view with zero
+scroll on both -- a taller banner looked better in isolation but pushed
+Surface & Bank (and the Dig pill's hint) below the fold, defeating the
+"easier to hit" goal outright.
+
+Verified live: the zone label reads "Stone" at depth 0, "Iron" exactly at
+depth 400 and stays "Stone" at 399, and "Diamond" at the 2500m cap; at
+both a desktop-preview height and an emulated 375×812 phone, the screen's
+full content height matched the viewport height exactly (no scrollbar),
+with Surface & Bank fully visible above the persistent Forage bar and dock.
+
+## Digging becomes single-tap-and-timer too, and the Mining screen's layout tightens further
+
+Mining's old swing system (tap `clicksPerSwing` times, last tap resolves)
+is gone (2026-08-31), replaced with the exact same single-tap-and-timer
+shape Crafting and Foraging already use: one tap starts
+`state.mineSwing = {startedAt, readyAt, risk, depthPerSwing, maxDepth}`,
+a flat `ms` (now per pickaxe tier -- Wooden 6s, Flint 5s, Stone 4s, with
+the not-yet-craftable tiers continuing the same decreasing trend as a
+placeholder) later it resolves on its own in the tick loop: either a
+cave-in or a successful dig, exactly the payout the old last-click of a
+multi-tap swing used to produce. A tap while a swing's already running is
+a silent no-op, same as every other pill. `PICKAXES`' old `clicksPerSwing`
+is gone from data.js along with it.
+
+The swing's own risk/depth/maxDepth are locked into `state.mineSwing`
+itself at the moment it starts (same "recipe locked at start" rule
+craft.js's startCraft() follows) rather than re-read from whatever's
+currently equipped when it resolves -- without this, swapping to a
+better pickaxe in the seconds before a swing finishes would retroactively
+cheat that swing's own numbers. Verified live: all three real tiers
+measured exactly 6000/5000/4000ms, a tap mid-swing was a confirmed no-op,
+and a forced resolution correctly advanced depth by +5m and reset the
+fill bar to 0%.
+
+The Mining screen's layout tightened further in the same pass: the XP bar
+now sits *above* the art banner (previously below it), and the depth/
+pickaxe status row moved *into* the art banner's own bottom overlay,
+stacked above the zone name rather than as a separate row underneath --
+freeing up enough vertical room that everything still fits one screen
+with zero scroll. The Surface & Bank button's icon changed from a plain
+up-arrow to a ladder (🪜), and it now shows the same post-surface cooldown
+that already blocks the next Dig (`state.mineCooldownUntil`) as a filling
+yellow bar of its own -- "time to surface" -- reusing `.pill-fill`'s sweep
+animation, just retinted gold instead of green. It's driven by a small
+`cooldownFillActive` flag in `refreshMining()` rather than a new state
+field: the first `refreshMining()` call to see an active cooldown starts
+the bar (whether that cooldown just began or is being resumed after a
+reload -- either way it's the first sighting, so "time remaining" is
+correct for both), and the first call to see it end resets the bar to 0%,
+the same "reset on finish" rule every other pill's fill already follows.
+
+## Can't surface mid-swing
+
+Surface & Bank is now blocked while a dig swing is actually in flight
+(2026-08-31) -- the character's still got the pickaxe mid-swing, not free
+to climb. `bankAndSurface()` checks `state.mineSwing` first and bails with
+a shake + "Can't surface mid-swing." hint, same "already busy" guard
+`startDig()` itself uses against a second swing starting. The button also
+reads as unaffordable and its own preview text says why while swinging,
+same as it already did for "nothing carried yet." The swing itself isn't
+touched -- it still resolves (or caves in) entirely on its own; this only
+blocks the *separate* Surface tap from landing in the same window. Verified
+live: tapping Surface mid-swing left `state.carried` and the bag both
+completely untouched, with the hint and button state both reflecting it.
+
+## The closed-market notice was floating, not placed
+
+Market's "closed for the night"/"no market here" notices sat with a big
+dead gap both above *and* below them (2026-08-31) -- `#market-list`
+(`.craft-list`) already used `margin-bottom: auto` to pin a normal, fully
+populated list up against the tabs above it (the leftover space soaks up
+below a real list of many pills, which is what you want), but a list
+holding nothing but one centered `.inv-empty` notice has almost no content
+height of its own, so it just sat wherever that left it -- reading as
+randomly floating rather than placed on purpose.
+
+Fixed with a `.craft-list.notice-only` modifier (`margin-top: auto`
+instead of `margin-bottom`) that `buildMarket()` toggles on exactly the
+two single-notice cases (closed-for-the-night, no-market-here-at-all) and
+off everywhere else (open Sell/Purchase lists, the Bank tab's own empty
+states, which sit under real section headings and were never the
+problem) -- same bottom-pinning trick Farm's `.tools` row, Mining's
+`.mine-actions`, and now this all share. Verified live: forced the market
+open (patching `Date.prototype.getHours` just for the check, since
+`isTownMarketOpen()` reads the real device clock) and confirmed the
+populated 10-row list renders with no `notice-only` class and its original
+top-anchored layout, unchanged from before this fix.
+
+## Zone leveling and the loot wheel, ported from Leatheron
+
+Ported from the Leatheron prototype's own zone-XP/loot-wheel system
+(2026-08-31) -- adapted per the user's own spec rather than copied
+wholesale. Leatheron's version fed a zone a flat amount per action,
+independent of whatever skill XP that action also granted; here, a fixed
+**share of the skill XP itself** feeds the zone the player is currently
+standing in instead:
+
+- **`gainSkillXp(field, amount)`** (state.js) is the one place every skill
+  (Mining, Foraging, Farming, Logging, Fishing, the five conversion
+  stations, Combat) now routes its own XP gain through, same "one choke
+  point" reasoning `gainItem()` already follows for bag items. It does
+  `state[field] += amount`, then feeds `ZONE_XP_SHARE` (25%, first-pass)
+  of that same amount into `state.zones[state.currentLocation]` via
+  `gainZoneXp()`, and returns how many zone levels that just crossed (0
+  most of the time) so the caller knows whether to spin the wheel.
+- **`state.zones[id] = { level, xp }`**, one entry per `LOCATIONS` key.
+  Flat `ZONE_XP_PER_LEVEL` (20) per level -- not skills.js's own
+  exponential curve -- so zone levels come at a steady clip rather than
+  slowing down, since leveling one is what triggers a spin. A `while`, not
+  an `if`, in `gainZoneXp()`: one big XP grant can cross more than one
+  zone level in a single call.
+- **The wheel** (`src/zoneWheel.js`, `#zonewheel` in index.html) -- a
+  centered modal, not a bottom sheet, same "this is a real moment" framing
+  the source project gave it. Every level gained queues one spin (so a
+  multi-level grant shows each in turn rather than the later ones
+  stomping the earlier ones); the reward is rolled and granted to the bag
+  the instant a spin *starts*, same "reels are theatre, not a
+  randomizer" rule the source project used -- the three reels always
+  agree on the same winning icon (every spin here is a guaranteed win,
+  unlike the source's weighted table with its own "nothing" slice) and
+  animate to a stop via a plain JS-driven CSS `transform` transition
+  (450/625/800ms, staggered so they don't stop in sync), no keyframes or
+  library. Auto-closes ~3.3s after opening; tapping anywhere on it closes
+  it early, guarded by a 350ms grace window so the very tap that leveled
+  the zone doesn't also register as the dismiss.
+- **`ZONE_LOOT_POOL`** (data.js) -- per the user's own ask ("just have the
+  player gain either stone, pine logs, or flint"), a flat, equally-weighted
+  3-item table (5-15 of whichever one gets picked). Structured so a future
+  pass can widen it into a real weighted table (rarer finds at lower odds)
+  without touching the wheel's own animation code at all.
+
+Verified live: a forage gather's 8 XP correctly fed the zone exactly 2 XP
+(25%); forcing the zone to 18/20 XP and gathering once more crossed it to
+level 2, opened the wheel with the correct zone name/level text, and
+granted the exact reward amount to the bag before the reel animation even
+finished. A forced 4-level-in-one-grant case correctly queued and played
+through multiple spins in sequence rather than skipping any.
+
 ## Adding to it
 
 A new crop, tree, or recipe is one entry in `src/data.js`; a new zone's

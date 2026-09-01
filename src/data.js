@@ -29,6 +29,7 @@ export const PLACES = [
   { id: "combat",    icon: "\u{2694}\u{FE0F}", name: "Combat", note: "Fight what's out there", ready: true, hub: true },
   { id: "sawmill",       icon: "\u{1FA9A}", name: "Sawmill",        note: "Turn pine logs into pine planks", ready: true, hub: true },
   { id: "township",  icon: "\u{1F465}", name: "Township",  note: "Villagers and their upgrades", ready: true, hub: true },
+  { id: "armorBench", icon: "\u{1FA61}", name: "Armor Bench", note: "Sew cloth into armor", ready: true, hub: true },
   // Not a BUILDINGS entry -- there's no structure to build, just water to
   // fish. Gated by location like a built station (hub.js's
   // fishingAvailableHere()), but on LOCATIONS[...].fishing rather than
@@ -48,7 +49,7 @@ export const PLACES = [
 // Screens that exist, keyed to a #screen-<id> element and a #<id> URL hash.
 export const SCREEN_IDS = [
   "home", "field", "logging", "mining", "combat", "inventory", "skills", "craft", "market", "campfire",
-  "spinningWheel", "sawmill", "township", "stoneCutter", "tanningStation", "map", "fishing",
+  "spinningWheel", "sawmill", "township", "stoneCutter", "tanningStation", "map", "fishing", "armorBench",
 ];
 
 // The persistent bottom dock. Home first (left side) so there's always a
@@ -75,9 +76,21 @@ export const SKILLS = {
   stonecutting: { name: "Stonecutting", icon: "\u{1FAA8}" },
   tanning: { name: "Tanner", icon: "\u{1F9F5}" },
   fishing: { name: "Fishing", icon: "\u{1F3A3}" },
+  tailoring: { name: "Tailoring", icon: "\u{1FA61}" },
 };
 
 export const PLOT_COUNT = 3;   // was 6 -- 2026-08-28, now that plots are a scrollable pill list, not a fixed grid
+
+// A new Farm or Forest plot past the starting PLOT_COUNT -- an "Add Plot"
+// card at the end of either list (src/field.js, src/logging.js), only
+// offered at a non-wilderness location (see plotExpandCost() in
+// costDisplay.js and each screen's own location check). The 4th plot
+// (the first purchased one) costs this outright; the 5th costs double
+// that, the 6th double again -- each one twice its predecessor, so it
+// stays a real decision rather than a flat toll. Wildernesses get no
+// expansion at all -- what's there is a fixed, set amount to harvest, by
+// design, not a farmstead.
+export const PLOT_EXPAND_COST = { "Stone Block": 5, "Pine Planks": 5 };
 
 // ---------------------------------------------------------- watering & chop
 //
@@ -88,13 +101,10 @@ export const PLOT_COUNT = 3;   // was 6 -- 2026-08-28, now that plots are a scro
 // CAN_REFILL_MS wait before it's full again.
 export const WATER_TAPS_NEEDED = 4;
 export const CAN_CAPACITY = 4;
-export const CAN_REFILL_MS = 5000;
-// The Scythe is one tap, not several -- unlike watering, a ripe plot just
-// starts a single HARVEST_MS timer the instant it's tapped (see field.js's
-// startReap()/resolveHarvest()), same deadline-not-countdown rule as every
-// other timer here, so a cut left running through a reload still finishes
-// on schedule.
-export const HARVEST_MS = 5000;
+export const CAN_REFILL_MS = 3000;   // was 5000 -- 2026-08-31
+// Harvesting is a single tap, instant (2026-08-31) -- the Scythe tool and
+// its own timer are gone; a ripe plot just pays out the moment it's tapped,
+// no tool selection needed at all. See field.js's touchPlot().
 
 // Chopping is a straight HP fight now (2026-08-28), not a timed multi-tap
 // swing -- every tap is instant and deals whatever the equipped axe's
@@ -180,7 +190,8 @@ export const CROPS = {
 
 // Same shape as CROPS, one tree so far. Logging is Farming's mirror: plant
 // a cone, water it, chop it once ripe -- the only real difference is the
-// tool ("chop" instead of "scythe") and that it feeds its own skill.
+// tool (an equipped Axe fighting the tree's own health, not a single tap)
+// and that it feeds its own skill.
 // Gives "Pine Logs", not a flat "Logs" -- there'll be more tree/log tiers
 // later (and more plank tiers to match, see STATIONS.sawmill below), so the
 // item name is tree-specific from the start rather than a generic
@@ -202,9 +213,10 @@ export const TINTS = {
   "Berries": "#c85a6e", "Flint": "#9098a3", "Sticks": "#8a6a45",
   "Flint Axe": "#c9a06b", "Flint Pickaxe": "#a98c5c",
   "Wooden Pickaxe": "#8a6a45", "Stone Pickaxe": "#7d7d76", "Stone Axe": "#7d7d76",
-  "Wooden Axe": "#8a6a45", "Wooden Scythe": "#8a6a45", "Wooden Can": "#6b8a9e",
+  "Wooden Axe": "#8a6a45", "Wooden Can": "#6b8a9e",
   "Flint Dagger": "#a3a8ad", "Wooden Buckler": "#8a6a45",
   "Padded Vest": "#9c7a54", "Stone Plate": "#7d7d76",
+  "Highland Cloak": "#5c7a5e", "Highland Chest": "#4f6b52", "Highland Legs": "#425a45",
   "Charcoal": "#3a3632", "Cooked Berries": "#8f3347",
   "String": "#d9cba3", "Pine Planks": "#b98552",
   "Stone": "#8b8b85", "Coal": "#2b2622", "Iron Ore": "#a56a52",
@@ -215,6 +227,8 @@ export const TINTS = {
   "Bones": "#d8cfc0", "Feathers": "#eae0c8", "Raw Poultry": "#d9a3a0",
   "Animal Hide": "#8a6242", "Raw Beef": "#a8434a", "Leather": "#7a5233",
   "Wool": "#e8e2d4", "Raw Mutton": "#c25a5f", "Cloth": "#cfc7ae",
+  "Cooked Poultry": "#b97b4a", "Cooked Beef": "#7a2e2e", "Cooked Mutton": "#8a4536",
+  "Scrap Metal": "#8c8f96",
   "Stone Block": "#9a9a92", "Basalt Block": "#55555c",
   "Fishing Rod": "#8a6a45", "Net": "#d9cba3", "Trap": "#8a6a45",
   "Worm Bait": "#a8724a", "Shiny Lure": "#d8bd6a",
@@ -223,53 +237,106 @@ export const TINTS = {
 };
 
 // A second, independent gather loop -- no seeds, no growth stages, just tap
-// and roll. Swing-based now (2026-08-28), same shape as Mining's dig: every
-// tap is instant and advances progress by one of FORAGE_CLICKS_PER_SWING,
-// no per-click timer of its own. Only the swing's last tap actually
-// resolves anything -- an item rolled from the current zone's own pool the
-// moment it resolves, not chosen by the player. Chances within a zone are
-// meant to sum to 1; a zone with no pool falls back to the last entry
-// rather than ever giving nothing.
-export const FORAGE_CLICKS_PER_SWING = 5;
+// and wait. Single-tap-and-timer now (2026-08-31), same shape as Crafting
+// (see CRAFT_MS/RECIPES below and craft.js): one tap starts a FORAGE_MS
+// deadline (scaled down by the gather's own mastery level, see
+// FORAGE_LEVEL_THRESHOLDS below), no further taps needed, and it resolves
+// on its own the moment that deadline passes -- an item rolled from the
+// current zone's own pool at that moment, not chosen by the player.
+// Chances within a zone are meant to sum to 1; a zone with no pool falls
+// back to the last entry rather than ever giving nothing.
+export const FORAGE_MS = 10000;   // was 3000 -- 2026-08-31, now that mastery scales it down
+
+// Foraging's own action mastery -- separate from the flat per-gather
+// FORAGE_XP feeding the general Foraging skill below (state.foragingXp,
+// shown in the Journal) -- this instead tracks total completed gathers and
+// speeds up every future one, same "bottom-edge mastery bar on the pill
+// itself" treatment itemLevels.js gives a crafted item (see
+// itemLevelProgress()/recordCraft() there), just with its own uneven
+// threshold table here instead of one flat number repeated forever.
+// THRESHOLDS[level] is how many completed gathers *at that level* it takes
+// to reach the next one -- climbing steeply on purpose (10, 25, 50, 100,
+// then order-of-magnitude jumps) so each level actually means something
+// once forage counts get large. The table's last entry is the practical
+// level cap; there's no 11th threshold to climb past it. Each level
+// doubles gather speed (SPEED_MULT compounds the same way
+// ITEM_LEVEL_SPEED_MULT does), read fresh at the moment a gather starts
+// (see forage.js's startForage()), so a level gained mid-run only speeds
+// up the *next* gather, not the one already in flight.
+export const FORAGE_LEVEL_THRESHOLDS = [10, 25, 50, 100, 1000, 5000, 10000, 25000, 50000, 100000];
+export const FORAGE_LEVEL_SPEED_MULT = 0.5;
 export const FORAGE_POOLS = {
+  // Pine Cones dropped out (2026-08-30) now that Logging's trees regrow
+  // on their own -- nothing plants a cone any more, so there's no reason
+  // to forage one. Red Berries Seeds absorbs the freed weight rather than
+  // splitting it across all three survivors, since Sticks/Flint's own
+  // 0.40/0.40 split already matched the balance pass this pool came from.
   aerendell: [
-    { item: "Red Berries Seeds", chance: 0.10 },
-    { item: "Pine Cones",        chance: 0.10 },
+    { item: "Red Berries Seeds", chance: 0.20 },
     { item: "Sticks",            chance: 0.40 },
     { item: "Flint",             chance: 0.40 },
+  ],
+  // No Flint here on purpose -- Forest Road is meant to read as a
+  // different pocket of the world than Aerendell's own pool, not a copy
+  // of it, and Flax/Flax Seeds give it something Aerendell's pool doesn't
+  // have at all.
+  forestRoad: [
+    { item: "Flax Seeds", chance: 0.30 },
+    { item: "Flax",       chance: 0.30 },
+    { item: "Sticks",     chance: 0.40 },
   ],
 };
 
 // Foraging XP, first pass -- one flat amount per completed gather, same
 // "small flat amount" shape as Farming's WATER_XP. There's no speed curve
-// tied to level any more (see FORAGE_CLICKS_PER_SWING above) -- the
-// player's own tapping speed is the speed, same as Mining. Level 100 is
-// still a cap for display purposes -- xpToNext() in skills.js is uncapped
-// by itself, foraging is just the first skill that actually stops
-// mattering past a point.
+// tied to level any more -- FORAGE_MS is a flat 3s at base speed, same as
+// Crafting's own recipes. Level 100 is still a cap for display purposes --
+// xpToNext() in skills.js is uncapped by itself, foraging is just the
+// first skill that actually stops mattering past a point.
 export const FORAGE_XP = 8;
 export const FORAGE_MAX_LEVEL = 100;
 
 // Unlocked at VILLAGER_LEVEL: a one-time Shards purchase (state.villager,
-// see state.js) that keeps tapping the forage swing on its own, once every
-// VILLAGER_TICK_MS -- the same shared swingProgress the player's own taps
-// add to, so tapping the pill while a villager works speeds the same swing
-// up rather than running a separate parallel gather. A villager working
-// completely alone finishes one swing every
-// FORAGE_CLICKS_PER_SWING * VILLAGER_TICK_MS (12.5s at the base rate); an
-// actively-tapping player shortens that by however many taps they land
-// themselves. Cost is a first-pass number, not balanced. Hiring and
+// see state.js) that automatically taps the Forage pill itself, once every
+// VILLAGER_TICK_MS -- literally the same click a player's own tap would be,
+// just on a timer. A no-op if a gather is already running (started by the
+// player or a previous villager tick), same as tapping any other already-
+// running pill. Cost is a first-pass number, not balanced. Hiring and
 // upgrading both happen from the Township screen (src/township.js) now,
 // not an inline button on the forage bar.
 export const VILLAGER_LEVEL = 3;   // was 10 -- 2026-08-28
 export const VILLAGER_COST = 250;
-export const VILLAGER_TICK_MS = 2500;
+export const VILLAGER_TICK_MS = 30000;   // was 2500 (swing-based) -- 2026-08-31
 // The first villager upgrade -- a flat multiplier on VILLAGER_TICK_MS,
 // applied fresh to every tick (not baked in once), once bought
 // (state.villager.fastHands). Only one tier exists so far; Township is
 // built to show a list, not one fixed slot, so more can slot in later.
 export const VILLAGER_UPGRADE_COST = 400;
 export const VILLAGER_UPGRADE_MULT = 0.75;
+
+// -------------------------------------------------------------- upkeep
+//
+// A hired villager doesn't work for free -- every VILLAGE_UPKEEP_MS (24h),
+// the village draws VILLAGE_UPKEEP_FOOD food units and VILLAGE_UPKEEP_HEAT
+// heat units from whatever the player has donated (state.village.food/
+// heat, src/township.js's donate flow). Food units come straight off
+// FOODS' own `heal` value (1 HP healed = 1 food unit -- the same number,
+// not a second one to keep in sync); heat units come off
+// VILLAGE_HEAT_VALUE below. Falling short on either at the 24h mark
+// doesn't refund or partially apply -- the villager simply stops
+// auto-working (src/forage.js checks state.village.starved) until enough
+// of both is donated to clear the very upkeep that was missed, same
+// "resolves the instant it's true, not retroactively" rule every other
+// deadline in this game follows.
+export const VILLAGE_UPKEEP_MS = 24 * 60 * 60 * 1000;
+export const VILLAGE_UPKEEP_FOOD = 30;
+export const VILLAGE_UPKEEP_HEAT = 15;
+
+// Coal and Charcoal are refined fuels -- worth 3x a raw log or stick's one
+// unit, same relative worth FUELS' own ordering already implies.
+export const VILLAGE_HEAT_VALUE = {
+  "Sticks": 1, "Pine Logs": 1, "Coal": 3, "Charcoal": 3,
+};
 // Below this, "away" isn't meaningfully different from just watching the
 // villager work -- the normal ~200ms tick gap (and even a single forage
 // cycle, as short as 1000ms) both land well under it. main.js's
@@ -325,11 +392,15 @@ export const RECIPES = {
 // Which bag items can go in which equipment slot, and where each slot
 // renders on the Inventory screen's Equipment page (`group: "tool"` down
 // the left column, `group: "gear"` on the body grid on the right -- see
-// src/inventory.js). The Axe and Scythe slots still have no mechanical
-// effect -- there's only one tier of each so far, nothing to differentiate
-// -- but the Pickaxe slot matters (src/mining.js reads it for swing speed/
-// risk/depth), and so does the gear grid (src/combat.js reads it, see
-// below). Add a slot by adding an entry here and pointing items at its id.
+// src/inventory.js). The Axe slot still has no mechanical effect of its
+// own beyond Logging's damage-per-tier read (see AXES above) -- but the
+// Pickaxe slot matters (src/mining.js reads it for swing speed/risk/
+// depth), and so does the gear grid (src/combat.js reads it, see below).
+// Add a slot by adding an entry here and pointing items at its id.
+//
+// No Scythe slot any more (2026-08-31) -- Farming lost its harvest tool
+// entirely when harvesting became a single instant tap; there was only
+// ever one tier of it (Wooden Scythe) and nothing left to equip.
 //
 // Helm, Legs and Fishing Rod are real slots on the Equipment page's layout
 // with no item that can fill them yet -- same "real spot, nothing behind
@@ -349,7 +420,6 @@ export const EQUIP_SLOTS = [
   { id: "axe",     name: "Axe",          group: "tool" },
   { id: "pick",    name: "Pickaxe",      group: "tool" },
   { id: "can",     name: "Watering Can", group: "tool" },
-  { id: "scythe",  name: "Scythe",       group: "tool" },
   { id: "fishing", name: "Fishing Rod",  group: "tool" },
   { id: "food",    name: "Food",         group: "tool" },
   { id: "helm",     name: "Helm",       group: "gear" },
@@ -362,7 +432,6 @@ export const EQUIPMENT = {
   "Wooden Axe": "axe",
   "Flint Axe": "axe",
   "Stone Axe": "axe",
-  "Wooden Scythe": "scythe",
   "Wooden Can": "can",
   "Wooden Pickaxe": "pick",
   "Flint Pickaxe": "pick",
@@ -379,12 +448,23 @@ export const EQUIPMENT = {
   "Wooden Buckler": "arm",
   "Padded Vest": "chest",
   "Stone Plate": "chest",
+  // The first items to actually fill the Helm and Legs slots -- both have
+  // sat reserved on the Equipment layout with nothing to put in them
+  // since before this armor set existed, same "real spot, nothing behind
+  // it yet" story the Fishing Rod slot had until Fishing shipped.
+  "Highland Cloak": "helm",
+  "Highland Chest": "chest",
+  "Highland Legs": "legs",
   // Anything with a heal value in FOODS is also equippable here -- Combat's
   // Eat button consumes whatever's equipped in this slot, not a fixed item,
   // which is the whole reason Food is a real equip slot instead of Combat
   // just reading the bag directly.
   "Berries": "food",
+  "Red Berries": "food",
   "Cooked Berries": "food",
+  "Cooked Poultry": "food",
+  "Cooked Beef": "food",
+  "Cooked Mutton": "food",
 };
 
 // Same idea as PICKAXES: capacity lives on the equipped item, not a flat
@@ -417,24 +497,36 @@ export const CANS = {
 //     blocked outright, not just riskier.
 //
 // Wooden, Flint and Stone all cap at the same 100m (the whole "Tier 1"
-// band) -- they differ in how efficiently they get through it, not how
-// deep they reach. Reaching past 100m needs a Tier 2 pickaxe (Scrap
+// band) with identical clicksPerSwing/depthPerSwing (2026-08-30) -- the
+// only thing that improves tier over tier is risk itself (20%/10%/5%),
+// not speed or reach. Reaching past 100m needs a Tier 2 pickaxe (Scrap
 // Metal), which needs a material this game can't produce yet (no
 // smelting/alloying station, no second zone) -- so Scrap Metal through
 // Scorn exist below as real, balanced data with nothing that can obtain
 // them yet, same "next pass, not this one" rule the old era table used.
+// Digging is single-tap-and-timer now (2026-08-31), same shape as every
+// other pill in this game (Crafting, Foraging, the conversion stations) --
+// one tap starts a `ms`-long swing, no more tapping needed, and it resolves
+// on its own the moment that deadline passes: either a cave-in
+// (riskPerSwing chance) or depthPerSwing progress plus a rolled ore. The
+// old "tap as fast as you can" clicksPerSwing model is gone along with it;
+// `ms` is what replaces it, one flat swing duration per tier. maxDepth is
+// still a hard wall -- no swing can even start past it.
 export const PICKAXES = {
-  "Wooden Pickaxe": { maxDepth: 100, clicksPerSwing: 12, riskPerSwing: 0.10, depthPerSwing: 5 },
-  "Flint Pickaxe":  { maxDepth: 100, clicksPerSwing: 6,  riskPerSwing: 0.10, depthPerSwing: 10 },
-  "Stone Pickaxe":  { maxDepth: 100, clicksPerSwing: 6,  riskPerSwing: 0.10, depthPerSwing: 15 },
+  "Wooden Pickaxe": { maxDepth: 100, ms: 6000, riskPerSwing: 0.20, depthPerSwing: 5 },
+  "Flint Pickaxe":  { maxDepth: 100, ms: 5000, riskPerSwing: 0.10, depthPerSwing: 5 },
+  "Stone Pickaxe":  { maxDepth: 100, ms: 4000, riskPerSwing: 0.05, depthPerSwing: 5 },
   // Not craftable yet -- no Scrap Metal, Bronze, Iron ingot, Gold bar or
-  // Scorn material exists to make them from.
-  "Scrap Metal Pickaxe": { maxDepth: 400,  clicksPerSwing: 4, riskPerSwing: 0.05, depthPerSwing: 20 },
-  "Bronze Pickaxe":      { maxDepth: 1000, clicksPerSwing: 4, riskPerSwing: 0.04, depthPerSwing: 25 },
-  "Iron Pickaxe":        { maxDepth: 2500, clicksPerSwing: 4, riskPerSwing: 0.04, depthPerSwing: 50 },
-  "Gold Pickaxe":        { maxDepth: 3000, clicksPerSwing: 2, riskPerSwing: 0.04, depthPerSwing: 100 },
-  "Diamond Pickaxe":     { maxDepth: 5000, clicksPerSwing: 2, riskPerSwing: 0.02, depthPerSwing: 100 },
-  "Scorn Pickaxe":       { maxDepth: 5000, clicksPerSwing: 1, riskPerSwing: 0.01, depthPerSwing: 100 },
+  // Scorn material exists to make them from. `ms` just continues the same
+  // decreasing trend the first three tiers set (-1s, -1s, tapering off
+  // once it's already fast) as a placeholder, pending real balance once
+  // these actually become craftable.
+  "Scrap Metal Pickaxe": { maxDepth: 400,  ms: 3500, riskPerSwing: 0.05, depthPerSwing: 20 },
+  "Bronze Pickaxe":      { maxDepth: 1000, ms: 3000, riskPerSwing: 0.04, depthPerSwing: 25 },
+  "Iron Pickaxe":        { maxDepth: 2500, ms: 2500, riskPerSwing: 0.04, depthPerSwing: 50 },
+  "Gold Pickaxe":        { maxDepth: 3000, ms: 2000, riskPerSwing: 0.04, depthPerSwing: 100 },
+  "Diamond Pickaxe":     { maxDepth: 5000, ms: 1500, riskPerSwing: 0.02, depthPerSwing: 100 },
+  "Scorn Pickaxe":       { maxDepth: 5000, ms: 1000, riskPerSwing: 0.01, depthPerSwing: 100 },
 };
 
 // -------------------------------------------------------------- combat gear
@@ -450,12 +542,15 @@ export const PICKAXES = {
 //     what actually blocks the other hand, this flag is just the data it
 //     reads to know which weapons need to. No weapon is two-handed yet;
 //     the flag exists so one can be added without new equip-slot plumbing.
-//   Chest  -- `defense` stacks with the shield's onto every incoming hit,
-//     and `recoveryMult` scales COMBAT_BASE_RECOVERY_MS -- this is the
-//     tradeoff the brief asked for: Stone Plate blocks more but leaves you
-//     open longer between actions (1.35x recovery) than the lighter Padded
-//     Vest (0.9x, faster than going unarmored). Helm and Legs would work
-//     the same way if/when armor exists for them.
+//   Chest, Helm, Legs -- each slot's own ARMORS entry `defense` stacks
+//     with the other two (and the shield's) onto every incoming hit, and
+//     each `recoveryMult` multiplies together onto COMBAT_BASE_RECOVERY_MS
+//     -- this is the tradeoff the brief asked for: Stone Plate blocks more
+//     but leaves you open longer between actions (1.35x recovery) than
+//     the lighter Padded Vest (0.9x, faster than going unarmored). Highland
+//     Cloak/Chest/Legs (Helm/Chest/Legs respectively) are the first set to
+//     actually use all three slots at once, at recoveryMult 1 apiece (a
+//     flat defense bonus, no speed tradeoff either way).
 //   Shield -- more `defense`, plus `block`, an extra cut applied only when
 //     Defend is used (on top of the flat halving) -- a shield's whole
 //     reason to exist is making Defend hit harder, not just adding a flat
@@ -475,6 +570,9 @@ export const WEAPONS = {
 export const ARMORS = {
   "Padded Vest": { defense: 2, recoveryMult: 0.9 },
   "Stone Plate": { defense: 6, recoveryMult: 1.35 },
+  "Highland Cloak": { defense: 1, recoveryMult: 1 },
+  "Highland Chest": { defense: 1, recoveryMult: 1 },
+  "Highland Legs":  { defense: 1, recoveryMult: 1 },
 };
 export const SHIELDS = {
   "Wooden Buckler": { defense: 2, block: 0.15 },
@@ -483,9 +581,18 @@ export const SHIELDS = {
 // heal: how many HP src/combat.js's Eat action restores. Anything with a
 // heal value here is meant to also appear in EQUIPMENT pointed at the
 // "food" slot -- the two lists are meant to be added to together.
+// Raw berries (either source -- foraged "Berries" or farmed "Red Berries")
+// heal 1; cooking either into "Cooked Berries" (see COOKABLES) triples
+// that to 3. Raw poultry/beef/mutton have no entry here at all -- they're
+// deliberately not equippable/edible raw, only their cooked forms are,
+// each healing 5.
 export const FOODS = {
-  "Berries": { heal: 6 },
-  "Cooked Berries": { heal: 15 },
+  "Berries": { heal: 1 },
+  "Red Berries": { heal: 1 },
+  "Cooked Berries": { heal: 3 },
+  "Cooked Poultry": { heal: 5 },
+  "Cooked Beef": { heal: 5 },
+  "Cooked Mutton": { heal: 5 },
 };
 
 // Keyed rather than an array (like STATIONS/PICKAXES) since nothing about
@@ -513,6 +620,22 @@ export const ENEMIES = {
   greyWolf: {
     name: "Grey Wolf", icon: "\u{1F43A}", note: "Blocks the path north of the farmstead", level: 3,
     hp: 40, atkMin: 8, atkMax: 14, def: 3, attackMs: 3000, shardReward: 15,
+  },
+  // The first location-exclusive enemy -- `zone` restricts it to showing
+  // up on the idle enemy list only while state.currentLocation matches
+  // (src/combat.js's buildCombatIdle()); an enemy with no `zone` at all
+  // (every one above) stays available everywhere, same as Combat itself
+  // always has been. Also the first source of Scrap Metal -- the material
+  // PICKAXES' own comment already named for the Tier 2 pickaxe that's
+  // real data with nothing able to obtain it yet, until now. A drop can
+  // be a plain number (every existing drop) or a `[min, max]` pair rolled
+  // fresh per kill (see combat.js's rollDropQty()) -- Scrap Metal is the
+  // first to use the range form.
+  roadGoblin: {
+    name: "Road Goblin", icon: "\u{1F47A}", note: "Waylays travelers on Forest Road", level: 3,
+    zone: "forestRoad",
+    hp: 20, atkMin: 4, atkMax: 5, def: 0, attackMs: 2000, shardReward: 8,
+    drops: { "Bones": 1, "Scrap Metal": [1, 3] },
   },
 };
 export const COMBAT_PLAYER_MAX_HP = 10;   // was 50 -- 2026-08-28
@@ -552,14 +675,16 @@ export const CATEGORIES = {
   "Scorn": "mining", "Enchanted Shard": "mining",
   "Basalt": "mining", "Amethyst": "mining", "Emerald": "mining", "Diamond": "mining",
   "Wooden Pickaxe": "crafting", "Wooden Axe": "crafting", "Stone Axe": "crafting",
-  "Wooden Scythe": "crafting", "Wooden Can": "crafting",
+  "Wooden Can": "crafting",
   "Flint Dagger": "crafting", "Wooden Buckler": "crafting",
   "Padded Vest": "crafting", "Stone Plate": "crafting",
+  "Highland Cloak": "tailoring", "Highland Chest": "tailoring", "Highland Legs": "tailoring",
   "Stone Block": "stonecutting", "Basalt Block": "stonecutting",
-  "Bones": "combat", "Feathers": "combat", "Raw Poultry": "combat",
+  "Bones": "combat", "Feathers": "combat", "Raw Poultry": "combat", "Scrap Metal": "combat",
   "Animal Hide": "combat", "Raw Beef": "combat",
   "Wool": "combat", "Raw Mutton": "combat",
   "Leather": "tanning", "Cloth": "sowing",
+  "Cooked Poultry": "cooking", "Cooked Beef": "cooking", "Cooked Mutton": "cooking",
   "Fishing Rod": "crafting", "Net": "crafting", "Trap": "crafting",
   "Worm Bait": "crafting", "Shiny Lure": "crafting",
   "Minnow": "fishing", "River Trout": "fishing", "Catfish": "fishing",
@@ -580,8 +705,9 @@ export const BASE_VALUE = {
   "Pine Cones": 10, "Pine Logs": 10,
   "Berries": 7, "Flint": 5, "Sticks": 5,
   "Flint Axe": 50, "Flint Pickaxe": 50, "Stone Pickaxe": 90, "Stone Axe": 90,
-  "Wooden Pickaxe": 1, "Wooden Axe": 1, "Wooden Scythe": 1, "Wooden Can": 1,
+  "Wooden Pickaxe": 1, "Wooden Axe": 1, "Wooden Can": 1,
   "Flint Dagger": 45, "Wooden Buckler": 40, "Padded Vest": 55, "Stone Plate": 95,
+  "Highland Cloak": 25, "Highland Chest": 25, "Highland Legs": 25,
   "Charcoal": 8, "Cooked Berries": 7,
   "String": 6, "Pine Planks": 9,
   // Stone/Coal/Copper/Tin/Iron/Gold match the mining spreadsheet's Worth
@@ -597,6 +723,8 @@ export const BASE_VALUE = {
   "Bones": 4, "Feathers": 3, "Raw Poultry": 8,
   "Animal Hide": 12, "Raw Beef": 14, "Leather": 22,
   "Wool": 10, "Raw Mutton": 12, "Cloth": 18,
+  "Cooked Poultry": 14, "Cooked Beef": 22, "Cooked Mutton": 20,
+  "Scrap Metal": 20,
   "Fishing Rod": 1, "Net": 1, "Trap": 1,
   "Worm Bait": 4, "Shiny Lure": 20,
   // Common < uncommon < rare < the one night-only catch, same "worth more
@@ -609,7 +737,7 @@ export const ZONE_DEMAND = {
   aerendell: {
     farming: 1, logging: 1, foraging: 1, crafting: 1, cooking: 1,
     sowing: 1, milling: 1, mining: 1, stonecutting: 1, combat: 1, tanning: 1,
-    fishing: 1,
+    fishing: 1, tailoring: 1,
   },
 };
 
@@ -677,6 +805,10 @@ export const BUILDINGS = {
     name: "Township",
     cost: { "Stone": 20, "Pine Logs": 20 },
   },
+  armorBench: {
+    name: "Armor Bench",
+    cost: { "Basalt Block": 9, "Pine Planks": 12 },
+  },
 };
 
 // -------------------------------------------------------------- stations
@@ -739,6 +871,29 @@ export const STATIONS = {
     cost: { "Animal Hide": 3 }, output: "Leather", ms: 10000, xp: 10,
     skillXp: "tanningXp", skillName: "Tanner",
   },
+  // Three recipes, one screen, one skill -- same "second/third recipe
+  // sharing a station" shape the Spinning Wheel and Stone Cutter already
+  // established. Highland Cloak/Chest/Legs are ARMORS entries (see below)
+  // that fill the Helm/Chest/Legs slots respectively -- 1 defense each,
+  // stacking to 3 total if all three are worn at once.
+  highlandCloak: {
+    screenTitle: "Armor Bench", screenSub: "Sew cloth into armor",
+    actionName: "Highland Cloak",
+    cost: { "Cloth": 4 }, output: "Highland Cloak", ms: 10000, xp: 10,
+    skillXp: "tailoringXp", skillName: "Tailoring",
+  },
+  highlandChest: {
+    screenTitle: "Armor Bench", screenSub: "Sew cloth into armor",
+    actionName: "Highland Chest",
+    cost: { "Cloth": 6 }, output: "Highland Chest", ms: 10000, xp: 12,
+    skillXp: "tailoringXp", skillName: "Tailoring",
+  },
+  highlandLegs: {
+    screenTitle: "Armor Bench", screenSub: "Sew cloth into armor",
+    actionName: "Highland Legs",
+    cost: { "Cloth": 6 }, output: "Highland Legs", ms: 10000, xp: 12,
+    skillXp: "tailoringXp", skillName: "Tailoring",
+  },
 };
 
 // ----------------------------------------------------------------- cooking
@@ -751,6 +906,15 @@ export const FUELS = ["Sticks", "Pine Logs", "Charcoal"];
 export const COOKABLES = {
   "Pine Logs": { gives: "Charcoal" },
   "Berries": { gives: "Cooked Berries" },
+  // Both berry sources (foraged and farmed) cook into the same "Cooked
+  // Berries" -- no reason for a separate "Cooked Red Berries" when the
+  // result is identical either way.
+  "Red Berries": { gives: "Cooked Berries" },
+  // Raw poultry/beef/mutton have no FOODS entry at all -- cooking is the
+  // only way any of the three ever becomes edible/equippable.
+  "Raw Poultry": { gives: "Cooked Poultry" },
+  "Raw Beef": { gives: "Cooked Beef" },
+  "Raw Mutton": { gives: "Cooked Mutton" },
 };
 
 // ------------------------------------------------------------------ mining
@@ -811,18 +975,39 @@ export const MINE_CAVEIN_MULT = 2;
 // the common, low-value finds a player swings through constantly, so they
 // come back 3 at a time; every gemstone (Amethyst/Emerald/Diamond) stays
 // at the implicit 1, on purpose, so a rare find never feels diluted.
+// Rebalanced 2026-08-30: Stone/Basalt/Coal step down 100/50/25 (each half
+// the last), and every gem -- Amethyst alongside Emerald/Diamond further
+// down, "other gems" per the ask -- drops to a flat 5, well below any ore.
+// Gems read as genuinely rare finds now, not a coinflip with Basalt at the
+// depths where they overlap.
 export const MINE_MATERIALS = {
   "Stone":      { minDepth: 0,    weight: 100, yield: 3 },
-  "Coal":       { minDepth: 0,    weight: 100, yield: 3 },
-  "Basalt":     { minDepth: 0, maxDepth: 100, weight: 100, yield: 3 },
-  "Amethyst":   { minDepth: 0,    weight: 15 },
+  "Coal":       { minDepth: 0,    weight: 25,  yield: 3 },
+  "Basalt":     { minDepth: 0, maxDepth: 100, weight: 50, yield: 3 },
+  "Amethyst":   { minDepth: 0,    weight: 5 },
   "Copper Ore": { minDepth: 100,  weight: 100 },
   "Tin Ore":    { minDepth: 100,  weight: 40 },
-  "Emerald":    { minDepth: 100,  weight: 15 },
+  "Emerald":    { minDepth: 100,  weight: 5 },
   "Iron Ore":   { minDepth: 400,  weight: 100 },
   "Gold Ore":   { minDepth: 1000, weight: 40 },
-  "Diamond":    { minDepth: 2500, weight: 15 },
+  "Diamond":    { minDepth: 2500, weight: 5 },
 };
+
+// Purely a display grouping (2026-08-31) for the Mining screen's big art
+// banner -- one custom illustration per zone (see assets/sprites/README.md
+// and mining.js's currentZone()), named after whichever material newly
+// unlocks at that depth. Deliberately the same thresholds MINE_MATERIALS'
+// own minDepth values already use above, not a separate number to keep in
+// sync by hand -- what's actually rollable at a given depth is still
+// MINE_MATERIALS' own cumulative pool, unaffected by this; a zone can (and
+// does, e.g. Stone's) hold more than one material at once.
+export const MINE_ZONES = [
+  { minDepth: 0,    name: "Stone" },
+  { minDepth: 100,  name: "Copper" },
+  { minDepth: 400,  name: "Iron" },
+  { minDepth: 1000, name: "Gold" },
+  { minDepth: 2500, name: "Diamond" },
+];
 
 // -------------------------------------------------------------- the world
 //
@@ -865,10 +1050,19 @@ export const MINE_MATERIALS = {
 export const LOCATIONS = {
   aerendell: {
     name: "Aerendell", type: "town", pos: { x: 0, y: 0 },
-    stations: ["campfire", "spinningWheel", "sawmill", "stoneCutter", "tanningStation", "township"],
-    forage: "aerendell", fishing: "aerendell",
+    stations: ["campfire", "spinningWheel", "sawmill", "stoneCutter", "tanningStation", "township", "armorBench"],
+    // No fishing (or Furnace, once that's real) at the farmstead itself --
+    // both are meant to belong somewhere out in the world once a real
+    // location's spreadsheet answer says where. FISH_POOLS.aerendell is
+    // left in data.js, just unreferenced by any location for now, rather
+    // than deleted -- whichever location does end up with fishing can
+    // point straight at it (or its own pool) without rebuilding the data.
+    forage: "aerendell", fishing: null,
   },
-  forestRoad: { name: "Forest Road", type: "wilderness", pos: { x: 1, y: 1 }, stations: [], forage: null, fishing: null },
+  forestRoad: {
+    name: "Forest Road", type: "wilderness", pos: { x: 1, y: 1 }, stations: [],
+    forage: "forestRoad", fishing: null,
+  },
   thalBarak: { name: "Thal-Barak", type: "city", pos: { x: 0, y: 2 }, stations: [], forage: null, fishing: null },
   stilltidePass: { name: "Stilltide Pass", type: "wilderness", pos: { x: 1, y: 3 }, stations: [], forage: null, fishing: null },
   duunVaelBridge: { name: "Duun-Vael Bridge", type: "landmark", pos: { x: 0, y: 4 }, stations: [], forage: null, fishing: null },
@@ -889,6 +1083,35 @@ export const ROADS = [
   { from: "thalBarak", to: "stilltidePass", minutes: 5 },
   { from: "stilltidePass", to: "duunVaelBridge", minutes: 15 },
   { from: "duunVaelBridge", to: "riverhold", minutes: 15 },
+];
+
+// ----------------------------------------------------------- zone leveling
+//
+// Ported from the Leatheron prototype's zone-XP system (2026-08-31),
+// adapted per this game's own spec rather than copied wholesale: there, a
+// flat amount fed a zone regardless of what skill XP the action also
+// granted; here, a fixed share of *whatever skill XP was just earned*
+// feeds the zone the player is currently standing in instead -- see
+// state.js's gainSkillXp(), the one place every skill (Mining, Foraging,
+// Farming, Logging, Fishing, the conversion stations, Combat) actually
+// grants its own XP through. Flat XP-per-level, not skills.js's own
+// exponential levelFromXp() curve -- zone levels are meant to come at a
+// steady clip, not slow down, since leveling one is what triggers the loot
+// wheel below. First-pass numbers, not balanced.
+export const ZONE_XP_SHARE = 0.25;      // 25% of every skill XP gain also feeds the current zone
+export const ZONE_XP_PER_LEVEL = 20;
+
+// The reward pool a zone level-up spins for -- src/zoneWheel.js. Flat and
+// equally weighted for now, per the user's own ask ("just have the player
+// gain either stone, pine logs, or flint"); every spin is a real win, no
+// "nothing" slice the way Leatheron's own table had one. A future pass can
+// widen this into a weighted table (rarer finds at lower odds) without
+// touching the wheel's own animation code, which only ever reads whatever
+// this array currently holds.
+export const ZONE_LOOT_POOL = [
+  { item: "Stone", min: 5, max: 15 },
+  { item: "Pine Logs", min: 5, max: 15 },
+  { item: "Flint", min: 5, max: 15 },
 ];
 
 // ----------------------------------------------------------------- fishing

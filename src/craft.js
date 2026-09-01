@@ -17,6 +17,7 @@ import { itemLevelProgress, itemSpeedMult, recordCraft } from "./itemLevels.js";
 
 function shakePill(item) {
   const pill = pillFor(item);
+  if (!pill) return;
   pill.classList.remove("shake");
   void pill.offsetWidth;
   pill.classList.add("shake");
@@ -73,6 +74,11 @@ export function refreshCraft(only, flash) {
   Object.keys(RECIPES).forEach(function (item) {
     if (only && item !== only) return;
     const pill = pillFor(item);
+    // A RECIPES entry can outlive its own pill -- Padded Vest/Stone
+    // Plate/the fishing tools were pulled from Aerendell's Craft Bench
+    // (2026-08-30) while staying real RECIPES entries (see index.html's
+    // own comment on that removal). Nothing left to redraw for those.
+    if (!pill) return;
     const recipe = RECIPES[item];
     const active = !!state.crafting[item];
     const affordable = canAfford(recipe.cost);

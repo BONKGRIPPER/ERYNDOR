@@ -41,7 +41,7 @@ function itemAdd(container, name, amount) {
 // alongside whatever else could go there, so clearing a slot is still one
 // tap away, just an explicit choice inside the same menu rather than the
 // slot's own default action.
-const EQUIP_ORDER = ["helm", "chest", "legs", "armLeft", "armRight", "axe", "pick", "can", "scythe", "fishing", "food"];
+const EQUIP_ORDER = ["helm", "chest", "legs", "armLeft", "armRight", "axe", "pick", "can", "fishing", "food"];
 
 // True once anything in EQUIPMENT actually targets this slot -- Helm, Legs
 // and Fishing Rod are real slots on the layout with no item that can fill

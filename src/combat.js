@@ -32,8 +32,10 @@
 import {
   COMBAT_UNARMED, COMBAT_BASE_DEFENSE, COMBAT_BASE_RECOVERY_MS, COMBAT_XP,
   COMBAT_PLAYER_MAX_HP, FLEE_CHANCE, COMBAT_NIGHT_MULT, WEAPONS, ARMORS, SHIELDS, FOODS, ENEMIES,
+  LOCATIONS,
 } from "./data.js";
-import { state, save, gainItem } from "./state.js";
+import { state, save, gainItem, gainSkillXp } from "./state.js";
+import { openZoneWheel } from "./zoneWheel.js";
 import { levelProgress, levelFromXp } from "./skills.js";
 import { isNight } from "./time.js";
 import { el } from "./dom.js";
@@ -59,14 +61,35 @@ function weaponStats() {
 function shieldStats() {
   return SHIELDS[state.equipment.armLeft] || SHIELDS[state.equipment.armRight] || { defense: 0, block: 0 };
 }
-function armorStats() { return ARMORS[state.equipment.chest] || { defense: 0, recoveryMult: 1 }; }
+// One body slot's own armor -- Helm and Legs work exactly like Chest
+// always has, just nothing filled them until the Highland set. Falls back
+// to a neutral {0, 1} for an empty (or non-armor) slot, same "no penalty
+// for going without" rule the shield/weapon fallbacks already follow.
+function armorStats(slot) { return ARMORS[state.equipment[slot]] || { defense: 0, recoveryMult: 1 }; }
 function foodStats() { return FOODS[state.equipment.food] || null; }
 
-function totalDefense() { return COMBAT_BASE_DEFENSE + armorStats().defense + shieldStats().defense; }
-function recoveryMs() { return Math.round(COMBAT_BASE_RECOVERY_MS * armorStats().recoveryMult); }
+// Every body slot's defense stacks (plus the shield's); every body slot's
+// recoveryMult multiplies together onto the base recovery time -- three
+// neutral 1's is a no-op, same as today with only Chest ever filled.
+function totalDefense() {
+  return COMBAT_BASE_DEFENSE + armorStats("helm").defense + armorStats("chest").defense +
+    armorStats("legs").defense + shieldStats().defense;
+}
+function recoveryMs() {
+  return Math.round(
+    COMBAT_BASE_RECOVERY_MS * armorStats("helm").recoveryMult * armorStats("chest").recoveryMult * armorStats("legs").recoveryMult
+  );
+}
 
 function roll(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// An ENEMIES `drops` entry is either a plain number (every drop before
+// Road Goblin) or a `[min, max]` pair, rolled fresh per kill -- Scrap
+// Metal's own "1-3" is the first to use the range form.
+function rollDropQty(spec) {
+  return Array.isArray(spec) ? roll(spec[0], spec[1]) : spec;
+}
 
 let combatLog = [];
 function log(text, cls) {
@@ -124,15 +147,21 @@ export function syncTimerBars() {
   }
 }
 
-// One card per ENEMIES entry -- same "rebuild the whole list from data"
-// shape Township's cards use, so a new enemy is just a new data.js entry,
-// not a markup change. Rendered once at boot (like Township) rather than
-// every time the idle screen shows, since nothing about the roster changes
-// mid-game yet.
-function buildCombatIdle() {
+// One card per ENEMIES entry the player can actually reach from here --
+// same "rebuild the whole list from data" shape Township's cards use, so
+// a new enemy is just a new data.js entry, not a markup change. An entry
+// with no `zone` shows everywhere, same as every enemy before Road
+// Goblin always has; one with a `zone` only shows while
+// state.currentLocation matches it. Rebuilt on Combat's own screens.js
+// show() (arriving somewhere new can add or remove cards) rather than
+// once at boot the way it used to when the roster never changed.
+export function buildCombatIdle() {
   const wrap = el("combat-enemy-list");
   wrap.replaceChildren();
-  Object.keys(ENEMIES).forEach(function (key) {
+  Object.keys(ENEMIES).filter(function (key) {
+    const zone = ENEMIES[key].zone;
+    return !zone || zone === state.currentLocation;
+  }).forEach(function (key) {
     const enemy = ENEMIES[key];
     const btn = document.createElement("button");
     btn.className = "villager-hire";
@@ -169,6 +198,7 @@ function startFight(enemyKey) {
     braced: false,
     over: null,
     nightBoost: night,
+    lastDrops: null,
   };
   save();
   log(enemy.name + " blocks the path." + (night ? " It looks tougher in the dark." : ""), "system");
@@ -285,11 +315,23 @@ function endFight(won) {
   const enemy = ENEMIES[c.enemyKey];
   const mult = nightMult(c);
   c.over = won ? "won" : "lost";
+  let zoneLevels = 0;
   if (won) {
-    state.combatXp += COMBAT_XP;
+    zoneLevels = gainSkillXp("combatXp", COMBAT_XP);
     state.shards += enemy.shardReward * mult;
     const drops = enemy.drops || {};
-    Object.keys(drops).forEach(function (item) { gainItem(item, drops[item] * mult); });
+    // Rolled once, here, and stashed on state.combat -- the result
+    // panel's own display code (below) reads c.lastDrops instead of
+    // re-deriving from enemy.drops, so a ranged drop (Scrap Metal's
+    // "1-3") shows the exact amount actually granted, not a second,
+    // different roll of the same range.
+    const granted = {};
+    Object.keys(drops).forEach(function (item) {
+      const qty = rollDropQty(drops[item]) * mult;
+      gainItem(item, qty);
+      granted[item] = qty;
+    });
+    c.lastDrops = granted;
     log("The " + enemy.name + " is defeated.", "system");
     updateSkillsNote();
     updateWalletNote();
@@ -298,6 +340,7 @@ function endFight(won) {
     log("You are knocked out.", "system");
   }
   save();
+  if (zoneLevels) openZoneWheel(state.currentLocation, zoneLevels);
 }
 
 let combatLevelBefore = null;
@@ -379,9 +422,13 @@ export function refreshCombat() {
       el("combat-result-headline").textContent = "Victory";
       el("combat-result-headline").className = "result-headline win";
       const mult = nightMult(c);
-      const drops = enemy.drops || {};
+      // c.lastDrops (the exact amounts endFight() actually rolled and
+      // granted), not enemy.drops re-derived here -- a ranged drop would
+      // otherwise show a second, different roll of the same range than
+      // the one that actually landed in the bag.
+      const drops = c.lastDrops || {};
       const dropText = Object.keys(drops).map(function (item) {
-        return "+" + (drops[item] * mult) + " " + item;
+        return "+" + drops[item] + " " + item;
       }).join(", ");
       el("combat-result-sub").textContent =
         "+" + COMBAT_XP + " Combat XP, +" + (enemy.shardReward * mult) + " Shards" +

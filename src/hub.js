@@ -19,38 +19,25 @@ import { drawSkills } from "./skillsScreen.js";
 import { costFor } from "./stations.js";
 import { canAfford } from "./costDisplay.js";
 
-// Every BUILDINGS entry is a physical structure that got built somewhere
-// specific -- once it's built, it only shows up on the hub while the
-// player is actually standing at a location whose LOCATIONS[...].stations
-// lists it, not from anywhere in the world. Field/Logging/Mining/Craft/
-// Combat aren't BUILDINGS entries at all, so they're untouched by this and
-// stay available everywhere -- LOCATIONS doesn't model "the farmstead's
-// plots" as a station, only the built conversion stations it explicitly
-// lists.
-function builtHere(id) {
-  const loc = LOCATIONS[state.currentLocation];
-  return !!(loc && loc.stations && loc.stations.indexOf(id) >= 0);
-}
-
 // Fishing isn't a BUILDINGS entry -- there's no structure to build, just
-// water to fish -- so it needs its own location check rather than
-// builtHere()'s BUILDINGS-keyed one. Same underlying rule as forage's own
-// canForageHere() (src/forage.js): a location either has a pool assigned
-// or it doesn't yet.
+// water to fish -- so it needs its own location check. Same underlying
+// rule as forage's own canForageHere() (src/forage.js): a location either
+// has a pool assigned or it doesn't yet.
 function fishingHere() {
   const loc = LOCATIONS[state.currentLocation];
   return !!(loc && loc.fishing);
 }
 
-// A place tied to a BUILDINGS entry only gets a hub card once it's been
-// built -- before that, buildings.js draws a "Build ___" prompt instead --
-// and, once built, only while the player is at the location it was built
-// at (see builtHere() above). Fishing has no build step, just its own
+// A BUILDINGS-backed place (Campfire, Spinning Wheel, Sawmill, Stone
+// Cutter, Tanning Station, Township) never gets a Home hub card at all
+// any more (2026-08-30) -- built or not, it lives inside the Craft Bench
+// screen instead (src/buildings.js's drawStationCards()), so Home stays
+// just the core-loop cards. Fishing has no build step, just its own
 // location check (fishingHere() above).
 function visiblePlaces() {
   return PLACES.filter(function (place) {
     if (!place.hub) return false;
-    if (place.id in BUILDINGS) return state.buildings[place.id] && builtHere(place.id);
+    if (place.id in BUILDINGS) return false;
     if (place.id === "fishing") return fishingHere();
     return true;
   });

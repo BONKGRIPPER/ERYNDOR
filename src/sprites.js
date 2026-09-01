@@ -5,14 +5,18 @@
 // shows a broken image -- see assets/sprites/README.md for exact filenames.
 //
 //   assets/sprites/soil/tilled.png          the plot background, all plots
-//   assets/sprites/tools/seeds.png          the three tool icons
+//   assets/sprites/tools/seeds.png          the two tool icons
 //   assets/sprites/tools/water.png
-//   assets/sprites/tools/scythe.png
 //   assets/sprites/crops/<cropId>/<n>.png   growth frame n, 0..crop.waters
 //                                            (n == waters is the ripe frame)
 //   assets/sprites/trees/<treeId>/<n>.png    same idea, for Logging
 //   assets/sprites/forage/basket.png         the one persistent forage button
 //   assets/sprites/mining/pickaxe.png        the one Dig pill on the mining screen
+//   assets/sprites/mining/zones/<slug>.png   the Mining screen's big art banner,
+//                                             one per MINE_ZONES entry -- square
+//                                             art still scales best even though
+//                                             this one renders wide, since
+//                                             object-fit: cover crops it
 //   assets/sprites/craft/<recipeId>.png      one icon per recipe pill
 //   assets/sprites/stations/<stationId>.png  one icon per conversion station
 //   assets/sprites/items/<slug>.png          one icon per bag item, for the
@@ -26,7 +30,7 @@
 // Files are looked for once at startup. Square art scales best -- images are
 // fit with `object-fit: contain` so nothing gets stretched.
 
-import { CROPS, TREES, RECIPES, STATIONS, TINTS, SKILLS } from "./data.js";
+import { CROPS, TREES, RECIPES, STATIONS, TINTS, SKILLS, MINE_ZONES } from "./data.js";
 
 export const SPRITE_BASE = "assets/sprites/";
 
@@ -38,7 +42,7 @@ export function slug(name) {
 
 function allSpriteKeys() {
   const keys = [
-    "soil/tilled", "tools/seeds", "tools/water", "tools/scythe",
+    "soil/tilled", "tools/seeds", "tools/water",
     "forage/basket", "mining/pickaxe",
   ];
   Object.keys(CROPS).forEach(function (id) {
@@ -51,6 +55,7 @@ function allSpriteKeys() {
   Object.keys(STATIONS).forEach(function (id) { keys.push("stations/" + id); });
   Object.keys(TINTS).forEach(function (name) { keys.push("items/" + slug(name)); });
   Object.keys(SKILLS).forEach(function (id) { keys.push("skills/" + id); });
+  MINE_ZONES.forEach(function (zone) { keys.push("mining/zones/" + slug(zone.name)); });
   return keys;
 }
 

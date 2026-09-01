@@ -18,20 +18,21 @@ import {
 } from "./field.js";
 import { updateSkillsNote } from "./hub.js";
 import {
-  buildLogPlots, applyLogToolSprites, settleLogging, drawLogging, drawLogXp,
+  buildLogPlots, settleLogging, drawLogging, drawLogXp,
 } from "./logging.js";
 import {
   applyForageSprites, settleForage, refreshForage, showForageResult, showAwayPopup, drawForageProgress,
 } from "./forage.js";
 import { applyCraftSprites, settleCraft, refreshCraft } from "./craft.js";
 import { setPillFill, popCount } from "./pills.js";
-import { drawBuildPrompts } from "./buildings.js";
+import { drawStationCards } from "./buildings.js";
+import { settleVillageUpkeep, buildTownship } from "./township.js";
 import { settleCampfire, refreshCampfire, applyCampfireSprites } from "./campfire.js";
 import {
   settleStations, refreshStation, refreshAllStations, drawAllStationXp, drawAllItemLevels, applyStationSprites,
 } from "./stations.js";
-import { refreshMining, drawMiningXp, applyMiningSprites } from "./mining.js";
-import { settleCombat, refreshCombat, drawCombatXp, syncTimerBars } from "./combat.js";
+import { refreshMining, settleMining, drawMiningXp, applyMiningSprites } from "./mining.js";
+import { settleCombat, refreshCombat, drawCombatXp, syncTimerBars, buildCombatIdle } from "./combat.js";
 import { settleTravel } from "./travel.js";
 import { buildMap, refreshMap } from "./map.js";
 import { buildMarket } from "./market.js";
@@ -62,13 +63,12 @@ function reportForageCatchup(results, awayMs) {
 
 function start() {
   drawMenu();
-  drawBuildPrompts();
+  drawStationCards();
   drawBag();
   buildDock();
   buildPlots();
   applyToolSprites();
   buildLogPlots();
-  applyLogToolSprites();
   applyForageSprites();
   applyCraftSprites();
   applyStationSprites();
@@ -116,6 +116,11 @@ function start() {
   });
   refreshAllStations();
 
+  // Same shape as Crafting/the conversion stations just above -- a swing
+  // left running through a reload resolves here, and one still mid-flight
+  // resumes its fill bar from wherever it actually is, not from 0%.
+  settleMining();
+  if (state.mineSwing) setPillFill("mine-dig", 100, Math.max(0, state.mineSwing.readyAt - Date.now()));
   drawMiningXp();
   refreshMining();
 
@@ -125,6 +130,11 @@ function start() {
   // needed, regardless of whether the Fishing screen is what's about to
   // show.
   settleFishingTrap();
+
+  // Same idea again -- a village's own 24h upkeep clock keeps ticking
+  // whether or not the Township screen (or even the game) was open to
+  // watch it.
+  settleVillageUpkeep();
 
   settleCombat();
   drawCombatXp();
@@ -140,7 +150,7 @@ function start() {
   // if that's what the URL hash points back to.
   settleTravel();
   drawMenu();
-  drawBuildPrompts();
+  drawStationCards();
   refreshForage();
 
   updateHubAttention();
@@ -193,9 +203,16 @@ function start() {
       refreshAllStations();
     }
 
-    // Digging and surfacing are both synchronous now (see mining.js) --
-    // nothing to settle from a passive tick. Still redrawn every tick while
-    // visible so the cooldown countdown (if any) stays live.
+    settleVillageUpkeep();
+    if (!el("screen-township").classList.contains("hidden")) buildTownship();
+
+    // Digging is single-tap-and-timer now (2026-08-31, see mining.js) --
+    // settleMining() resolves a running swing the instant its deadline
+    // passes, same shape as every other settle() in this loop. Surfacing
+    // is still synchronous (no wait of its own). Redrawn every tick while
+    // visible so the cooldown countdown (if any) and the swing's own fill
+    // bar both stay live.
+    settleMining();
     const miningVisible = !el("screen-mining").classList.contains("hidden");
     if (miningVisible) refreshMining();
 
@@ -239,11 +256,14 @@ function start() {
     // here so the forage bar doesn't sit stale for one extra tick.
     if (arrived) {
       drawMenu();
-      drawBuildPrompts();
+      drawStationCards();
       refreshForage();
       const marketVisible = !el("screen-market").classList.contains("hidden");
       if (marketVisible) buildMarket();
       if (fishingVisible) buildFishing();
+      // A location-exclusive enemy (Road Goblin, so far) can appear or
+      // disappear from the idle list the instant a trip lands.
+      if (combatVisible) buildCombatIdle();
     }
 
     updateHubAttention();

@@ -11,13 +11,17 @@ export function pillFor(item) { return document.querySelector('.pill[data-item="
 // raising a gather/craft rate later is a tuning change here, not an
 // animation one.
 export function setPillFill(item, targetPct, ms) {
-  const fill = pillFor(item).querySelector(".pill-fill");
+  const pill = pillFor(item);
+  if (!pill) return;   // e.g. a RECIPES/STATIONS entry whose pill was pulled from the screen but not the data
+  const fill = pill.querySelector(".pill-fill");
   fill.style.transitionDuration = ms + "ms";
   fill.style.width = targetPct + "%";
 }
 
 export function popCount(item) {
-  const count = pillFor(item).querySelector(".pill-count");
+  const pill = pillFor(item);
+  if (!pill) return;
+  const count = pill.querySelector(".pill-count");
   count.classList.remove("pop");
   void count.offsetWidth;
   count.classList.add("pop");

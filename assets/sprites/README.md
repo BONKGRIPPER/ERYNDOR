@@ -6,9 +6,8 @@ on its built-in vector placeholder art.
 
     soil/tilled.png            the plot background, shared by all six plots
 
-    tools/seeds.png            the three tool icons
+    tools/seeds.png            the two tool icons
     tools/water.png
-    tools/scythe.png
 
     crops/<cropId>/<n>.png     one growth frame per stage of a crop
                                 n runs 0..waters -- n == waters is the ripe
@@ -24,6 +23,15 @@ on its built-in vector placeholder art.
 
     craft/<recipeId>.png       one icon per recipe pill -- flintAxe.png,
                                 flintPick.png
+
+    mining/zones/<slug>.png    the Mining screen's big art banner, one per
+                                depth zone in `MINE_ZONES` (src/data.js) --
+                                stone.png, copper.png, iron.png, gold.png,
+                                diamond.png. Renders wide (object-fit:
+                                cover, not contain -- see mining.js's
+                                drawMineArt()), so a landscape/portrait
+                                scene crops rather than letterboxes here,
+                                unlike every other sprite on this page.
 
     items/<slug>.png           one icon per bag item, for the Inventory
                                 screen. slug is the item's name, lowercased

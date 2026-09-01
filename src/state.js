@@ -5,7 +5,8 @@
 // dispatch layer, on purpose, at this scale.
 
 import {
-  PLOT_COUNT, RECIPES, EQUIP_SLOTS, BUILDINGS, CAN_CAPACITY, STATIONS, VILLAGER_TICK_MS,
+  PLOT_COUNT, RECIPES, EQUIP_SLOTS, BUILDINGS, CAN_CAPACITY, STATIONS, VILLAGER_TICK_MS, TREES,
+  LOCATIONS, ZONE_XP_SHARE, ZONE_XP_PER_LEVEL,
 } from "./data.js";
 
 export const SAVE_KEY = "eryndor:save";
@@ -60,8 +61,12 @@ export const state = {
   // rescheduling itself forever, tapping the forage swing on its own.
   // `fastHands` is the one villager upgrade that exists so far (also bought
   // from Township) -- see forage.js's villagerTickMs() for where it
-  // actually applies.
-  villager: { owned: false, fastHands: false },
+  // actually applies. `homeLocation` is set once, at hire (state.
+  // currentLocation at that moment) -- the villager works that location's
+  // forage pool forever after, regardless of where the player currently
+  // is; hire in Aerendell and it never auto-forages Forest Road's pool
+  // just because the player happens to be standing there.
+  villager: { owned: false, fastHands: false, homeLocation: null },
   // Stamped every tick while the game is actually running, so the gap
   // between this and Date.now() at the next boot is exactly how long the
   // game was closed -- no separate close/unload handler needed, the last
@@ -74,31 +79,34 @@ export const state = {
   // hits WATER_TAPS_NEEDED. Storing a deadline rather than a countdown
   // means crops keep growing while the game is closed.
   plots: [],
-  tool: null,   // null | "seeds" | "water" | "scythe"
+  tool: null,   // null | "seeds" | "water"
   seed: null,   // which crop the seed tool will plant
   // The watering can's own charge meter -- shared by whichever screen taps
   // it, but each screen owns a separate can (see logWateringCan) so Farm
   // and Logging can't drain one from the other. `refillAt` is the deadline
   // it'll be back to full, or null when it isn't refilling.
   wateringCan: { charges: CAN_CAPACITY, refillAt: null },
-  // Logging's own plot grid and tool -- same shape as Field's, kept
-  // separate rather than shared, since the two screens can hold different
-  // tools at once (leave Farm with Water selected, go chop in Logging,
-  // come back and Water is still selected). Logging's plots additionally
-  // carry `chopHealth` -- the tree's remaining HP once ripe (set to the
-  // tree's own `health` the moment it ripens, null before then/after it
-  // falls) -- felling is a straight HP fight now, not several short timed
-  // chops. See logging.js's chopTree().
+  // Logging's own plot grid -- always Pine, no seed/water step at all
+  // (2026-08-30): a plot is just { startedAt, readyAt, chopHealth }. It
+  // starts growing (`readyAt` set) the moment it's empty -- at boot for a
+  // brand new save, or the instant the previous tree falls -- and turns
+  // ripe (`readyAt` null, `chopHealth` set to the tree's own `health`) on
+  // its own once `readyAt` passes, same deadline-not-countdown rule as
+  // everything else timed in this game. Felling is a straight HP fight,
+  // not a timed chop -- see logging.js's chopTree()/fellTree().
   logPlots: [],
-  logTool: null,   // null | "seed" | "water" | "chop"
-  logSeed: null,   // which tree the seed tool will plant
-  logWateringCan: { charges: CAN_CAPACITY, refillAt: null },
-  // How many taps have landed on the current forage swing (0 up to, but not
-  // including, FORAGE_CLICKS_PER_SWING) -- shared by the player's own taps
-  // and the hired villager's automatic ones. Resets to 0 the instant a
-  // swing completes. What it actually produces is rolled once it resolves
-  // (see forage.js), not stored here.
-  forageProgress: 0,
+  // The one running gather, or null while idle -- { startedAt, readyAt,
+  // poolId }, same {startedAt,readyAt} deadline shape every other timer in
+  // this game uses (crafting, stations, campfire). `poolId` is locked in at
+  // the moment the gather starts (see forage.js's startForage()), so what
+  // it actually produces is rolled from wherever it began, not wherever the
+  // player happens to be standing when it resolves.
+  forage: null,
+  // Foraging's own action mastery -- see FORAGE_LEVEL_THRESHOLDS in
+  // data.js. `clicks` counts completed gathers toward the *next* level
+  // (resets to 0 the instant that level lands), same shape as
+  // state.itemLevels' own {level, crafts} entries.
+  forageLevel: { level: 0, clicks: 0 },
   // Absolute deadline for the villager's next automatic tap -- null
   // whenever no villager is working yet (not hired, or hired but its first
   // tick was never scheduled). Same deadline-not-countdown rule as every
@@ -113,6 +121,7 @@ export const state = {
   stonecuttingXp: 0,
   tanningXp: 0,
   fishingXp: 0,
+  tailoringXp: 0,
   // One active cycle per conversion station, keyed by STATIONS id -- null
   // while idle, {startedAt,readyAt} while running. See src/stations.js.
   stations: {},
@@ -122,12 +131,13 @@ export const state = {
   // src/itemLevels.js.
   itemLevels: {},
   miningXp: 0,
-  // How many clicks of the current swing have landed so far (0 up to, but
-  // not including, the equipped pickaxe's clicksPerSwing) -- every tap is
-  // instant (no per-click timer), so this is the only "mid-swing" state
-  // that exists. Resets to 0 the instant a swing completes, whether it
-  // succeeded or caved in. See src/mining.js.
-  swingProgress: 0,
+  // The one running swing, or null while idle -- { startedAt, readyAt },
+  // same {startedAt,readyAt} deadline shape every other timer in this game
+  // uses (crafting, stations, foraging). Single-tap-and-timer now
+  // (2026-08-31); resolves on its own (see mining.js's settleMining()) the
+  // instant readyAt passes, whether that turns out to be a cave-in or a
+  // successful dig.
+  mineSwing: null,
   // How deep the current trip has reached, and what it's carrying -- both
   // reset to 0/{} on a cave-in *or* on choosing to surface. Nothing here is
   // safe until it's been moved into `bag` by surfacing; that's the entire
@@ -195,6 +205,23 @@ export const state = {
   // persisting those -- a short enough window that resetting it on reload
   // isn't worth the extra save-shape complexity.
   fishing: { trap: null, bait: null },
+  // The village's own donated stockpile -- separate from the player's own
+  // bag/storage, spent by settleVillageUpkeep() (src/township.js) every
+  // VILLAGE_UPKEEP_MS regardless of which screen is open, same
+  // "unconditional background tick" shape the villager's own forage cycle
+  // already uses. `nextUpkeepAt` only ever advances on a *successful*
+  // upkeep -- short a food or heat unit and it's left in the past,
+  // `starved` set, until enough is donated to finally clear it (see
+  // settleVillageUpkeep()'s own comment for why that's not a retroactive
+  // catch-up loop). null until a villager is actually hired -- there's
+  // nothing to keep fed before that.
+  village: { food: 0, heat: 0, nextUpkeepAt: null, starved: false },
+  // One { level, xp } entry per LOCATIONS key -- see gainSkillXp()/
+  // gainZoneXp() below and src/zoneWheel.js for what a level-up actually
+  // does. Every zone starts at level 1, filled in by the init loop further
+  // down (same "one key per data.js table entry" pattern STATIONS/
+  // BUILDINGS already use).
+  zones: {},
 };
 
 // The one place every producer (foraging, crafting, cooking, mining,
@@ -215,15 +242,52 @@ export function gainItem(name, amount) {
   if (state.recentItems.length > 5) state.recentItems.length = 5;
 }
 
+// Feeds ZONE_XP_SHARE of an XP gain into whatever zone the player is
+// currently standing in -- flat XP-per-level (ZONE_XP_PER_LEVEL), not
+// skills.js's own exponential curve. A `while`, not an `if`, so one large
+// grant can carry a zone through more than one level in a single call.
+// Returns how many levels it just gained (0 most of the time), so callers
+// know whether -- and how many times -- to spin the loot wheel.
+export function gainZoneXp(amount) {
+  const id = state.currentLocation;
+  if (!state.zones[id]) state.zones[id] = { level: 1, xp: 0 };
+  const z = state.zones[id];
+  z.xp += amount;
+  let levels = 0;
+  while (z.xp >= ZONE_XP_PER_LEVEL) {
+    z.xp -= ZONE_XP_PER_LEVEL;
+    z.level += 1;
+    levels += 1;
+  }
+  return levels;
+}
+
+// The one place every skill (Mining, Foraging, Farming, Logging, Fishing,
+// the conversion stations, Combat) should route its own XP gain through,
+// same "one choke point" reasoning gainItem() above already follows for
+// bag items -- so the zone-XP share never has to be remembered separately
+// at each of those call sites. Returns whatever gainZoneXp() returns, so a
+// caller that gets a truthy (>0) result knows to open the loot wheel --
+// see src/zoneWheel.js's openZoneWheel().
+export function gainSkillXp(field, amount) {
+  state[field] += amount;
+  return gainZoneXp(amount * ZONE_XP_SHARE);
+}
+
 Object.keys(STATIONS).forEach(function (id) { state.stations[id] = null; });
 
 for (let i = 0; i < PLOT_COUNT; i++) {
   state.plots.push({
     crop: null, stage: 0, startedAt: 0, readyAt: null, waterProgress: 0,
-    reapReadyAt: null,
   });
+  // Already growing from the moment a save exists -- no cone to plant, no
+  // can to fill. Base stageSeconds only (no level/time speed multiplier
+  // yet -- both are 1x/neutral-ish this early anyway); every regrow after
+  // this first one reads them fresh, same as fellTree() always has.
+  const startedAt = Date.now();
   state.logPlots.push({
-    crop: null, stage: 0, startedAt: 0, readyAt: null, waterProgress: 0,
+    startedAt: startedAt,
+    readyAt: startedAt + TREES.pine.stageSeconds * 1000,
     chopHealth: null,
   });
 }
@@ -235,7 +299,7 @@ for (let i = 0; i < PLOT_COUNT; i++) {
 // transfer -- the item briefly exists in both only in that literal object,
 // never in what the player actually sees.
 const STARTER_TOOLS = {
-  axe: "Wooden Axe", scythe: "Wooden Scythe", can: "Wooden Can", pick: "Wooden Pickaxe",
+  axe: "Wooden Axe", can: "Wooden Can", pick: "Wooden Pickaxe",
 };
 EQUIP_SLOTS.forEach(function (slot) {
   const starter = STARTER_TOOLS[slot.id];
@@ -250,6 +314,7 @@ EQUIP_SLOTS.forEach(function (slot) {
   }
 });
 Object.keys(BUILDINGS).forEach(function (id) { state.buildings[id] = false; });
+Object.keys(LOCATIONS).forEach(function (id) { state.zones[id] = { level: 1, xp: 0 }; });
 
 // Wrapped because file:// origins can refuse storage -- the game still runs,
 // it just won't remember anything.
@@ -262,19 +327,23 @@ export function save() {
       shards: state.shards, market: state.market,
       buildings: state.buildings, campfire: state.campfire,
       plots: state.plots, logPlots: state.logPlots,
-      wateringCan: state.wateringCan, logWateringCan: state.logWateringCan,
+      wateringCan: state.wateringCan,
       farmingXp: state.farmingXp, loggingXp: state.loggingXp,
       foragingXp: state.foragingXp, villager: state.villager,
       lastActiveAt: state.lastActiveAt,
-      forageProgress: state.forageProgress, villagerNextTickAt: state.villagerNextTickAt,
+      forage: state.forage, forageLevel: state.forageLevel,
+      villagerNextTickAt: state.villagerNextTickAt,
       crafting: state.crafting,
       sowingXp: state.sowingXp, millingXp: state.millingXp,
       stonecuttingXp: state.stonecuttingXp, tanningXp: state.tanningXp,
       fishingXp: state.fishingXp, fishing: state.fishing,
+      tailoringXp: state.tailoringXp,
+      village: state.village,
+      zones: state.zones,
       stations: state.stations,
       itemLevels: state.itemLevels,
       miningXp: state.miningXp,
-      swingProgress: state.swingProgress,
+      mineSwing: state.mineSwing,
       depth: state.depth, carried: state.carried,
       mineCooldownUntil: state.mineCooldownUntil,
       recentItems: state.recentItems,
@@ -350,12 +419,29 @@ export function load() {
     if (data.villager && typeof data.villager === "object") {
       state.villager.owned = data.villager.owned === true;
       state.villager.fastHands = data.villager.fastHands === true;
+      // A save from before villagers were zone-specific has no
+      // homeLocation at all -- backfilled to Aerendell, the only place
+      // Township has ever existed, rather than leaving it null and
+      // silently forcing an existing villager to stop working everywhere.
+      state.villager.homeLocation =
+        typeof data.villager.homeLocation === "string" ? data.villager.homeLocation : "aerendell";
     }
     // The gap between this and now is what the "welcome back" popup
     // reports as away-time -- default to now (no gap) if this is somehow
     // missing, rather than a stale/undefined value producing a nonsense span.
     state.lastActiveAt = typeof data.lastActiveAt === "number" ? data.lastActiveAt : Date.now();
-    state.forageProgress = typeof data.forageProgress === "number" ? data.forageProgress : 0;
+    // A save from before the single-tap Forage timer (2026-08-31) has no
+    // `forage` at all -- only the old swing-based `forageProgress`, which
+    // has nothing left to resume into (a partial swing was never worth
+    // anything on its own). Discarded rather than migrated, same as
+    // Logging's old crop-shape saves were.
+    state.forage = (data.forage && typeof data.forage.readyAt === "number") ? data.forage : null;
+    // A save from before forage mastery existed has no `forageLevel` at
+    // all -- starts at level 0, same as a save that's never crafted a
+    // given item has no `itemLevels` entry for it.
+    if (data.forageLevel && typeof data.forageLevel.level === "number") {
+      state.forageLevel = { level: data.forageLevel.level, clicks: data.forageLevel.clicks || 0 };
+    }
     if (typeof data.villagerNextTickAt === "number") {
       state.villagerNextTickAt = data.villagerNextTickAt;
     } else if (state.villager.owned) {
@@ -376,44 +462,73 @@ export function load() {
         state.crafting[item] = (c && typeof c.readyAt === "number") ? c : null;
       });
     }
-    if (Array.isArray(data.plots) && data.plots.length === PLOT_COUNT) {
+    // >= PLOT_COUNT, not === -- a bought expansion plot (src/field.js's
+    // buyPlot()) makes this array longer than the starting count forever
+    // after, same as PLOT_COUNT itself never shrinking.
+    if (Array.isArray(data.plots) && data.plots.length >= PLOT_COUNT) {
       state.plots = data.plots;
-      // A save from before the single-tap Scythe timer existed won't have
-      // this field at all -- `undefined !== null` would otherwise read as
-      // "mid-cut" forever on every one of its plots.
-      state.plots.forEach(function (p) {
-        if (p.reapReadyAt === undefined) p.reapReadyAt = null;
-      });
+      // A save from before harvesting became a single instant tap
+      // (2026-08-31) may have a plot mid-cut, with a real reapReadyAt
+      // still set -- there's nothing left to resolve that into (no Scythe
+      // timer any more), so it's just dropped; the crop itself is still
+      // there and ripe, one tap away from harvesting the normal way.
+      state.plots.forEach(function (p) { delete p.reapReadyAt; });
     }
-    if (Array.isArray(data.logPlots) && data.logPlots.length === PLOT_COUNT) {
-      state.logPlots = data.logPlots;
-      // A save from before chopping became an HP fight has `chopProgress`/
-      // `chopReadyAt` instead -- there's no honest way to convert "2 of 4
-      // timed chops landed" into HP, so a tree mid-chop on an old save just
-      // comes back at full health rather than carrying over a number that
-      // never meant the same thing.
-      state.logPlots.forEach(function (p) {
-        if (p.chopHealth === undefined) p.chopHealth = null;
-      });
+    if (Array.isArray(data.logPlots) && data.logPlots.length >= PLOT_COUNT) {
+      // A save from before Logging dropped seeds/watering (2026-08-30) has
+      // `crop`/`stage`/`waterProgress` instead of this shape -- there's no
+      // honest way to carry "half-watered" or "empty, no cone planted" over
+      // into "always growing," so a save with the old shape just starts
+      // every plot fresh (already growing) rather than half-migrating into
+      // a state this version can't represent. `"crop" in p` is the
+      // shape's own tell: the new shape never has that key at all.
+      const isOldShape = data.logPlots.length > 0 && "crop" in data.logPlots[0];
+      if (!isOldShape) {
+        state.logPlots = data.logPlots;
+        // A save from before chopping became an HP fight has `chopProgress`/
+        // `chopReadyAt` instead -- there's no honest way to convert "2 of 4
+        // timed chops landed" into HP, so a tree mid-chop on an old save
+        // just comes back at full health rather than carrying over a
+        // number that never meant the same thing.
+        state.logPlots.forEach(function (p) {
+          if (p.chopHealth === undefined) p.chopHealth = null;
+        });
+      }
     }
     if (data.wateringCan && typeof data.wateringCan === "object") {
       state.wateringCan.charges = typeof data.wateringCan.charges === "number" ? data.wateringCan.charges : CAN_CAPACITY;
       state.wateringCan.refillAt = typeof data.wateringCan.refillAt === "number" ? data.wateringCan.refillAt : null;
-    }
-    if (data.logWateringCan && typeof data.logWateringCan === "object") {
-      state.logWateringCan.charges = typeof data.logWateringCan.charges === "number" ? data.logWateringCan.charges : CAN_CAPACITY;
-      state.logWateringCan.refillAt = typeof data.logWateringCan.refillAt === "number" ? data.logWateringCan.refillAt : null;
     }
     if (typeof data.sowingXp === "number") state.sowingXp = data.sowingXp;
     if (typeof data.millingXp === "number") state.millingXp = data.millingXp;
     if (typeof data.stonecuttingXp === "number") state.stonecuttingXp = data.stonecuttingXp;
     if (typeof data.tanningXp === "number") state.tanningXp = data.tanningXp;
     if (typeof data.fishingXp === "number") state.fishingXp = data.fishingXp;
+    if (typeof data.tailoringXp === "number") state.tailoringXp = data.tailoringXp;
     if (data.fishing && typeof data.fishing === "object") {
       state.fishing.bait = typeof data.fishing.bait === "string" ? data.fishing.bait : null;
       state.fishing.trap = (data.fishing.trap && typeof data.fishing.trap.readyAt === "number")
         ? data.fishing.trap
         : null;
+    }
+    if (data.village && typeof data.village === "object") {
+      state.village.food = typeof data.village.food === "number" ? data.village.food : 0;
+      state.village.heat = typeof data.village.heat === "number" ? data.village.heat : 0;
+      state.village.nextUpkeepAt = typeof data.village.nextUpkeepAt === "number" ? data.village.nextUpkeepAt : null;
+      state.village.starved = data.village.starved === true;
+    }
+    if (data.zones && typeof data.zones === "object") {
+      // Same "one key per LOCATIONS entry" backfill BUILDINGS' own load
+      // already does -- a save from before a given zone existed (either
+      // before zone leveling shipped at all, or before that specific
+      // location was added) just starts it at level 1, same as the fresh-
+      // save init loop above.
+      Object.keys(LOCATIONS).forEach(function (id) {
+        const z = data.zones[id];
+        state.zones[id] = (z && typeof z.level === "number")
+          ? { level: z.level, xp: typeof z.xp === "number" ? z.xp : 0 }
+          : { level: 1, xp: 0 };
+      });
     }
     if (data.stations) {
       Object.keys(STATIONS).forEach(function (id) {
@@ -425,7 +540,12 @@ export function load() {
     }
     if (data.itemLevels && typeof data.itemLevels === "object") state.itemLevels = data.itemLevels;
     if (typeof data.miningXp === "number") state.miningXp = data.miningXp;
-    if (typeof data.swingProgress === "number") state.swingProgress = data.swingProgress;
+    // A save from before digging became a single-tap timer (2026-08-31)
+    // has no `mineSwing` at all -- only the old click-based
+    // `swingProgress`, which has nothing left to resume into (a partial
+    // swing was never worth anything on its own, same reasoning Foraging's
+    // own old swing progress got dropped rather than migrated).
+    state.mineSwing = (data.mineSwing && typeof data.mineSwing.readyAt === "number") ? data.mineSwing : null;
     if (typeof data.depth === "number") state.depth = data.depth;
     if (data.carried && typeof data.carried === "object") state.carried = data.carried;
     if (typeof data.mineCooldownUntil === "number") state.mineCooldownUntil = data.mineCooldownUntil;

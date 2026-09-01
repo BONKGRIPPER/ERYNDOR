@@ -15,7 +15,8 @@
 // already uses, so a running cycle can never fail to finish.
 
 import { STATIONS } from "./data.js";
-import { state, save, gainItem } from "./state.js";
+import { state, save, gainItem, gainSkillXp } from "./state.js";
+import { openZoneWheel } from "./zoneWheel.js";
 import { GROWTH_PER_LEVEL, levelFromXp, levelProgress } from "./skills.js";
 import { pillFor, setPillFill } from "./pills.js";
 import { useSprite } from "./sprites.js";
@@ -85,16 +86,22 @@ function startStation(id) {
 export function settleStations() {
   const done = [];
   const leveledUp = {};
+  let zoneLevels = 0;
   Object.keys(STATIONS).forEach(function (id) {
     const c = state.stations[id];
     if (!c || Date.now() < c.readyAt) return;
     const cfg = STATIONS[id];
     gainItem(cfg.output, 1);
-    state[cfg.skillXp] += cfg.xp;
+    zoneLevels += gainSkillXp(cfg.skillXp, cfg.xp);
     state.stations[id] = null;
+    // Same reset craft.js's settleCraft() does -- without it, a finished
+    // cycle's .pill-fill sits at its last-drawn 100% (fully colored)
+    // forever, since nothing else ever points it back at 0%.
+    setPillFill(id, 0, 0);
     if (recordCraft(cfg.output)) leveledUp[id] = true;
     done.push(id);
   });
+  if (zoneLevels) openZoneWheel(state.currentLocation, zoneLevels);
   if (done.length) {
     save();
     updateSkillsNote();

@@ -72,6 +72,10 @@ export function settleCampfire() {
   const gives = COOKABLES[c.current.item].gives;
   gainItem(gives, 1);
   c.current = null;
+  // Same reset craft.js's settleCraft() does -- without it, a finished
+  // cook's .pill-fill sits at its last-drawn 100% (fully colored) forever,
+  // since nothing else ever points it back at 0%.
+  setPillFill("campfire-cook", 0, 0);
   save();
   return gives;
 }

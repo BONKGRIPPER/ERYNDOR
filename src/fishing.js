@@ -18,7 +18,8 @@ import {
   FISH_NET_CLICKS_PER_SWING, FISH_TRAP_MS, FISH_BITE_DELAY_MIN_MS,
   FISH_BITE_DELAY_MAX_MS, FISH_BITE_WINDOW_MS, LOCATIONS,
 } from "./data.js";
-import { state, save, gainItem } from "./state.js";
+import { state, save, gainItem, gainSkillXp } from "./state.js";
+import { openZoneWheel } from "./zoneWheel.js";
 import { isNight } from "./time.js";
 import { levelProgress } from "./skills.js";
 import { pillFor } from "./pills.js";
@@ -134,8 +135,9 @@ function resolveBite(hit) {
   if (hit) {
     const item = rollFish(currentPoolId(), true, state.fishing.bait);
     gainItem(item, 1);
-    state.fishingXp += FISH_XP_ROD;
+    const zoneLevels = gainSkillXp("fishingXp", FISH_XP_ROD);
     save();
+    if (zoneLevels) openZoneWheel(state.currentLocation, zoneLevels);
     updateSkillsNote();
     rod.resultText = "Caught a " + item + "!";
   } else {
@@ -273,8 +275,9 @@ function tapNet() {
   const b = rollFish(currentPoolId(), false, null);
   gainItem(a, 1);
   gainItem(b, 1);
-  state.fishingXp += FISH_XP_NET;
+  const zoneLevels = gainSkillXp("fishingXp", FISH_XP_NET);
   save();
+  if (zoneLevels) openZoneWheel(state.currentLocation, zoneLevels);
   updateSkillsNote();
   hint("fish-net-hint", a === b ? "+2 " + a : "+1 " + a + ", +1 " + b);
   drawFishingNet();
@@ -320,9 +323,10 @@ export function settleFishingTrap() {
   if (Date.now() < t.readyAt) return null;
   const item = rollFish(t.poolId, false, null);
   gainItem(item, 1);
-  state.fishingXp += FISH_XP_TRAP;
+  const zoneLevels = gainSkillXp("fishingXp", FISH_XP_TRAP);
   state.fishing.trap = null;
   save();
+  if (zoneLevels) openZoneWheel(state.currentLocation, zoneLevels);
   return item;
 }
 

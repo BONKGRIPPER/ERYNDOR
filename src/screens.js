@@ -3,14 +3,15 @@
 // screens.js <-> dock.js, screens.js <-> inventory.js, screens.js <->
 // market.js, screens.js <-> campfire.js, screens.js <-> journal.js,
 // screens.js <-> combat.js, screens.js <-> township.js, screens.js <->
-// map.js, screens.js <-> fishing.js, screens.js <-> craft.js, and
-// screens.js <-> stations.js are mutually importing on purpose. It's
-// safe: `show`, `syncDock`, `buildInventory`, `buildMarket`,
-// `campfireShown`, `buildJournal`, `refreshCombat`, `buildTownship`,
-// `buildMap`, `buildFishing`, `refreshCraft` and `refreshAllStations` are
-// only ever called from inside event handlers, never at module-evaluation
-// time, so the circular live bindings are always resolved by the time
-// anything actually calls them.
+// map.js, screens.js <-> fishing.js, screens.js <-> craft.js,
+// screens.js <-> stations.js, and screens.js <-> buildings.js are mutually
+// importing on purpose. It's safe: `show`, `syncDock`, `buildInventory`,
+// `buildMarket`, `campfireShown`, `buildJournal`, `refreshCombat`,
+// `buildCombatIdle`, `buildTownship`, `buildMap`, `buildFishing`, `refreshCraft`,
+// `refreshAllStations` and `drawStationCards` are only ever called from
+// inside event handlers, never at module-evaluation time, so the circular
+// live bindings are always resolved by the time anything actually calls
+// them.
 
 import { SCREEN_IDS } from "./data.js";
 import { el } from "./dom.js";
@@ -19,17 +20,18 @@ import { buildInventory } from "./inventory.js";
 import { buildMarket } from "./market.js";
 import { campfireShown } from "./campfire.js";
 import { buildJournal } from "./journal.js";
-import { refreshCombat, syncTimerBars } from "./combat.js";
+import { refreshCombat, syncTimerBars, buildCombatIdle } from "./combat.js";
 import { buildTownship } from "./township.js";
 import { buildMap } from "./map.js";
 import { buildFishing } from "./fishing.js";
 import { refreshCraft } from "./craft.js";
 import { refreshAllStations } from "./stations.js";
+import { drawStationCards } from "./buildings.js";
 
 // Exported so main.js's tick loop can use the same list for its own
 // "still sitting on one of these" check, rather than a second copy of it
 // drifting out of sync.
-export const STATION_SCREENS = ["spinningWheel", "sawmill", "stoneCutter", "tanningStation"];
+export const STATION_SCREENS = ["spinningWheel", "sawmill", "stoneCutter", "tanningStation", "armorBench"];
 
 // The screen lives in the URL hash, so a reload puts you back where you were
 // and the browser's back button works without any routing code. Adding a
@@ -57,11 +59,14 @@ export function show(name) {
   if (name === "market") buildMarket();
   if (name === "campfire") campfireShown();
   if (name === "skills") buildJournal();
-  if (name === "combat") { refreshCombat(); syncTimerBars(); }
+  // buildCombatIdle() rebuilds the enemy list against wherever the player
+  // currently is -- Road Goblin (Forest Road-only) is the first enemy
+  // that actually needs this on every visit, not just at boot.
+  if (name === "combat") { buildCombatIdle(); refreshCombat(); syncTimerBars(); }
   if (name === "township") buildTownship();
   if (name === "map") buildMap();
   if (name === "fishing") buildFishing();
-  if (name === "craft") refreshCraft();
+  if (name === "craft") { refreshCraft(); drawStationCards(); }
   if (STATION_SCREENS.indexOf(name) >= 0) refreshAllStations();
 }
 

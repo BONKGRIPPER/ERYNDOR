@@ -38,6 +38,7 @@ const SKILL_ROWS = [
   { id: "stonecutting", xpOf: function () { return state.stonecuttingXp; } },
   { id: "tanning", xpOf: function () { return state.tanningXp; } },
   { id: "fishing", xpOf: function () { return state.fishingXp; } },
+  { id: "tailoring", xpOf: function () { return state.tailoringXp; } },
 ];
 
 export function buildSkills() {

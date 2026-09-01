@@ -8,30 +8,39 @@
 // in data.js) the moment it resolves, not chosen by the player and not
 // decided when it starts -- a future second zone just adds more pools.
 //
-// Swing-based now (2026-08-28), same shape as Mining's dig: every tap is
-// instant and advances state.forageProgress by one, no per-click timer of
-// its own. Only the swing's last tap (FORAGE_CLICKS_PER_SWING of them)
-// actually resolves a gather. At VILLAGER_LEVEL, Shards can buy a villager
-// (state.villager.owned, from the Township screen -- see township.js) who
-// taps that same swing automatically, once every VILLAGER_TICK_MS, whether
-// the player is looking at this screen, a different one, or the game is
-// closed entirely -- settleForage() below resolves however many of those
-// ticks came due since the last check, chaining through as many complete
-// swings as a long away-gap crosses, in one pass. Crucially, the player's
-// own taps land on that *same* progress counter -- tapping the forage pill
-// while a villager works adds to the swing already in flight instead of
-// starting a second one, which is what lets "stay and tap along" actually
-// speed a hired villager up. `fastHands` (also bought from Township) is a
-// flat multiplier on VILLAGER_TICK_MS, read fresh on every villager tick
-// rather than baked in once, so it speeds up ticks already scheduled too.
+// Single-tap-and-timer now (2026-08-31), same shape as Crafting: one tap
+// starts a FORAGE_MS deadline (state.forage = {startedAt, readyAt, poolId}),
+// no further taps needed -- settleForage() below resolves it the instant
+// the deadline passes, same tick loop every other timer in this game uses.
+// A tap while a gather is already running is a silent no-op, exactly like
+// tapping an already-running Craft pill. The pool is locked in at the
+// moment the gather *starts*, not when it resolves, so wandering off
+// mid-gather still pays out from wherever it began -- same "recipe locked
+// at start" rule craft.js's startCraft() follows.
+//
+// At VILLAGER_LEVEL, Shards can buy a villager (state.villager.owned, from
+// the Township screen -- see township.js) who taps this same pill on their
+// own, once every VILLAGER_TICK_MS, whether the player is looking at this
+// screen, a different one, or the game is closed entirely -- settleForage()
+// below resolves however many gathers came due since the last check,
+// chaining through as many complete cycles as a long away-gap crosses, in
+// one pass. The villager always gathers from their own home location's
+// pool (state.villager.homeLocation, set once at hire) regardless of where
+// the player currently is; if the player is already mid-gather when a
+// villager tick lands, the tick is a no-op, same as any other double-tap.
+// `fastHands` (also bought from Township) is a flat multiplier on
+// VILLAGER_TICK_MS, read fresh on every villager tick rather than baked in
+// once, so it speeds up ticks already scheduled too.
 
 import {
-  FORAGE_POOLS, FORAGE_XP, FORAGE_MAX_LEVEL, FORAGE_CLICKS_PER_SWING,
+  FORAGE_POOLS, FORAGE_MS, FORAGE_XP, FORAGE_MAX_LEVEL,
+  FORAGE_LEVEL_THRESHOLDS, FORAGE_LEVEL_SPEED_MULT,
   VILLAGER_TICK_MS, VILLAGER_UPGRADE_MULT, LOCATIONS,
 } from "./data.js";
-import { state, save, gainItem } from "./state.js";
+import { state, save, gainItem, gainSkillXp } from "./state.js";
+import { openZoneWheel } from "./zoneWheel.js";
 import { levelFromXp } from "./skills.js";
-import { pillFor } from "./pills.js";
+import { pillFor, setPillFill } from "./pills.js";
 import { useSprite } from "./sprites.js";
 import { el } from "./dom.js";
 import { openSheet } from "./sheet.js";
@@ -50,12 +59,16 @@ function canForageHere() {
   return !!currentPoolId();
 }
 
-// The hired villager forages at Aerendell's Township regardless of where
-// the player currently is -- they didn't come along on the trip, they're
-// still back home working. Hardcoded rather than read off the player's
-// location on purpose; the villager's own "home" only ever needs to move
-// if Township becomes buildable somewhere else, which it isn't yet.
-const VILLAGER_HOME_POOL = "aerendell";
+// The hired villager forages at wherever they were actually hired
+// (state.villager.homeLocation, set once in township.js's hire flow) --
+// not the player's current one. Hire in Aerendell, wander off to Forest
+// Road, and the villager keeps working Aerendell's pool the whole time;
+// they didn't come along on the trip. null (no villager hired yet, or a
+// pool that's since been removed) means no pool to forage from at all.
+function villagerPoolId() {
+  const loc = LOCATIONS[state.villager.homeLocation];
+  return loc ? loc.forage : null;
+}
 
 function rollDrop(poolId) {
   const pool = FORAGE_POOLS[poolId];
@@ -80,79 +93,126 @@ function villagerTickMs() {
   return state.villager.fastHands ? Math.round(VILLAGER_TICK_MS * VILLAGER_UPGRADE_MULT) : VILLAGER_TICK_MS;
 }
 
-// The pill's fill jumps straight to the new tap count every tap -- a
-// short, fixed CSS transition (not derived from any timer, there isn't
-// one) tweens it, same as Mining's setSwingFill(). Retargets cleanly if a
-// villager tick and a player tap land close together.
-function setSwingFill(pct) {
-  const fill = pillFor("forage").querySelector(".pill-fill");
-  fill.style.transitionDuration = "120ms";
-  fill.style.width = pct + "%";
+// Foraging's own action mastery -- see FORAGE_LEVEL_THRESHOLDS in data.js.
+// Compounding, same shape as itemLevels.js's itemSpeedMult(): level N is
+// FORAGE_LEVEL_SPEED_MULT^N of the base FORAGE_MS.
+function forageLevelSpeedMult() {
+  return Math.pow(FORAGE_LEVEL_SPEED_MULT, state.forageLevel.level);
 }
 
-// Draws the fill instantly, no transition -- for the very first paint after
-// a reload, so a swing already partway done doesn't animate in from 0%.
-export function drawForageProgress() {
+function forageMs() {
+  return FORAGE_MS * forageLevelSpeedMult();
+}
+
+// Gathers landed toward the *next* level, and how many that takes -- drives
+// the pill's own bottom-edge mastery bar, same idea as itemLevelProgress().
+// `need` is 0 once the threshold table runs out (the practical level cap),
+// which drawForageLevel() below reads as "full bar, nothing more to climb."
+export function forageLevelProgress() {
+  const lvl = state.forageLevel;
+  return { level: lvl.level, into: lvl.clicks, need: FORAGE_LEVEL_THRESHOLDS[lvl.level] || 0 };
+}
+
+// Call once per gather actually completed (not per tap). Returns true if
+// this gather pushed foraging to a new level, so callers can flash the
+// badge; false otherwise -- including once the threshold table's run out
+// and there's nothing left to climb toward.
+function recordForageLevel() {
+  const lvl = state.forageLevel;
+  const need = FORAGE_LEVEL_THRESHOLDS[lvl.level];
+  if (need === undefined) return false;
+  lvl.clicks += 1;
+  if (lvl.clicks >= need) {
+    lvl.clicks = 0;
+    lvl.level += 1;
+    return true;
+  }
+  return false;
+}
+
+// Starts a gather from the given pool if nothing's already running --
+// shared by the player's own tap (tapForage(), below) and the villager's
+// automatic one (settleForage()). Silent no-op if a gather is already in
+// flight, same "already running" rule startCraft() follows. Speed is read
+// fresh at this exact moment (forageMs()), so a level gained mid-gather
+// only ever speeds up the *next* one, not this one already in flight.
+function startForage(poolId) {
+  if (state.forage) return;
+  const ms = forageMs();
+  state.forage = { startedAt: Date.now(), readyAt: Date.now() + ms, poolId: poolId };
   const fill = pillFor("forage").querySelector(".pill-fill");
   fill.style.transitionDuration = "0ms";
-  fill.style.width = (state.forageProgress / FORAGE_CLICKS_PER_SWING * 100) + "%";
-}
-
-// One tap of progress toward the current swing -- shared by the player's
-// own taps (tapForage(), below) and the villager's automatic ones
-// (settleForage()). Returns the item gathered if this tap completed the
-// swing, or null if the swing is still in progress.
-function addForageTap(poolId) {
-  state.forageProgress += 1;
-  if (state.forageProgress < FORAGE_CLICKS_PER_SWING) return null;
-  state.forageProgress = 0;
-  const item = rollDrop(poolId);
-  gainItem(item, 1);
-  state.foragingXp += FORAGE_XP;
-  return item;
+  fill.style.width = "0%";
+  void fill.offsetWidth;
+  setPillFill("forage", 100, ms);
 }
 
 // The player's own tap on the pill -- available whenever the current
-// location actually has a forage pool assigned (LOCATIONS[...].forage),
-// villager or not. A no-op everywhere else rather than rolling from
-// nothing; refreshForage() below already disables the pill visually so
-// this is a defensive backstop, not the only guard. Resolved synchronously,
-// same as Mining's tapDig(): no deadline, nothing to settle later.
+// location actually has a forage pool assigned (LOCATIONS[...].forage).
+// A no-op everywhere else rather than rolling from nothing; refreshForage()
+// below already disables the pill visually so this is a defensive
+// backstop, not the only guard.
 function tapForage() {
   if (!canForageHere()) return;
-  const item = addForageTap(currentPoolId());
+  startForage(currentPoolId());
   save();
-  setSwingFill(state.forageProgress / FORAGE_CLICKS_PER_SWING * 100);
-  if (item) {
-    updateSkillsNote();
-    showForageResult(item);
-  } else {
-    refreshForage();
-  }
+  refreshForage();
 }
 
-// Resolves however many villager ticks have come due since the last check
-// -- not just one. A long away-gap (a reload, or the game closed entirely)
-// can cross several VILLAGER_TICK_MS at once, each one either advancing the
-// swing or completing it and rolling an item, exactly like a very fast
-// series of taps. Returns every item produced, in order. A no-op with no
-// villager hired, or before one's first tick has ever been scheduled --
-// keeps ticking at VILLAGER_HOME_POOL even while the player has wandered
-// off somewhere with no pool of its own, since the villager never left.
+// Resolves a finished gather and returns the item, or null if nothing was
+// running or it hasn't finished yet. Also records one gather toward
+// foraging's own mastery (recordForageLevel()) -- every completed gather
+// counts toward it, player-tapped or villager-ticked alike, same as
+// itemLevels.js counting every unit produced regardless of which station
+// made it.
+function resolveForage() {
+  if (!state.forage || Date.now() < state.forage.readyAt) return null;
+  const item = rollDrop(state.forage.poolId);
+  gainItem(item, 1);
+  const zoneLevels = gainSkillXp("foragingXp", FORAGE_XP);
+  if (zoneLevels) openZoneWheel(state.currentLocation, zoneLevels);
+  state.forage = null;
+  // Same reset craft.js's settleCraft() does -- without it, a finished
+  // gather's .pill-fill sits at its last-drawn 100% (fully colored)
+  // forever, since nothing else ever points it back at 0%.
+  setPillFill("forage", 0, 0);
+  const leveledUp = recordForageLevel();
+  return { item: item, leveledUp: leveledUp };
+}
+
+// Called every tick (main.js) -- resolves the player's own running gather
+// the instant its deadline passes, same as settleCraft(). Also where the
+// villager's own automatic ticks live: however many VILLAGER_TICK_MS
+// intervals came due since the last check each attempt a startForage() at
+// the villager's own pool (a no-op if the player's own gather is already
+// running), so a long away-gap can still only ever produce as many items
+// as gathers actually had time to complete, chained through this same
+// resolve step. Returns every item produced, in order.
 export function settleForage() {
   const results = [];
-  if (!state.villager.owned || state.villagerNextTickAt === null) return results;
   let changed = false;
-  while (Date.now() >= state.villagerNextTickAt) {
-    changed = true;
-    const item = addForageTap(VILLAGER_HOME_POOL);
-    if (item) results.push(item);
-    state.villagerNextTickAt += villagerTickMs();
+  let leveledUp = false;
+
+  const finished = resolveForage();
+  if (finished) { results.push(finished.item); changed = true; leveledUp = leveledUp || finished.leveledUp; }
+
+  if (state.villager.owned && state.villagerNextTickAt !== null && !state.village.starved) {
+    const poolId = villagerPoolId();
+    if (poolId) {
+      while (Date.now() >= state.villagerNextTickAt) {
+        changed = true;
+        startForage(poolId);
+        const done = resolveForage();
+        if (done) { results.push(done.item); leveledUp = leveledUp || done.leveledUp; }
+        state.villagerNextTickAt += villagerTickMs();
+      }
+    }
   }
+
   if (changed) {
     save();
     if (results.length) updateSkillsNote();
-    setSwingFill(state.forageProgress / FORAGE_CLICKS_PER_SWING * 100);
+    refreshForage(leveledUp);
   }
   return results;
 }
@@ -210,6 +270,27 @@ export function showAwayPopup(items, awayMs) {
   openSheet("Welcome back");
 }
 
+// The mastery badge/bar on the pill's bottom edge -- same two elements and
+// same visual language as a Craft pill's own (.pill-level-badge/
+// .pill-level-fill, see itemLevels.js and style.css's shared rules for
+// both). Redrawn every refreshForage() call, independent of whatever the
+// pill's idle text is doing, so it stays current through every state --
+// idle, running, or mid-result-flash.
+function drawForageLevel(flash) {
+  const pill = pillFor("forage");
+  const badge = pill.querySelector(".pill-level-badge");
+  const levelFill = pill.querySelector(".pill-level-fill");
+  if (!badge || !levelFill) return;
+  const p = forageLevelProgress();
+  badge.textContent = String(p.level);
+  levelFill.style.width = (p.need > 0 ? (p.into / p.need * 100) : 100).toFixed(1) + "%";
+  if (flash) {
+    badge.classList.remove("pop");
+    void badge.offsetWidth;
+    badge.classList.add("pop");
+  }
+}
+
 // Redraws the pill's idle text without touching an in-flight fill's
 // transition -- safe any time except while a result is still being shown,
 // which reverts on its own timeout. Hiring/upgrading the villager lives on
@@ -217,20 +298,48 @@ export function showAwayPopup(items, awayMs) {
 // reflects whether one's already working, and invites the player to tap
 // along when it is. Greyed out (and the pill's own click becomes a no-op
 // via tapForage()'s own guard) wherever the current location has no
-// forage pool assigned yet.
-export function refreshForage() {
+// forage pool assigned yet. `flash` (from settleForage(), when a gather
+// just pushed foraging to a new level) pops the mastery badge the same way
+// a leveled-up Craft pill's own badge does.
+export function refreshForage(flash) {
   const pill = pillFor("forage");
   pill.classList.toggle("forage-disabled", !canForageHere());
+  pill.classList.toggle("active", !!state.forage);
+  drawForageLevel(flash);
   if (pill.classList.contains("result")) return;
   if (!canForageHere()) {
     pill.querySelector(".pill-sub").textContent = "Nothing to forage here";
     pill.querySelector(".pill-name").textContent = "Forage";
     return;
   }
-  pill.querySelector(".pill-sub").textContent = state.villager.owned
-    ? "Villager taps every " + (villagerTickMs() / 1000) + "s — tap to help"
-    : "Tap to forage";
+  let sub;
+  if (state.forage) {
+    sub = "Foraging…";
+  } else if (state.villager.owned) {
+    if (state.village.starved) {
+      sub = "Villager's out of supplies — donate at Township";
+    } else if (state.villager.homeLocation !== state.currentLocation) {
+      sub = "Villager's working " + (LOCATIONS[state.villager.homeLocation] || {}).name;
+    } else {
+      sub = "Villager taps every " + (villagerTickMs() / 1000) + "s — tap to forage";
+    }
+  } else {
+    sub = "Tap to forage";
+  }
+  pill.querySelector(".pill-sub").textContent = sub;
   pill.querySelector(".pill-name").textContent = state.villager.owned ? "Forage \u{1F9D1}\u{200D}\u{1F33E}" : "Forage";
+}
+
+// Draws the fill instantly, no transition -- for the very first paint after
+// a reload, so a gather already partway done doesn't animate in from 0%.
+export function drawForageProgress() {
+  const fill = pillFor("forage").querySelector(".pill-fill");
+  fill.style.transitionDuration = "0ms";
+  if (state.forage) {
+    setPillFill("forage", 100, Math.max(0, state.forage.readyAt - Date.now()));
+  } else {
+    fill.style.width = "0%";
+  }
 }
 
 // Called by township.js right after a successful hire -- schedules the

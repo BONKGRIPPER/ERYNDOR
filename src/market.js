@@ -443,9 +443,16 @@ export function buildMarket() {
   updateMarketHeader();
   syncMarketTabs();
   const loc = LOCATIONS[zone()];
-  if (!locationHasMarket(loc)) { buildNoMarketNotice(); return; }
-  if (view === "bank") { buildBankList(); return; }
-  if (!marketOpenHere()) { buildClosedNotice(); return; }
+  const list = el("market-list");
+  // "notice-only" pins the list to the bottom of the screen instead of its
+  // usual spot right under the tabs -- see the .craft-list.notice-only
+  // rule in style.css. Only the two single-notice cases below get it; the
+  // Bank tab's own empty states ("Nothing banked yet.") sit inside real
+  // section headings, not floating alone, so they're left alone.
+  if (!locationHasMarket(loc)) { list.classList.add("notice-only"); buildNoMarketNotice(); return; }
+  if (view === "bank") { list.classList.remove("notice-only"); buildBankList(); return; }
+  if (!marketOpenHere()) { list.classList.add("notice-only"); buildClosedNotice(); return; }
+  list.classList.remove("notice-only");
   if (view === "buy") buildBuyList(); else buildSellList();
 }
 
