@@ -2500,6 +2500,50 @@ granted the exact reward amount to the bag before the reel animation even
 finished. A forced 4-level-in-one-grant case correctly queued and played
 through multiple spins in sequence rather than skipping any.
 
+## A built station moves onto Home, not just the Craft Bench
+
+Reverses half of an earlier move (2026-08-31): every BUILDINGS-backed
+station (Campfire, Spinning Wheel, Sawmill, Stone Cutter, Tanning Station,
+Township, Armor Bench) used to live inside the Craft Bench permanently,
+built or not. Now the *unbuilt* "Build ___" prompt is still Craft-Bench-
+only (`buildings.js`'s `drawStationCards()`), but the instant it's built,
+its card disappears from there and appears on Home instead -- moved, not
+duplicated, joining Farm/Forest/Mining/Combat as a real destination.
+`hub.js`'s `visiblePlaces()` now only excludes a BUILDINGS-keyed place
+when it's *not yet* built (or built but doesn't belong at the player's
+current location, per `LOCATIONS[...].stations` -- same gate
+`buildings.js`'s own `belongsHere()` already used); a built one that
+belongs here passes through like any other card, picked up by the exact
+same generic click-through `drawMenu()` already gives every Home card, no
+special-casing needed. The build tap itself now calls `drawMenu()`
+alongside its existing `drawStationCards()` refresh, so the new card
+shows up on Home the same instant it vanishes from the Craft Bench, not
+just the next time the player happens to navigate away and back.
+
+Verified live: building the Spinning Wheel made its card vanish from the
+Craft Bench's own list and appear on Home in the same tap, correctly
+routing to its own screen from there; a Sawmill left built from earlier
+testing was already showing on Home before this check even ran, since the
+new filter reads `state.buildings` directly rather than needing any
+one-time migration.
+
+## The zone level-up wheel is disabled, not removed
+
+Per the user's own request (2026-08-31), a zone leveling up no longer
+opens or spins the loot wheel -- but nothing from the previous section is
+torn out. `zoneWheel.js` gained one flag, `const WHEEL_ENABLED = false;`,
+and `openZoneWheel()` now returns immediately when it's false, before
+touching the spin queue at all. Everything underneath is still real,
+working code: `state.zones`/`gainZoneXp()`/`gainSkillXp()` in state.js
+keep tracking every zone's XP and levels exactly as before (a zone can
+still silently level up in the background, it just has no visible payoff
+right now), every skill's own call site still calls `openZoneWheel()` the
+exact same way, and `spin()`/`buildReel()`/the queue are all untouched --
+simply unreachable while the flag is false. Re-enabling later is flipping
+that one flag back, not rebuilding anything. Verified live: forced a zone
+level-up and confirmed it actually leveled (2, in `state.zones`) while the
+`#zonewheel` overlay stayed hidden and granted no reward.
+
 ## Adding to it
 
 A new crop, tree, or recipe is one entry in `src/data.js`; a new zone's

@@ -29,15 +29,25 @@ function fishingHere() {
 }
 
 // A BUILDINGS-backed place (Campfire, Spinning Wheel, Sawmill, Stone
-// Cutter, Tanning Station, Township) never gets a Home hub card at all
-// any more (2026-08-30) -- built or not, it lives inside the Craft Bench
-// screen instead (src/buildings.js's drawStationCards()), so Home stays
-// just the core-loop cards. Fishing has no build step, just its own
-// location check (fishingHere() above).
+// Cutter, Tanning Station, Township, Armor Bench) moves onto Home the
+// instant it's actually built (2026-08-31) -- joining Farm/Forest/Mining/
+// etc. as a real destination, same generic click-through drawMenu() below
+// already gives every other card. Unbuilt, it's still a "Build ___" prompt
+// inside the Craft Bench only (src/buildings.js's drawStationCards(),
+// which stops rendering a card for it here the same moment it starts
+// showing on Home -- moved, not duplicated). Also gated on actually
+// belonging at the player's current location (LOCATIONS[...].stations),
+// same rule buildings.js's own belongsHere() uses, so a station only ever
+// shows on the one Home it was built for. Fishing has no build step, just
+// its own location check (fishingHere() above).
 function visiblePlaces() {
   return PLACES.filter(function (place) {
     if (!place.hub) return false;
-    if (place.id in BUILDINGS) return false;
+    if (place.id in BUILDINGS) {
+      if (!state.buildings[place.id]) return false;
+      const loc = LOCATIONS[state.currentLocation];
+      return !!(loc && loc.stations && loc.stations.indexOf(place.id) >= 0);
+    }
     if (place.id === "fishing") return fishingHere();
     return true;
   });

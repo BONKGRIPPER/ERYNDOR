@@ -128,10 +128,22 @@ function spin(zoneId) {
   }, settleMs + 2400);
 }
 
+// Disabled for now (2026-08-31), per the user's own request -- a zone
+// level-up no longer opens or spins this at all. Nothing underneath is
+// torn out: state.zones/gainZoneXp()/gainSkillXp() in state.js keep
+// tracking zone XP and levels exactly as before (every skill's own call
+// site still calls this exact function the same way, still passing
+// however many levels a grant just crossed), and spin()/buildReel()/the
+// queue above are all still real, working code -- just never reached
+// while this flag is false. Flip it back to re-enable; nothing else needs
+// touching.
+const WHEEL_ENABLED = false;
+
 // Called by every skill's own gain-XP call site with however many levels
 // gainSkillXp() just reported (0 most of the time -- a no-op call, so
 // nothing else has to guard the call site itself with an `if`).
 export function openZoneWheel(zoneId, levels) {
+  if (!WHEEL_ENABLED) return;
   for (let i = 0; i < levels; i++) queue.push(zoneId);
   runNext();
 }
