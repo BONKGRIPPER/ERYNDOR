@@ -132,19 +132,32 @@ function recordForageLevel() {
 
 // Starts a gather from the given pool if nothing's already running --
 // shared by the player's own tap (tapForage(), below) and the villager's
-// automatic one (settleForage()). Silent no-op if a gather is already in
-// flight, same "already running" rule startCraft() follows. Speed is read
-// fresh at this exact moment (forageMs()), so a level gained mid-gather
-// only ever speeds up the *next* one, not this one already in flight.
-function startForage(poolId) {
-  if (state.forage) return;
+// own catch-up loop (settleForage()). Returns whether it actually started,
+// so a caller that gets `false` back (a gather -- the player's own, or a
+// still-unresolved villager cycle from earlier in the very same catch-up
+// pass -- is already occupying the slot) knows not to treat this as done.
+//
+// `at` is when this gather is considered to have started -- Date.now() for
+// a live tap, but the villager's own catch-up loop passes each overdue
+// cycle's own scheduled due time instead, so a burst of many cycles missed
+// during a long background/closed-tab gap each resolves the instant the
+// next one starts (chained straight through, one real item per cycle,
+// same "offline catch-up is free and complete" rule mining/growth timers
+// already follow) rather than only the very first one ever completing
+// while the rest get silently skipped. Speed (forageMs()) is still read
+// fresh at that moment either way, so a level gained between cycles speeds
+// up the next one, same as it would in real time.
+function startForage(poolId, at) {
+  if (state.forage) return false;
+  const startedAt = at === undefined ? Date.now() : at;
   const ms = forageMs();
-  state.forage = { startedAt: Date.now(), readyAt: Date.now() + ms, poolId: poolId };
+  state.forage = { startedAt: startedAt, readyAt: startedAt + ms, poolId: poolId };
   const fill = pillFor("forage").querySelector(".pill-fill");
   fill.style.transitionDuration = "0ms";
   fill.style.width = "0%";
   void fill.offsetWidth;
   setPillFill("forage", 100, ms);
+  return true;
 }
 
 // The player's own tap on the pill -- available whenever the current
@@ -183,11 +196,19 @@ function resolveForage() {
 // Called every tick (main.js) -- resolves the player's own running gather
 // the instant its deadline passes, same as settleCraft(). Also where the
 // villager's own automatic ticks live: however many VILLAGER_TICK_MS
-// intervals came due since the last check each attempt a startForage() at
-// the villager's own pool (a no-op if the player's own gather is already
-// running), so a long away-gap can still only ever produce as many items
-// as gathers actually had time to complete, chained through this same
-// resolve step. Returns every item produced, in order.
+// intervals came due since the last check, each one starts (and, since
+// startForage() backdates it to its own scheduled due time, immediately
+// resolves) its own gather, chained straight through the while loop --
+// bug fixed 2026-09-01: `state.villagerNextTickAt` used to advance every
+// iteration regardless of whether startForage() actually started
+// anything, so any gap spanning more than one villager tick (the tab
+// backgrounded, or the player's own gather still occupying the slot)
+// silently fast-forwarded the schedule past every missed cycle but the
+// first, discarding the rest instead of catching them up -- exactly the
+// "villagers stop working" symptom this was reported as. Now the loop
+// stops (without advancing) the moment a cycle can't start, so a blocked
+// tick is retried on a later call rather than lost outright. Returns
+// every item produced, in order.
 export function settleForage() {
   const results = [];
   let changed = false;
@@ -200,8 +221,8 @@ export function settleForage() {
     const poolId = villagerPoolId();
     if (poolId) {
       while (Date.now() >= state.villagerNextTickAt) {
+        if (!startForage(poolId, state.villagerNextTickAt)) break;
         changed = true;
-        startForage(poolId);
         const done = resolveForage();
         if (done) { results.push(done.item); leveledUp = leveledUp || done.leveledUp; }
         state.villagerNextTickAt += villagerTickMs();

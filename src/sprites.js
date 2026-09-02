@@ -5,7 +5,8 @@
 // shows a broken image -- see assets/sprites/README.md for exact filenames.
 //
 //   assets/sprites/soil/tilled.png          the plot background, all plots
-//   assets/sprites/tools/seeds.png          the two tool icons
+//   assets/sprites/tools/seeds.png          the three tool icons
+//   assets/sprites/tools/fertilizer.png
 //   assets/sprites/tools/water.png
 //   assets/sprites/crops/<cropId>/<n>.png   growth frame n, 0..crop.waters
 //                                            (n == waters is the ripe frame)
@@ -42,7 +43,7 @@ export function slug(name) {
 
 function allSpriteKeys() {
   const keys = [
-    "soil/tilled", "tools/seeds", "tools/water",
+    "soil/tilled", "tools/seeds", "tools/fertilizer", "tools/water",
     "forage/basket", "mining/pickaxe",
   ];
   Object.keys(CROPS).forEach(function (id) {

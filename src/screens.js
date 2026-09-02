@@ -31,7 +31,7 @@ import { drawStationCards } from "./buildings.js";
 // Exported so main.js's tick loop can use the same list for its own
 // "still sitting on one of these" check, rather than a second copy of it
 // drifting out of sync.
-export const STATION_SCREENS = ["spinningWheel", "sawmill", "stoneCutter", "tanningStation", "armorBench"];
+export const STATION_SCREENS = ["spinningWheel", "sawmill", "stoneCutter", "tanningStation", "armorBench", "grindStone"];
 
 // The screen lives in the URL hash, so a reload puts you back where you were
 // and the browser's back button works without any routing code. Adding a

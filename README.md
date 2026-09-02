@@ -2544,6 +2544,237 @@ that one flag back, not rebuilding anything. Verified live: forced a zone
 level-up and confirmed it actually leveled (2, in `state.zones`) while the
 `#zonewheel` overlay stayed hidden and granted no reward.
 
+## Chopping becomes single-tap-and-timer, and the Axe moves onto the screen itself
+
+Chopping was a straight HP fight (every tap instant, tree falls the
+moment health hits 0 in that same tap) -- now it's single-tap-and-timer,
+same shape as every other pill in this game (Crafting, Foraging, Mining's
+own Dig). One tap on a ripe Pine starts a swing
+(`plot.chopSwing = {startedAt, readyAt}`); no more tapping needed, and it
+fells the tree on its own the instant that deadline passes. Swing length
+is the tree's own `health` (still 24 for Pine, unchanged) divided by the
+equipped axe's `damage` (AXES in data.js, unchanged: Wooden 1, Flint 2,
+Stone 3) -- 24s/12s/8s respectively -- and it's locked into the swing at
+the moment it *starts*, not re-read when it resolves, same "recipe locked
+at start" rule craft.js's startCraft() follows: re-equipping a better axe
+mid-chop only speeds up the *next* tree, not the one already falling.
+Unlike Mining's Dig pill (a CSS-transition sweep), the chop fill bar
+reuses Logging's own existing "recompute from stored timestamps every
+redraw" approach that the growth bar already used -- no separate
+boot-resume step needed, it's just correct the instant `drawLogging()`
+runs after a reload. A tap on an already-chopping plot is a silent no-op,
+same "already running" rule every other pill's own tap-while-active
+follows.
+
+The Axe is equipped straight from the Logging screen now too -- a new
+`#log-axe-slot` sits above the tree pills, same system as Inventory's own
+Equipment page (`drawAxeSlot()`/`openAxePicker()` in logging.js mirror
+inventory.js's `buildEquipRow()`/`openEquipPicker()` almost line for
+line). It writes the exact same `state.equipment.axe` field Inventory
+reads, so there's no separate "logging axe" to keep in sync -- equip a
+Flint Axe here and Inventory's own Equipment page shows it the next time
+it's opened, and vice versa. The old static "Axe: Wooden Axe" status line
+is gone, replaced by this real, tappable equip-row.
+
+Verified live: a Wooden Axe's swing measured exactly 24000ms against
+Pine's 24 health; tapping mid-swing was a confirmed no-op; equipping a
+Stone Axe mid-chop left the already-running swing's duration untouched
+while a *freshly started* chop on another plot correctly measured 8000ms;
+forcing a swing to resolve granted +3 Pine Logs and +34 Logging XP and
+restarted growth; and equipping a Flint Axe from the new Logging-screen
+picker correctly moved Stone Axe back to the bag, removed Flint Axe from
+it, and showed up as the equipped Axe on Inventory's own Equipment page
+immediately after.
+
+## No more breathing pulse on a ripe plot, and the Axe shows its own damage
+
+Two small follow-ups to the chopping rework above (2026-08-31):
+
+- The equipped Axe's damage now shows right next to its name on the new
+  Logging equip-row -- "Wooden Axe · 1 dmg" instead of a bare item name --
+  since that's the number actually driving the chop-time formula
+  (`TREE.health / damage`) the player would otherwise have to already
+  know by heart.
+- The gentle "breathing" glow every ripe plot pulsed with (`.plot.ripe`'s
+  own `breathe` animation) is off, first for just Logging's own ripe
+  Pines, then for Farm's ripe crops too once asked. **Disabled, not
+  deleted** -- same convention as the zone-level wheel a few sections up:
+  `.plot.ripe` simply no longer references the `animation` property, and
+  the `@keyframes breathe` block is still sitting right there in
+  style.css. Bringing it back for either screen is one line
+  (`.plot.ripe { animation: breathe 2.1s ease-in-out infinite; }` for
+  both, or scoped to just `#screen-field .plot.ripe` / `#log-plots
+  .plot.ripe` for one alone), not rebuilding the animation from scratch.
+
+Verified live: a ripe Pine's equip-row read "Wooden Axe · 1 dmg"; a ripe
+plot's computed `animation-name` read `"none"` on both the Logging and
+Farm screens after the second request, where it previously read
+`"breathe"`.
+
+## Furnace removed, Craft Bench reordered, and a real balance pass
+
+Three small changes together (2026-09-01):
+
+- **Furnace is gone** -- it was always just a locked "not built yet" card
+  on Home (`ready: false` in `PLACES`), never a real station or building
+  anywhere in the code. Removed outright, not disabled -- there was
+  nothing underneath it to preserve, unlike the zone-level wheel a few
+  sections up. A handful of stale comments elsewhere in data.js/
+  campfire.js that used "the Furnace" as a "real spot, nothing behind it
+  yet" example got cleaned up to stop pointing at something that no
+  longer exists.
+- **Craft Bench reordered**: the buildable-stations grid (`#craft-stations`)
+  moved below the Recipes list instead of above it, under its own new
+  "Stations" label -- the recipes a player reaches for over and over
+  belong first, not a row of one-time "Build ___" prompts most of which
+  vanish from this screen entirely the moment they're actually built (see
+  hub.js's `visiblePlaces()` -- a built station moves onto Home instantly).
+- **Balance pass** on crafting/building costs:
+  - Flint Axe / Flint Pickaxe: 20 Flint/20 Sticks → **10 Flint/10 Sticks**.
+  - Stone Pickaxe / Stone Axe: switched from raw Stone/Pine Logs to their
+    own processed forms -- **9 Stone Block / 9 Pine Planks** each. A real
+    conversion-chain cost now (Stone Cutter + Sawmill output), not a
+    shortcut straight off gathered materials.
+  - Spinning Wheel (to build): Sticks/Pine Logs → **6 Scrap Metal / 15
+    Pine Planks**.
+  - Stone Cutter (to build): Stone cost down from 25 to **18**; Sticks
+    cost (10) unchanged.
+  - Township (to build): Stone/Pine Logs → **5 Basalt Block / 12 Pine
+    Planks**.
+
+  All of these are `RECIPES`/`BUILDINGS` entries in data.js only --
+  nothing in craft.js/buildings.js itself changed, since every pill's own
+  cost text is already computed live from that data (`buildCostNodes()`,
+  see the CRAFT_MS comment above), not hardcoded in index.html. The
+  static placeholder text still sitting in index.html's markup (e.g. "20
+  Flint · 20 Sticks") is overwritten on the very first draw and was never
+  the source of truth.
+
+Verified live: Furnace's card is gone from Home with no gap left in the
+grid; the Craft Bench screen's real child order reads Recipes label →
+recipe list → Stations label → station grid; and all seven changed costs
+read back exactly right from the live DOM (not just the source data) --
+`0/10 Flint · 0/10 Sticks` for both Flint tools, `0/9 Stone Block · 0/9
+Pine Planks` for both Stone tools, and `0/6 Scrap Metal · 0/15 Pine
+Planks` / `0/18 Stone · 0/10 Sticks` / `0/5 Basalt Block · 0/12 Pine
+Planks` for Spinning Wheel/Stone Cutter/Township respectively.
+
+## A real bug: villagers silently losing work while the player was away
+
+Reported (2026-09-01) as "villagers don't work consistently while idle" --
+confirmed as a real bug in `forage.js`'s villager catch-up loop, not a
+flaky feeling. `settleForage()`'s while loop advanced
+`state.villagerNextTickAt` by `villagerTickMs()` on *every* iteration,
+whether or not `startForage()` actually started anything. `startForage()`
+always set the new gather's `readyAt` to a real *future* time (`Date.now()
++ forageMs()`), so calling it more than once in the same synchronous pass
+meant every iteration after the first was a silent no-op (the slot was
+already occupied by the still-pending first one) -- yet the schedule kept
+marching forward regardless, "catching up" to the present while actually
+producing at most one item, no matter how many villager ticks (every 30s)
+had genuinely come due. Any gap longer than one tick -- the tab
+backgrounded, the phone locked, or simply the player's own manual gather
+happening to be running when a tick landed -- silently discarded every
+missed cycle but the first.
+
+Fixed two ways together: `startForage()` now returns whether it actually
+started (`false` when a gather -- the player's own, or an unresolved
+villager cycle from earlier in the very same pass -- is already
+occupying the slot), and the loop stops advancing the schedule the moment
+that happens, so a blocked tick is retried on a later call instead of
+being marked done. Separately, `startForage()` now accepts the gather's
+own `startedAt` instead of always assuming "right now" -- the villager
+loop passes each overdue cycle's *own* scheduled due time, so a real
+catch-up burst resolves every missed cycle instantly in the same pass
+(chained straight through, same "offline progress is free and complete"
+rule mining/growth timers already follow), rather than only the first one
+ever completing.
+
+Verified live: backdating `state.villagerNextTickAt` by 5 missed ticks
+(150s) and calling `settleForage()` once produced 5 real items across 5
+resolved cycles (previously this same setup produced exactly 1, no matter
+how many ticks were actually overdue); a due tick correctly deferred
+(schedule left untouched) while the player's own gather was still
+running, then fired on its own the moment that gather cleared, with
+nothing lost either way.
+
+## Two more Home-hub/UI fixes alongside it
+
+- **The "needs attention" ring on Forest was checking the wrong shape.**
+  `plotsNeedAttention()` was one shared function for both Farm and
+  Logging's hub-card highlight, written back when both used the same
+  `{crop, stage}` plot shape -- Logging's own rework (auto-regrowing
+  Pines, no seed/plant step, `{chopHealth, chopSwing}` instead) left it
+  checking fields that no longer exist on a log plot at all, so it always
+  fell through to checking for "Pine Cones" in the bag -- an item that
+  hasn't been obtainable since that same rework. Split into
+  `fieldNeedsAttention()` (unchanged logic, Farm's own shape) and a new
+  `loggingNeedsAttention()` (`chopHealth !== null && !chopSwing` -- ripe
+  and not already mid-swing) that actually matches Logging's real state.
+  Verified live: the Forest card lit up the instant a tree was ripe and
+  idle, stayed dark with every tree either growing or already mid-chop,
+  and correctly ignored a tree mid-swing as "already being handled."
+- **The chop bar's choppy motion.** Farm/Logging's plot bars recompute
+  their width fresh every ~200ms tick rather than using the one-shot CSS
+  transition Craft/Mining/Forage's own pills do, and `.pill-fill`'s base
+  rule declares a transition *property* but no *duration* -- so each
+  update used to just snap instantly, reading as a visible stair-step
+  rather than a smooth fill. Most noticeable on Logging's own chop bar,
+  whose whole run is only a few seconds (a large fraction of it made of
+  200ms jumps); given a `transition-duration` slightly longer than the
+  tick interval, it now smooths every plot bar the same way.
+
+## The Grind Stone, and Farm's first fertilizer
+
+Two new pieces, built together (2026-09-02):
+
+- **Grind Stone** -- a new conversion station, Bones → Bonemeal, same
+  generic single-recipe shape every other station (Sawmill, plain Stone
+  Cutter) already uses: its own screen, its own new skill ("Grinding",
+  `grindingXp`), 3 Bones per Bonemeal, 10s, 10 XP. Costs 6 Basalt Block +
+  9 Pine Planks to build -- exact numbers weren't given in the request, so
+  this matches the same processed-material price tier Township/Armor
+  Bench already sit at, a first-pass placeholder like every other
+  not-yet-balanced number in this game. Every touchpoint a station needs
+  followed the exact same checklist Armor Bench's own addition did:
+  `PLACES`/`SCREEN_IDS`/`BUILDINGS`/`STATIONS`/`LOCATIONS.aerendell.stations`
+  in data.js, `STATION_SCREENS` in screens.js, and its own `#screen-
+  grindStone` markup in index.html -- buildings.js/stations.js/hub.js
+  needed zero changes, since all three are already fully generic over
+  whatever's in `BUILDINGS`/`STATIONS`.
+- **Bonemeal** -- the first fertilizer item (`FERTILIZERS` in data.js,
+  `{ growthMult: 1.5 }`, first-pass). A new third Farm tool, Fertilizer,
+  sits between Seeds and the Watering Can (`.tools` back to a 3-column
+  grid). Its own window is narrow and one-directional, per the user's own
+  spec ("must fertilize before watering"): `canUse()` only allows it on a
+  freshly-planted plot that hasn't taken a single watering tap yet
+  (`waterProgress === 0`) and doesn't already have one applied -- once
+  even one water tap lands, or a fertilizer's already on it, tapping it
+  again gives a specific reason why ("Already watering — too late to
+  fertilize." / "Already fertilized.") rather than a generic refusal.
+  `plot.fertilizer` stores *which* fertilizer (the item's own name, not
+  just a bool) so a second tier can coexist later without redesigning the
+  field; `water()` reads `FERTILIZERS[plot.fertilizer].growthMult` into
+  its existing level x season speed calc, locked in the same "read once at
+  the moment the timer starts" way both of those already are. Cleared back
+  to null on `plant()` (fresh cycle) and on harvest's own reset.
+
+  The violet glow (`.plot.fertilized` in style.css, `filter: drop-shadow`
+  rather than `box-shadow` specifically so it never has to fight the
+  green/gold actionable rings for the same CSS property) lasts the whole
+  cycle once applied -- thirsty through ripe -- not just the moment of
+  application, so a fertilized plot stays visibly marked the entire time
+  it's actually working.
+
+Verified live end to end: fertilizing consumed one Bonemeal and set
+`plot.fertilizer`; a second attempt was correctly blocked with the right
+reason; watering to completion produced a `readyAt` that matched the
+hand-computed level x season x 1.5 formula to a fraction of a
+millisecond; the glow (`filter: drop-shadow(...)`) was present while
+growing; and the Grind Stone itself built, moved onto Home, and its own
+recipe correctly spent 3 Bones and granted 1 Bonemeal plus 10 Grinding XP
+on completion.
+
 ## Adding to it
 
 A new crop, tree, or recipe is one entry in `src/data.js`; a new zone's

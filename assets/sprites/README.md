@@ -6,7 +6,8 @@ on its built-in vector placeholder art.
 
     soil/tilled.png            the plot background, shared by all six plots
 
-    tools/seeds.png            the two tool icons
+    tools/seeds.png            the three tool icons
+    tools/fertilizer.png
     tools/water.png
 
     crops/<cropId>/<n>.png     one growth frame per stage of a crop

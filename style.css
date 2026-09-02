@@ -344,31 +344,37 @@ body {
 .plot-expand-cost .cost-ingredient.have-enough { color: var(--green); }
 .plot-expand-cost .cost-ingredient.have-short { color: var(--warn); }
 
-/* Logging's small "which axe is doing this" line -- there's no tool
-   button to show it on any more (see logging.js's rework), just a plain
-   status row above the plots, same reasoning Mining's own equipped-
-   pickaxe line already has. */
-.log-axe-row {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 2px 2px 4px;
-  font-size: 12.5px;
-}
-.log-axe-label { color: var(--dim); }
-.log-axe-name { font-weight: 650; }
+/* Logging's Axe slot (2026-08-31) -- a real equip-row now, not a plain
+   status line, using the shared .equip-row look Inventory's own Equipment
+   page already defines (see style.css's "inventory" section below and
+   logging.js's drawAxeSlot()). No rules needed here beyond spacing above
+   the plots. */
+.log-axe-slot { margin-bottom: 4px; }
 
 /* Growing is the pill's own default fill color (the same green every other
    pill uses); watering gets its own blue so "the can is running the show
-   right now" reads at a glance, and ripe locks to gold at full width and
-   breathes gently so a plot ready to act on doesn't get lost in a list of
-   several. Logging's own "ripe" is a partial bar instead (chop damage
-   dealt so far, see #log-plots override below), not a full one -- the
-   breathing cue still applies, it just isn't tied to the fill being full
-   any more. */
+   right now" reads at a glance, and ripe locks to gold at full width.
+   Logging's own "ripe" is a partial bar instead (chop damage dealt so
+   far, see #log-plots override below), not a full one.
+   No breathing pulse any more, for either screen (2026-08-31, disabled
+   -- not deleted: the @keyframes and the "ripe" state it drove are both
+   still real below, `.plot.ripe` just no longer references the
+   animation property, a one-line revert to bring it back). */
 .plot.watering .pill-fill { background: rgba(120, 180, 235, 0.34); }
 .plot.ripe .pill-fill { background: rgba(216, 189, 106, 0.36); }
-.plot.ripe { animation: breathe 2.1s ease-in-out infinite; }
+/* Farm/Logging plots recompute this bar's width fresh every tick (~200ms,
+   see field.js's drawField()/logging.js's drawLogging()) rather than the
+   one-shot CSS transition Craft/Mining/Forage's own pills use -- without
+   a transition duration of its own, .pill-fill's base rule (transition-
+   property only, no duration) means each of those updates just snaps
+   instantly, reading as a choppy stair-step instead of a smooth fill.
+   Longer than the tick interval itself (2026-09-01) so each step is still
+   easing into the next one when the following tick's own update arrives,
+   rather than sitting still and waiting for it. Most visible on
+   Logging's own chop bar (its whole run is only a few seconds, so 200ms
+   steps were a large fraction of it) but smooths every plot bar the same
+   way. */
+.plot .pill-fill { transition-duration: 0.25s; }
 @keyframes breathe {
   0%, 100% { box-shadow: 0 0 0 0 rgba(216, 189, 106, 0); }
   50%      { box-shadow: 0 0 14px 0 rgba(216, 189, 106, 0.30) inset; }
@@ -384,6 +390,16 @@ body {
 .plot.actionable { box-shadow: 0 0 0 2px var(--green) inset; }
 .plot.actionable.wet-target { box-shadow: 0 0 0 2px #78b4eb inset; }
 .plot.ripe.actionable { box-shadow: 0 0 0 2px var(--gold) inset; }
+
+/* Fertilized (2026-09-02) -- a soft violet glow around the whole pill,
+   lasting the entire crop cycle it was applied to (thirsty through ripe),
+   not just the moment it's applied. Uses `filter: drop-shadow`, not
+   `box-shadow`, specifically so it never has to fight the actionable/
+   ripe rings above for the same CSS property -- a filter and a box-shadow
+   are independent properties, so this one rule layers correctly under
+   every combination of the states above rather than needing one combined
+   selector per combination. */
+.plot.fertilized { filter: drop-shadow(0 0 6px rgba(168, 120, 225, 0.7)); }
 
 /* Logging only: one sharp impact per axe tap, whether or not that's the
    one that fells the tree -- chopping is instant now (see logging.js's
@@ -418,9 +434,10 @@ body {
 /* ================================ tools ================================ */
 .tools {
   display: grid;
-  /* Two tools now (Seeds, Watering Can) -- the Scythe's old column left a
-     visible empty third square once it was removed (2026-08-31). */
-  grid-template-columns: repeat(2, 1fr);
+  /* Three tools again (2026-09-02): Seeds, Fertilizer, Watering Can --
+     back to 3 columns now that Fertilizer fills the slot the Scythe's
+     removal (2026-08-31) had left empty. */
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
 .tool {

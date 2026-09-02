@@ -122,6 +122,7 @@ export const state = {
   tanningXp: 0,
   fishingXp: 0,
   tailoringXp: 0,
+  grindingXp: 0,
   // One active cycle per conversion station, keyed by STATIONS id -- null
   // while idle, {startedAt,readyAt} while running. See src/stations.js.
   stations: {},
@@ -279,6 +280,13 @@ Object.keys(STATIONS).forEach(function (id) { state.stations[id] = null; });
 for (let i = 0; i < PLOT_COUNT; i++) {
   state.plots.push({
     crop: null, stage: 0, startedAt: 0, readyAt: null, waterProgress: 0,
+    // Which fertilizer (a FERTILIZERS key in data.js) was applied this
+    // cycle, or null -- the item's own name, not just a boolean, so
+    // water() can read *which* growthMult applies once a second
+    // fertilizer tier exists. Set by field.js's fertilize(), read by
+    // water() when it starts the growth timer, cleared on
+    // plant()/harvest reset.
+    fertilizer: null,
   });
   // Already growing from the moment a save exists -- no cone to plant, no
   // can to fill. Base stageSeconds only (no level/time speed multiplier
@@ -289,6 +297,10 @@ for (let i = 0; i < PLOT_COUNT; i++) {
     startedAt: startedAt,
     readyAt: startedAt + TREES.pine.stageSeconds * 1000,
     chopHealth: null,
+    // The one running chop swing, or null while idle -- {startedAt,
+    // readyAt}, same shape state.mineSwing already uses. See logging.js's
+    // startChop()/settleLogging().
+    chopSwing: null,
   });
 }
 // Every slot starts filled with its matching starter tool -- there's
@@ -338,6 +350,7 @@ export function save() {
       stonecuttingXp: state.stonecuttingXp, tanningXp: state.tanningXp,
       fishingXp: state.fishingXp, fishing: state.fishing,
       tailoringXp: state.tailoringXp,
+      grindingXp: state.grindingXp,
       village: state.village,
       zones: state.zones,
       stations: state.stations,
@@ -473,6 +486,10 @@ export function load() {
       // timer any more), so it's just dropped; the crop itself is still
       // there and ripe, one tap away from harvesting the normal way.
       state.plots.forEach(function (p) { delete p.reapReadyAt; });
+      // A save from before Fertilizer existed (2026-09-02) has no
+      // `fertilizer` at all -- starts null, same as any other plot that's
+      // simply never had one applied.
+      state.plots.forEach(function (p) { if (typeof p.fertilizer !== "string") p.fertilizer = null; });
     }
     if (Array.isArray(data.logPlots) && data.logPlots.length >= PLOT_COUNT) {
       // A save from before Logging dropped seeds/watering (2026-08-30) has
@@ -492,6 +509,11 @@ export function load() {
         // number that never meant the same thing.
         state.logPlots.forEach(function (p) {
           if (p.chopHealth === undefined) p.chopHealth = null;
+          // A save from before chopping became a single timer (2026-08-31)
+          // has no `chopSwing` at all -- nothing to resume, same as any
+          // other mid-progress state this game doesn't try to carry
+          // across a shape change (see mineSwing's own load guard above).
+          if (!p.chopSwing || typeof p.chopSwing.readyAt !== "number") p.chopSwing = null;
         });
       }
     }
@@ -505,6 +527,7 @@ export function load() {
     if (typeof data.tanningXp === "number") state.tanningXp = data.tanningXp;
     if (typeof data.fishingXp === "number") state.fishingXp = data.fishingXp;
     if (typeof data.tailoringXp === "number") state.tailoringXp = data.tailoringXp;
+    if (typeof data.grindingXp === "number") state.grindingXp = data.grindingXp;
     if (data.fishing && typeof data.fishing === "object") {
       state.fishing.bait = typeof data.fishing.bait === "string" ? data.fishing.bait : null;
       state.fishing.trap = (data.fishing.trap && typeof data.fishing.trap.readyAt === "number")

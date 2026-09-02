@@ -1,6 +1,6 @@
 // =================================================================== field
 
-import { CROPS, WATER_TAPS_NEEDED, PLOT_EXPAND_COST, PLOT_COUNT, LOCATIONS } from "./data.js";
+import { CROPS, FERTILIZERS, WATER_TAPS_NEEDED, PLOT_EXPAND_COST, PLOT_COUNT, LOCATIONS } from "./data.js";
 import { state, save, gainItem, gainSkillXp } from "./state.js";
 import { openZoneWheel } from "./zoneWheel.js";
 import { GROWTH_PER_LEVEL, WATER_XP, levelFromXp, levelProgress } from "./skills.js";
@@ -79,6 +79,7 @@ function buyPlot() {
   spendCost(cost);
   state.plots.push({
     crop: null, stage: 0, startedAt: 0, readyAt: null, waterProgress: 0,
+    fertilizer: null,
   });
   save();
   drawBag();
@@ -180,6 +181,10 @@ export function drawField() {
     node.classList.toggle("watering", status === "thirsty");
     node.classList.toggle("thirsty", status === "thirsty");
     node.classList.toggle("ripe", status === "ripe");
+    // The violet glow (.plot.fertilized in style.css) lasts the whole
+    // cycle a fertilizer was applied to, not just the moment it's
+    // applied -- thirsty through ripe, cleared only on plant()/harvest.
+    node.classList.toggle("fertilized", !!plot.fertilizer);
 
     // The fill bar does the same double duty the old ring did: watering
     // progress before the growth timer starts, growth progress once it
@@ -211,16 +216,21 @@ export function drawField() {
     }
 
     node.querySelector(".pill-name").textContent = crop ? crop.name : "Empty Plot";
+    // "Fertilized" only needs calling out while it's still just a promise
+    // (thirsty, nothing to show for it yet) -- once growing/ripe, the
+    // glow itself already reads as "this one got the boost," and the timer
+    // it actually bought is invisible either way (baked into readyAt).
+    const fertNote = status === "thirsty" && plot.fertilizer ? " · Fertilized" : "";
     node.querySelector(".pill-sub").textContent =
       status === "empty" ? "" :
-      status === "thirsty" ? "Watering " + plot.waterProgress + "/" + WATER_TAPS_NEEDED :
+      status === "thirsty" ? "Watering " + plot.waterProgress + "/" + WATER_TAPS_NEEDED + fertNote :
       status === "growing" ? "Growing…" :
       "Ripe — tap to harvest";
 
     // A ripe plot is always actionable, tool or not -- harvesting needs no
     // tool selected any more. Otherwise, highlight what the held tool can
     // actually be used on, same as before.
-    const can = status === "ripe" || canUse(state.tool, status);
+    const can = status === "ripe" || canUse(state.tool, status, plot);
     node.classList.toggle("actionable", can);
     node.classList.toggle("wet-target", can && state.tool === "water");
   });
@@ -233,8 +243,14 @@ export function drawField() {
   drawExpandCard();
 }
 
-function canUse(tool, status) {
+// `plot` only matters for fertilizer -- seeds/water only ever cared about
+// status. Fertilizer's own window is narrower than "thirsty" alone: it
+// has to land before the *first* watering tap, not just before the timer
+// starts, and only once per cycle -- must fertilize before watering, per
+// the user's own spec, not "any time before the timer starts."
+function canUse(tool, status, plot) {
   if (tool === "seeds") return status === "empty";
+  if (tool === "fertilizer") return status === "thirsty" && plot.waterProgress === 0 && !plot.fertilizer;
   if (tool === "water") return status === "thirsty";
   return false;
 }
@@ -259,9 +275,10 @@ function touchPlot(i) {
   if (status === "ripe") { resolveHarvest(i, plot); save(); drawField(); drawBag(); return; }
 
   if (!state.tool) { hint("Pick a tool first."); flash(node, "nope", 340); return; }
-  if (!canUse(state.tool, status)) { wrongTool(node, status); return; }
+  if (!canUse(state.tool, status, plot)) { wrongTool(node, status, plot); return; }
 
   if (state.tool === "seeds") plant(i, plot, node);
+  else if (state.tool === "fertilizer") fertilize(plot, node);
   else if (state.tool === "water") water(plot, node);
 
   save();
@@ -281,7 +298,27 @@ function plant(i, plot, node) {
   plot.stage = 0;
   plot.readyAt = null;
   plot.waterProgress = 0;
+  plot.fertilizer = null;
   hint(crop.name + " sown. It needs water.");
+}
+
+// Must land before the very first watering tap -- canUse() already
+// blocks a re-tap once it has (fertilizer set) or once watering's begun
+// (waterProgress > 0), so this only ever has to pick which fertilizer to
+// spend and apply it. Only one fertilizer item exists yet (Bonemeal) --
+// picks whichever owned one comes first in FERTILIZERS rather than
+// opening a chooser sheet for a choice that isn't real yet, same "nothing
+// to pick between" reasoning Mining's single-material dig has.
+function fertilize(plot, node) {
+  const name = Object.keys(FERTILIZERS).find(function (n) { return (state.bag[n] || 0) > 0; });
+  if (!name) {
+    hint("No fertilizer left.");
+    flash(node, "nope", 340);
+    return;
+  }
+  state.bag[name] -= 1;
+  plot.fertilizer = name;
+  hint(name + " applied. Water it to start the boost.");
 }
 
 // One tap == one charge == one splash. A plot needs WATER_TAPS_NEEDED of
@@ -303,14 +340,17 @@ function water(plot, node) {
   }
 
   const crop = CROPS[plot.crop];
-  // The level bonus and the current season/night multiplier are both read
-  // once, right now, and baked into this stage's timer -- growing crops
-  // don't speed up or slow down retroactively when you level up or the sun
-  // sets mid-grow, only the next one you water does. Same rule, now two
-  // sources instead of one.
+  // The level bonus, the current season/night multiplier, and now the
+  // fertilizer bonus (if this cycle got one -- see fertilize() above) are
+  // all read once, right now, and baked into this stage's timer -- growing
+  // crops don't speed up or slow down retroactively when you level up, the
+  // sun sets, or (not that it's possible mid-grow anyway, fertilizer's own
+  // window is only pre-water) fertilizer changes, only the next one you
+  // water does. Same rule, now three sources instead of two.
   const levelSpeed = 1 + levelFromXp(state.farmingXp) * GROWTH_PER_LEVEL;
   const timeSpeed = growthMultiplier(state.startedAt, "farming");
-  const speed = levelSpeed * timeSpeed;
+  const fertSpeed = plot.fertilizer ? FERTILIZERS[plot.fertilizer].growthMult : 1;
+  const speed = levelSpeed * timeSpeed * fertSpeed;
   plot.startedAt = Date.now();
   plot.readyAt = plot.startedAt + (crop.stageSeconds * 1000) / speed;
   hint("Fully watered. Stage " + (plot.stage + 1) + " of " + crop.waters + ".");
@@ -336,6 +376,7 @@ function resolveHarvest(i, plot) {
     plot.stage = 0;
     plot.readyAt = null;
     plot.waterProgress = 0;
+    plot.fertilizer = null;
     save();
     drawField();
     drawBag();
@@ -372,11 +413,20 @@ function gainXp(amount) {
   }
 }
 
-function wrongTool(node, status) {
+function wrongTool(node, status, plot) {
   // status === "ripe" never reaches here any more -- touchPlot() handles it
   // before the tool gate, tool or not (see its own comment).
+  if (state.tool === "fertilizer" && status === "thirsty") {
+    // canUse() already narrowed *why* a thirsty plot failed -- one of
+    // these two, not the generic "wrong status" table below, since both
+    // read as real, specific reasons rather than "not that one."
+    hint(plot.fertilizer ? "Already fertilized." : "Already watering — too late to fertilize.");
+    flash(node, "nope", 340);
+    return;
+  }
   const why = {
     seeds: { thirsty: "Already sown.", growing: "Already growing." },
+    fertilizer: { empty: "Nothing planted here.", growing: "Already growing." },
     water: { empty: "Nothing planted here.", growing: "Already watered." },
   };
   hint((why[state.tool] && why[state.tool][status]) || "Not that one.");
@@ -387,6 +437,7 @@ function wrongTool(node, status) {
 
 const HINTS = {
   seeds: "Tap an empty plot to sow.",
+  fertilizer: "Tap a freshly-sown plot to fertilize it -- before the first watering.",
   water: "Tap a sown plot to water it.",
 };
 

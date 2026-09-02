@@ -8,7 +8,7 @@
 // of circular imports.
 
 import {
-  PLACES, SCREEN_IDS, TINTS, BUILDINGS, CROPS, TREES, RECIPES,
+  PLACES, SCREEN_IDS, TINTS, BUILDINGS, CROPS, RECIPES,
   FUELS, COOKABLES, STATIONS, LOCATIONS,
 } from "./data.js";
 import { state, save } from "./state.js";
@@ -245,19 +245,33 @@ function beginDrag(card, pointerId) {
 
 el("reorder-done").addEventListener("click", exitReorderMode);
 
-// A plot needs attention if it's ripe (ready to harvest), thirsty (planted
-// but not watered), or empty while a matching seed sits in the bag (ready
-// to plant) -- the same three actionable states Field/Logging's own
+// Farm: a plot needs attention if it's ripe (ready to harvest), thirsty
+// (planted but not watered), or empty while a matching seed sits in the
+// bag (ready to plant) -- the same three actionable states Field's own
 // canUse() already recognizes, just asked as "is there at least one"
 // instead of "which tool applies here".
-function plotsNeedAttention(plots, crops) {
-  const hasSeed = Object.keys(crops).some(function (id) {
-    return (state.bag[crops[id].seed] || 0) > 0;
+function fieldNeedsAttention() {
+  const hasSeed = Object.keys(CROPS).some(function (id) {
+    return (state.bag[CROPS[id].seed] || 0) > 0;
   });
-  return plots.some(function (plot) {
+  return state.plots.some(function (plot) {
     if (!plot.crop) return hasSeed;
-    if (plot.stage >= crops[plot.crop].waters) return true;   // ripe
+    if (plot.stage >= CROPS[plot.crop].waters) return true;   // ripe
     return plot.readyAt === null;                              // thirsty
+  });
+}
+
+// Logging: no seed/plant step any more (every plot is always a Pine that
+// regrows on its own) and no `crop`/`stage` fields either -- a genuinely
+// different shape from Farm's own plots since that rework, not just a
+// different crop table, so this needed its own check rather than
+// stretching fieldNeedsAttention()'s shape to cover both (that's the bug
+// this replaces, see below). A plot needs attention only once it's
+// actually ripe (chopHealth set) and isn't already mid-swing -- a tree
+// that's mid-chop already has the player's attention.
+function loggingNeedsAttention() {
+  return state.logPlots.some(function (plot) {
+    return plot.chopHealth !== null && !plot.chopSwing;
   });
 }
 
@@ -303,8 +317,8 @@ function miningNeedsAttention() {
 // hub is always current the moment the player comes back to it.
 export function updateHubAttention() {
   const marks = {
-    field: plotsNeedAttention(state.plots, CROPS),
-    logging: plotsNeedAttention(state.logPlots, TREES),
+    field: fieldNeedsAttention(),
+    logging: loggingNeedsAttention(),
     mining: miningNeedsAttention(),
     craft: craftNeedsAttention(),
     campfire: campfireNeedsAttention(),

@@ -83,6 +83,22 @@
           </span>
           <span>Seeds</span>
         </button>
+        <!-- Fertilizer sits between Seeds and the Watering Can (2026-09-02)
+             -- must be applied before the first watering tap, see
+             field.js's canUse()/fertilize(). -->
+        <button class="tool" data-tool="fertilizer">
+          <span class="tool-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 18.5c0-3 2-5.5 8-5.5s8 2.5 8 5.5" />
+              <path d="M4 18.5h16" />
+              <path d="M12 4v3" />
+              <path d="M9 6l1.5 1.5" />
+              <path d="M15 6l-1.5 1.5" />
+            </svg>
+          </span>
+          <span>Fertilizer</span>
+        </button>
         <button class="tool" data-tool="water">
           <span class="tool-icon">
             <img class="sprite-img" alt="" draggable="false">
@@ -128,10 +144,10 @@
         <div class="bar xp-bar"><div id="log-xp-fill" class="xp-fill"></div></div>
       </div>
 
-      <div class="log-axe-row">
-        <span class="log-axe-label">Axe:</span>
-        <span id="log-axe-name" class="log-axe-name">No axe equipped</span>
-      </div>
+      <!-- Equip/change the Axe straight from here -- same picker system as
+           Inventory's own Equipment page, writing the exact same
+           state.equipment.axe field. See logging.js's drawAxeSlot(). -->
+      <div id="log-axe-slot" class="log-axe-slot"></div>
 
       <div id="log-plots" class="plots"></div>
 
@@ -483,8 +499,6 @@
         </div>
       </header>
 
-      <div id="craft-stations" class="menu"></div>
-
       <div class="market-section-label">Recipes</div>
 
       <div class="craft-list">
@@ -608,6 +622,16 @@
              different location's own Craft Bench once that's a real
              distinction -- is a markup change, not a logic one. -->
       </div>
+
+      <!-- Buildable stations moved below the Recipes list (2026-09-01,
+           was above it) -- the raw-material recipes a player reaches for
+           over and over are what should be first, not a row of one-time
+           "Build ___" prompts most of which resolve to nothing further to
+           do here once built (see hub.js's visiblePlaces() -- a built
+           station moves onto Home the instant it's built, so its own card
+           here disappears the same moment). -->
+      <div class="market-section-label">Stations</div>
+      <div id="craft-stations" class="menu"></div>
     </div>
 
     <!-- ============================= MARKET =============================== -->
@@ -773,6 +797,46 @@
           <span class="pill-body">
             <span class="pill-name">Pine Planks</span>
             <span class="pill-sub">3 Pine Logs</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- =========================== GRIND STONE ============================= -->
+    <div id="screen-grindStone" class="screen hidden">
+
+      <header class="field-head">
+        <button id="back-grindStone" class="back" aria-label="Back">‹</button>
+        <div>
+          <div class="field-title">Grind Stone</div>
+          <div class="field-sub">Grind bones into bonemeal</div>
+        </div>
+      </header>
+
+      <div class="xp">
+        <div class="xp-row">
+          <span id="grindStone-xp-level" class="xp-level">Grinding — Level 0</span>
+          <span id="grindStone-xp-count" class="xp-count">0 / 60</span>
+        </div>
+        <div class="bar xp-bar"><div id="grindStone-xp-fill" class="xp-fill"></div></div>
+      </div>
+
+      <div class="craft-list">
+        <button class="pill" data-item="grindStone">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8" />
+              <circle cx="12" cy="12" r="2.4" fill="currentColor" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Bonemeal</span>
+            <span class="pill-sub">3 Bones</span>
           </span>
           <span class="pill-count">0</span>
         </button>

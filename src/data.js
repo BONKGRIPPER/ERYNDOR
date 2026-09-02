@@ -7,21 +7,19 @@
 // Skills and Map live in the dock now instead (see DOCK_IDS below) -- they
 // stay in this list because the dock still looks up their icon/name from
 // here, they just don't get a card of their own anymore.
-// Order here is also grid order (2 columns, read row by row) -- matches a
-// hand-sketched layout (2026-08-28) roughly: Farm/Forest, Mining/Craft
-// Bench, Furnace/Spinning Wheel, Camp Fire/Stone Cutter, then Combat and
-// Sawmill tacked on after (both postdate that sketch). Furnace and Stone
-// Cutter are real spots on the sketch with no station behind them yet --
-// listed `ready: false` so they show up locked (same treatment Aerendell/
-// Map already use) rather than either faking a working card or breaking
-// the grid shape the sketch asked for.
+// Order here is also grid order (2 columns, read row by row) -- roughly
+// matches a hand-sketched layout (2026-08-28): Farm/Forest, Mining/Craft
+// Bench, Spinning Wheel/Camp Fire, Stone Cutter next to it, then Combat
+// and Sawmill tacked on after (both postdate that sketch). Furnace was a
+// real spot on the sketch with no station ever built behind it -- removed
+// outright (2026-09-01), not just hidden, once it was clear it wasn't
+// getting one; nothing else in the game referenced it.
 export const PLACES = [
   { id: "home",      icon: "\u{1F3E1}", name: "Home",      note: "Back to the farmstead",  ready: true,  hub: false },
   { id: "field",     icon: "\u{1F331}", name: "Farm",      note: "Plant, water, harvest",  ready: true,  hub: true },
   { id: "logging",   icon: "\u{1FAB5}", name: "Forest",    note: "Plant, water, chop",     ready: true,  hub: true },
   { id: "mining",    icon: "\u{26CF}\u{FE0F}", name: "Mining", note: "Descend, dig, and bank your finds", ready: true, hub: true },
   { id: "craft",     icon: "\u{1F6E0}", name: "Craft Bench", note: "Tools from raw material", ready: true, hub: true },
-  { id: "furnace",   icon: "\u{1F3ED}", name: "Furnace",   note: "Smelt ore into metal",   ready: false, hub: true },
   { id: "spinningWheel", icon: "\u{1F9F6}", name: "Spinning Wheel", note: "Turn flax into string", ready: true, hub: true },
   { id: "campfire",  icon: "\u{1F525}", name: "Campfire",  note: "Cook logs and berries",  ready: true,  hub: true },
   { id: "stoneCutter", icon: "\u{1FAA8}", name: "Stone Cutter", note: "Cut stone into blocks", ready: true, hub: true },
@@ -30,6 +28,7 @@ export const PLACES = [
   { id: "sawmill",       icon: "\u{1FA9A}", name: "Sawmill",        note: "Turn pine logs into pine planks", ready: true, hub: true },
   { id: "township",  icon: "\u{1F465}", name: "Township",  note: "Villagers and their upgrades", ready: true, hub: true },
   { id: "armorBench", icon: "\u{1FA61}", name: "Armor Bench", note: "Sew cloth into armor", ready: true, hub: true },
+  { id: "grindStone", icon: "\u{1F9B4}", name: "Grind Stone", note: "Grind bones into bonemeal", ready: true, hub: true },
   // Not a BUILDINGS entry -- there's no structure to build, just water to
   // fish. Gated by location like a built station (hub.js's
   // fishingAvailableHere()), but on LOCATIONS[...].fishing rather than
@@ -50,6 +49,7 @@ export const PLACES = [
 export const SCREEN_IDS = [
   "home", "field", "logging", "mining", "combat", "inventory", "skills", "craft", "market", "campfire",
   "spinningWheel", "sawmill", "township", "stoneCutter", "tanningStation", "map", "fishing", "armorBench",
+  "grindStone",
 ];
 
 // The persistent bottom dock. Home first (left side) so there's always a
@@ -77,6 +77,7 @@ export const SKILLS = {
   tanning: { name: "Tanner", icon: "\u{1F9F5}" },
   fishing: { name: "Fishing", icon: "\u{1F3A3}" },
   tailoring: { name: "Tailoring", icon: "\u{1FA61}" },
+  grinding: { name: "Grinding", icon: "\u{1F9B4}" },
 };
 
 export const PLOT_COUNT = 3;   // was 6 -- 2026-08-28, now that plots are a scrollable pill list, not a fixed grid
@@ -106,12 +107,14 @@ export const CAN_REFILL_MS = 3000;   // was 5000 -- 2026-08-31
 // its own timer are gone; a ripe plot just pays out the moment it's tapped,
 // no tool selection needed at all. See field.js's touchPlot().
 
-// Chopping is a straight HP fight now (2026-08-28), not a timed multi-tap
-// swing -- every tap is instant and deals whatever the equipped axe's
-// `damage` is (AXES below) straight off the ripe tree's own `health`
-// (TREES below); the tree falls the instant health hits 0, same tap. No
-// timer, no per-swing cave-in-style risk -- a better axe just chops
-// faster, plainly. See logging.js's chopTree().
+// Chopping is single-tap-and-timer now (2026-08-31), same shape as every
+// other pill in this game (Crafting, Foraging, Mining's own Dig) -- one
+// tap on a ripe tree starts a swing whose whole duration is the ripe
+// tree's `health` (TREES below) divided by the equipped axe's `damage`
+// here, in seconds: a 24-health Pine with a 1-damage Wooden Axe takes 24s,
+// a 2-damage Flint Axe takes 12s. Locked in at the moment the swing
+// starts (see logging.js's startChop()), so re-equipping mid-chop only
+// speeds up the *next* tree, not the one already falling.
 export const AXES = {
   "Wooden Axe": { damage: 1 },
   "Flint Axe":  { damage: 2 },
@@ -188,6 +191,21 @@ export const CROPS = {
   },
 };
 
+// ---------------------------------------------------------- fertilizer
+//
+// Bonemeal is the first fertilizer item (2026-09-02, Grind Stone's own
+// output -- see STATIONS.grindStone above). Optional: applied through the
+// Farm's own Fertilizer tool (between Seeds and the Watering Can, see
+// field.js) to a freshly-planted, not-yet-watered plot -- it must go on
+// *before* the first watering tap lands, not after, so there's no
+// "fertilize a plot that's already growing" case to handle. `growthMult`
+// multiplies straight into water()'s own speed calc alongside the level
+// and season multipliers, read once and baked into that stage's timer the
+// same way both of those already are. First-pass number, not balanced.
+export const FERTILIZERS = {
+  "Bonemeal": { growthMult: 1.5 },
+};
+
 // Same shape as CROPS, one tree so far. Logging is Farming's mirror: plant
 // a cone, water it, chop it once ripe -- the only real difference is the
 // tool (an equipped Axe fighting the tree's own health, not a single tap)
@@ -230,6 +248,7 @@ export const TINTS = {
   "Cooked Poultry": "#b97b4a", "Cooked Beef": "#7a2e2e", "Cooked Mutton": "#8a4536",
   "Scrap Metal": "#8c8f96",
   "Stone Block": "#9a9a92", "Basalt Block": "#55555c",
+  "Bonemeal": "#efe6d3",
   "Fishing Rod": "#8a6a45", "Net": "#d9cba3", "Trap": "#8a6a45",
   "Worm Bait": "#a8724a", "Shiny Lure": "#d8bd6a",
   "Minnow": "#9fb8c7", "River Trout": "#6f8f7a", "Catfish": "#5f5a52",
@@ -366,10 +385,16 @@ export const ITEM_LEVEL_SPEED_MULT = 0.9;
 // two never drift out of sync.
 export const CRAFT_MS = 15000;
 export const RECIPES = {
-  flintAxe:     { name: "Flint Axe",     cost: { "Flint": 20, "Sticks": 20 } },
-  flintPickaxe: { name: "Flint Pickaxe", cost: { "Flint": 20, "Sticks": 20 } },
-  stonePickaxe: { name: "Stone Pickaxe", cost: { "Stone": 15, "Pine Logs": 10 } },
-  stoneAxe:     { name: "Stone Axe",     cost: { "Stone": 15, "Pine Logs": 10 } },
+  // Balance pass (2026-09-01): Flint tools down from 20/20 to 10/10 raw
+  // Flint/Sticks. Stone tools switched from raw Stone/Pine Logs to their
+  // own processed forms -- Stone Block (Stone Cutter) and Pine Planks
+  // (Sawmill) -- a real conversion chain now, not a shortcut straight off
+  // gathered materials, same reasoning Net's own String cost already
+  // follows below.
+  flintAxe:     { name: "Flint Axe",     cost: { "Flint": 10, "Sticks": 10 } },
+  flintPickaxe: { name: "Flint Pickaxe", cost: { "Flint": 10, "Sticks": 10 } },
+  stonePickaxe: { name: "Stone Pickaxe", cost: { "Stone Block": 9, "Pine Planks": 9 } },
+  stoneAxe:     { name: "Stone Axe",     cost: { "Stone Block": 9, "Pine Planks": 9 } },
   flintDagger:  { name: "Flint Dagger",  cost: { "Flint": 15, "Sticks": 10 } },
   woodenBuckler:{ name: "Wooden Buckler", cost: { "Sticks": 20, "Stone": 10 } },
   paddedVest:   { name: "Padded Vest",   cost: { "Sticks": 20, "Flint": 15 } },
@@ -403,10 +428,11 @@ export const RECIPES = {
 // ever one tier of it (Wooden Scythe) and nothing left to equip.
 //
 // Helm, Legs and Fishing Rod are real slots on the Equipment page's layout
-// with no item that can fill them yet -- same "real spot, nothing behind
-// it yet" treatment the Furnace/Stone Cutter hub cards use, not an
-// oversight. Armor split from one slot into Chest specifically (not a
-// generic "armor" slot) because Helm and Legs are real, separate spots on
+// with no item that can fill them yet -- a real spot, nothing behind it
+// yet, not an oversight (same treatment Stone Cutter's own hub card got
+// before it had a real station behind it). Armor split from one slot into
+// Chest specifically (not a generic "armor" slot) because Helm and Legs
+// are real, separate spots on
 // the sketch this layout is based on, even though only Chest has armor
 // items to put in it today.
 //
@@ -684,6 +710,7 @@ export const CATEGORIES = {
   "Animal Hide": "combat", "Raw Beef": "combat",
   "Wool": "combat", "Raw Mutton": "combat",
   "Leather": "tanning", "Cloth": "sowing",
+  "Bonemeal": "grinding",
   "Cooked Poultry": "cooking", "Cooked Beef": "cooking", "Cooked Mutton": "cooking",
   "Fishing Rod": "crafting", "Net": "crafting", "Trap": "crafting",
   "Worm Bait": "crafting", "Shiny Lure": "crafting",
@@ -720,7 +747,7 @@ export const BASE_VALUE = {
   "Basalt": 10, "Amethyst": 50, "Emerald": 75, "Diamond": 50,
   "Scorn": 80, "Enchanted Shard": 100,
   "Stone Block": 20, "Basalt Block": 45,
-  "Bones": 4, "Feathers": 3, "Raw Poultry": 8,
+  "Bones": 4, "Bonemeal": 16, "Feathers": 3, "Raw Poultry": 8,
   "Animal Hide": 12, "Raw Beef": 14, "Leather": 22,
   "Wool": 10, "Raw Mutton": 12, "Cloth": 18,
   "Cooked Poultry": 14, "Cooked Beef": 22, "Cooked Mutton": 20,
@@ -785,9 +812,14 @@ export const BUILDINGS = {
     name: "Campfire",
     cost: { "Sticks": 10, "Flint": 5 },
   },
+  // Balance pass (2026-09-01): Spinning Wheel and Township both switched
+  // from raw gathered materials to Scrap Metal/Basalt Block/Pine Planks --
+  // real conversion-chain costs now, not shortcuts straight off Foraging/
+  // Logging. Stone Cutter's own Stone cost came down from 25 to 18; its
+  // Sticks cost is unchanged.
   spinningWheel: {
     name: "Spinning Wheel",
-    cost: { "Sticks": 15, "Pine Logs": 5 },
+    cost: { "Scrap Metal": 6, "Pine Planks": 15 },
   },
   sawmill: {
     name: "Sawmill",
@@ -795,7 +827,7 @@ export const BUILDINGS = {
   },
   stoneCutter: {
     name: "Stone Cutter",
-    cost: { "Stone": 25, "Sticks": 10 },
+    cost: { "Stone": 18, "Sticks": 10 },
   },
   tanningStation: {
     name: "Tanning Station",
@@ -803,11 +835,18 @@ export const BUILDINGS = {
   },
   township: {
     name: "Township",
-    cost: { "Stone": 20, "Pine Logs": 20 },
+    cost: { "Basalt Block": 5, "Pine Planks": 12 },
   },
   armorBench: {
     name: "Armor Bench",
     cost: { "Basalt Block": 9, "Pine Planks": 12 },
+  },
+  // Numbers not given in the request -- first-pass, matching the same
+  // tier of processed-material cost Township/Armor Bench both use rather
+  // than inventing a new price shape.
+  grindStone: {
+    name: "Grind Stone",
+    cost: { "Basalt Block": 6, "Pine Planks": 9 },
   },
 };
 
@@ -893,6 +932,16 @@ export const STATIONS = {
     actionName: "Highland Legs",
     cost: { "Cloth": 6 }, output: "Highland Legs", ms: 10000, xp: 12,
     skillXp: "tailoringXp", skillName: "Tailoring",
+  },
+  // Bones -> Bonemeal, the first fertilizer item (see FERTILIZERS below
+  // and field.js's fertilize()). Same generic single-recipe shape as the
+  // Sawmill/plain Stone Cutter recipe -- new "Grinding" skill (SKILLS
+  // above), its own screen.
+  grindStone: {
+    screenTitle: "Grind Stone", screenSub: "Grind bones into bonemeal",
+    actionName: "Bonemeal",
+    cost: { "Bones": 3 }, output: "Bonemeal", ms: 10000, xp: 10,
+    skillXp: "grindingXp", skillName: "Grinding",
   },
 };
 
@@ -1029,8 +1078,8 @@ export const MINE_ZONES = [
 //   - "wilderness" -- same as landmark: no market, no storage.
 // `stations` and `forage` are placeholders (empty) for every location
 // except Aerendell until the spreadsheet's real content comes back --
-// same "real spot, nothing behind it yet" treatment the Furnace/Stone
-// Cutter hub cards used before they were real.
+// same "real spot, nothing behind it yet" treatment Stone Cutter's own
+// hub card used before it was real.
 //
 // Coordinates straight off the hand-drawn map (2026-08-29): Aerendell --
 // Forest Road -- Thal-Barak -- Stilltide Pass -- Duun-Vael Bridge --
@@ -1050,13 +1099,13 @@ export const MINE_ZONES = [
 export const LOCATIONS = {
   aerendell: {
     name: "Aerendell", type: "town", pos: { x: 0, y: 0 },
-    stations: ["campfire", "spinningWheel", "sawmill", "stoneCutter", "tanningStation", "township", "armorBench"],
-    // No fishing (or Furnace, once that's real) at the farmstead itself --
-    // both are meant to belong somewhere out in the world once a real
-    // location's spreadsheet answer says where. FISH_POOLS.aerendell is
-    // left in data.js, just unreferenced by any location for now, rather
-    // than deleted -- whichever location does end up with fishing can
-    // point straight at it (or its own pool) without rebuilding the data.
+    stations: ["campfire", "spinningWheel", "sawmill", "stoneCutter", "tanningStation", "township", "armorBench", "grindStone"],
+    // No fishing at the farmstead itself -- meant to belong somewhere out
+    // in the world once a real location's spreadsheet answer says where.
+    // FISH_POOLS.aerendell is left in data.js, just unreferenced by any
+    // location for now, rather than deleted -- whichever location does
+    // end up with fishing can point straight at it (or its own pool)
+    // without rebuilding the data.
     forage: "aerendell", fishing: null,
   },
   forestRoad: {

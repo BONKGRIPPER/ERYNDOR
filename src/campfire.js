@@ -8,9 +8,6 @@
 // job, same "spend on commit" rule and same deadline-not-countdown timer
 // every other station already uses. No queue any more -- one pair at a
 // time, tap Cook again once it's done for the next.
-//
-// The Furnace (not built yet) is meant to reuse this exact shape with one
-// more picker pill for a second input alongside the one Fuel picker.
 
 import { FUELS, COOKABLES, COOK_MS, TINTS } from "./data.js";
 import { state, save, gainItem } from "./state.js";

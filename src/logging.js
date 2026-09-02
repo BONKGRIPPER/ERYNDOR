@@ -1,21 +1,36 @@
 // ================================================================= logging
 //
-// Reworked 2026-08-30: no cones, no watering can, no tool to pick at all --
-// every plot is always a Pine, and the instant one falls it starts growing
-// again on its own. The only action left is the chop itself (tap a ripe
-// plot), same "no tool-select step" shape Mining's own Dig pill already
-// uses. Growth is still a real deadline (readyAt), so it keeps progressing
-// while the game is closed, exactly like every other timer in this game.
+// Reworked 2026-08-30: no cones, no watering can -- every plot is always a
+// Pine, and the instant one falls it starts growing again on its own.
+// Growth is still a real deadline (readyAt), so it keeps progressing while
+// the game is closed, exactly like every other timer in this game.
+//
+// Chopping is single-tap-and-timer now (2026-08-31), same shape as every
+// other pill (Crafting, Foraging, Mining's own Dig): one tap on a ripe
+// tree starts a swing (plot.chopSwing = {startedAt, readyAt}), no more
+// tapping needed, and it resolves on its own -- felling the tree -- the
+// moment that deadline passes (see settleLogging() below). Swing length
+// is the ripe tree's own `health` divided by the equipped axe's `damage`
+// (both in data.js), locked in at the moment the swing starts so
+// re-equipping mid-chop only speeds up the *next* tree. The axe itself is
+// equipped straight from this screen now too (drawAxeSlot()/
+// openAxePicker() below) -- the exact same state.equipment.axe field
+// Inventory's own Equipment page reads and writes, so a change made here
+// is already a change everywhere else, no separate "logging axe" to keep
+// in sync.
 
-import { TREES, AXES, PLOT_EXPAND_COST, PLOT_COUNT, LOCATIONS } from "./data.js";
+import {
+  TREES, AXES, PLOT_EXPAND_COST, PLOT_COUNT, LOCATIONS, EQUIP_SLOTS, EQUIPMENT, TINTS,
+} from "./data.js";
 import { state, save, gainItem, gainSkillXp } from "./state.js";
 import { openZoneWheel } from "./zoneWheel.js";
 import { GROWTH_PER_LEVEL, levelFromXp, levelProgress } from "./skills.js";
 import { growthMultiplier } from "./time.js";
 import { canAfford, buildCostNodes, spendCost } from "./costDisplay.js";
-import { useSprite } from "./sprites.js";
+import { useSprite, slug } from "./sprites.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
+import { openSheet, closeSheet } from "./sheet.js";
 import { drawBag, updateSkillsNote } from "./hub.js";
 
 const TREE = TREES.pine;
@@ -58,8 +73,9 @@ export function buildLogPlots() {
   drawExpandCard();
 }
 
-/** growing | ripe */
+/** growing | ripe | chopping */
 function logPlotStatus(plot) {
+  if (plot.chopSwing) return "chopping";
   return plot.chopHealth !== null ? "ripe" : "growing";
 }
 
@@ -80,27 +96,37 @@ function startGrowing(plot) {
   plot.chopHealth = null;
 }
 
-// Rolls any finished growth timers forward -- the only thing left to
-// settle now that chopping is instant (see chopTree()). Same "a deadline,
-// not a countdown, is what makes offline growth free" reasoning as
-// Field's own settle().
+// Rolls any finished growth timers forward, and resolves any chop swing
+// whose deadline has passed -- same "a deadline, not a countdown, is what
+// makes offline progress free" reasoning as Field's own settle() and every
+// other timer in this game. Called every tick regardless of which screen
+// is showing (see main.js), so a swing started right before the player
+// wanders off to another screen still finishes and fells the tree on
+// schedule -- fellTree() below already handles a `node` that isn't
+// actually visible right now the same as one that is.
 export function settleLogging() {
   let changed = false;
   const now = Date.now();
 
-  state.logPlots.forEach(function (plot) {
+  state.logPlots.forEach(function (plot, i) {
     if (plot.readyAt !== null && now >= plot.readyAt) {
       plot.readyAt = null;
       plot.chopHealth = TREE.health;
       changed = true;
+    }
+    if (plot.chopSwing && now >= plot.chopSwing.readyAt) {
+      plot.chopSwing = null;
+      changed = true;
+      fellTree(i, plot, el("log-plots").children[i]);
     }
   });
 
   if (changed) save();
 }
 
-// The payoff once the last chop lands. Immediately starts the next growth
-// cycle -- there's no empty/idle state for a plot to sit in any more.
+// The payoff once a chop swing's deadline passes (settleLogging() above).
+// Immediately starts the next growth cycle -- there's no empty/idle state
+// for a plot to sit in any more.
 function fellTree(i, plot, node) {
   const parts = [];
   Object.keys(TREE.gives).forEach(function (item) {
@@ -141,71 +167,85 @@ export function drawLogging() {
     // redraw until that's done.
     if (node.classList.contains("result")) return;
     const status = logPlotStatus(plot);
-    const chopHealth = status === "ripe" ? plot.chopHealth : 0;
 
     node.classList.toggle("growing", status === "growing");
     node.classList.toggle("ripe", status === "ripe");
     node.classList.toggle("actionable", status === "ripe");
+    // Reuses the same .pill.active styling every other running timer in
+    // this game already gets (green sweep tint, see style.css) -- no new
+    // CSS needed for "a chop is in progress."
+    node.classList.toggle("active", status === "chopping");
 
-    // Growth progress before it's ripe, chop damage dealt once it is --
-    // same element, same width, just a different meaning (and color, see
-    // .plot.ripe .pill-fill in style.css) per status.
+    // Growth progress before it's ripe, chop-swing progress once one's
+    // actually running, empty while just sitting ripe and untapped --
+    // same element, same width, just a different meaning per status.
     const fill = node.querySelector(".pill-fill");
     if (status === "growing") {
       const span = plot.readyAt - plot.startedAt;
       const p = span > 0 ? Math.min(1, (now - plot.startedAt) / span) : 1;
       fill.style.width = (p * 100).toFixed(1) + "%";
+    } else if (status === "chopping") {
+      const span = plot.chopSwing.readyAt - plot.chopSwing.startedAt;
+      const p = span > 0 ? Math.min(1, (now - plot.chopSwing.startedAt) / span) : 1;
+      fill.style.width = (p * 100).toFixed(1) + "%";
     } else {
-      const dealt = TREE.health - chopHealth;
-      fill.style.width = (dealt / TREE.health * 100).toFixed(1) + "%";
+      fill.style.width = "0%";
     }
 
     const icon = node.querySelector(".pill-icon");
-    const frame = status === "ripe" ? 1 : 0;
+    const frame = status === "growing" ? 0 : 1;
     if (!useSprite(icon, "trees/pine/" + frame)) {
       icon.querySelector(".fruit").setAttribute("fill", TREE.tint);
     }
 
     node.querySelector(".pill-name").textContent = TREE.name;
     node.querySelector(".pill-sub").textContent =
-      status === "growing" ? "Growing…" : chopHealth + "/" + TREE.health + " HP — tap to chop";
+      status === "growing" ? "Growing…" :
+      status === "chopping" ? "Chopping…" :
+      "Ripe — tap to chop";
   });
 
-  drawEquippedAxe();
+  drawAxeSlot();
   drawExpandCard();
 }
 
-// A small non-interactive line -- there's no tool to *pick* any more
-// (chopping is just tapping a ripe plot directly), but the player still
-// wants to see which axe is actually driving the numbers.
-function drawEquippedAxe() {
-  const sub = el("log-axe-name");
-  if (!sub) return;
-  sub.textContent = state.equipment.axe || "No axe equipped";
+// ---------------------------------------------------------------- axe slot
+//
+// Equip/change the Axe straight from this screen -- same system as
+// Inventory's own Equipment page (see inventory.js's buildEquipRow()/
+// openEquipPicker(), which this mirrors), writing the exact same
+// state.equipment.axe field. There's no separate "logging axe" to keep in
+// sync: a change made here already is the player's equipped tool
+// everywhere else the moment it happens.
+
+function itemGet(container, name) { return container[name] || 0; }
+
+function itemAdd(container, name, amount) {
+  const next = itemGet(container, name) + amount;
+  if (next <= 0) delete container[name];
+  else container[name] = next;
 }
 
-// -------------------------------------------------------------- plot actions
+const AXE_SLOT = EQUIP_SLOTS.find(function (s) { return s.id === "axe"; });
 
-function flashLog(node, cls, ms) {
-  node.classList.remove(cls);
-  void node.offsetWidth;
-  node.classList.add(cls);
-  setTimeout(function () { node.classList.remove(cls); }, ms);
-}
-
-function touchLogPlot(i) {
-  const plot = state.logPlots[i];
-  const node = el("log-plots").children[i];
-  const status = logPlotStatus(plot);
-
-  if (status !== "ripe") {
-    logHint("Still growing.");
-    flashLog(node, "nope", 340);
-    return;
-  }
-  chopTree(i, plot, node);
+// Equipping over an already-filled slot swaps in one tap -- the old axe
+// goes back to the bag first, same rule inventory.js's own equip() follows.
+function equipAxe(name) {
+  const previous = state.equipment.axe;
+  if (previous) itemAdd(state.bag, previous, 1);
+  itemAdd(state.bag, name, -1);
+  state.equipment.axe = name;
   save();
-  drawBag();
+  drawLogging();
+}
+
+function unequipAxe() {
+  const name = state.equipment.axe;
+  if (!name) return;
+  itemAdd(state.bag, name, 1);
+  state.equipment.axe = null;
+  save();
+  drawLogging();
 }
 
 // Whatever's equipped in the Axe slot -- falls back to a bare hand's worth
@@ -217,19 +257,142 @@ function axeDamage() {
   return (AXES[item] && AXES[item].damage) || AXES["Wooden Axe"].damage;
 }
 
-// One tap, resolved synchronously -- no timer, no swing to land badly.
-// Straight HP off the tree: every tap deals the equipped axe's damage,
-// and the tree falls the instant health reaches 0 in that same tap.
-function chopTree(i, plot, node) {
-  const dmg = axeDamage();
-  plot.chopHealth -= dmg;
-  flashLog(node, "chop-hit", 220);
+// One full-width pill, same shape inventory.js's buildEquipRow() builds --
+// no .pill-fill (there's no progress to show on an equip slot itself).
+function drawAxeSlot() {
+  const wrap = el("log-axe-slot");
+  if (!wrap) return;
+  wrap.replaceChildren();
+  const equipped = state.equipment.axe;
 
-  if (plot.chopHealth <= 0) {
-    fellTree(i, plot, node);
+  const btn = document.createElement("button");
+  btn.className = "pill equip-row";
+
+  const icon = document.createElement("span");
+  icon.className = "pill-icon";
+  const img = document.createElement("img");
+  img.className = "sprite-img";
+  img.alt = "";
+  img.draggable = false;
+  const fallback = document.createElement("span");
+  fallback.className = "sprite-fallback";
+  if (equipped) fallback.style.background = TINTS[equipped] || "#9a8f7d";
+  icon.append(img, fallback);
+  if (equipped) useSprite(icon, "items/" + slug(equipped));
+
+  const body = document.createElement("span");
+  body.className = "pill-body";
+  const name = document.createElement("span");
+  name.className = "pill-name";
+  name.textContent = "Axe";
+  const sub = document.createElement("span");
+  sub.className = "pill-sub";
+  // The damage stat right alongside the name -- what's actually driving
+  // the chop-time formula (TREE.health / damage, see touchLogPlot()
+  // above) rather than a bare item name the player has to already know
+  // the numbers behind.
+  sub.textContent = equipped
+    ? equipped + " · " + AXES[equipped].damage + " dmg"
+    : "Empty — tap to equip";
+  body.append(name, sub);
+
+  btn.append(icon, body);
+  btn.addEventListener("click", openAxePicker);
+  wrap.append(btn);
+}
+
+// Same picker shape inventory.js's openEquipPicker() uses -- an "Unequip"
+// row (if something's equipped) followed by every owned axe not already
+// equipped, using the shared sheet rather than a picker this screen owns.
+function openAxePicker() {
+  const body = el("sheet-body");
+  body.replaceChildren();
+
+  const equipped = state.equipment.axe;
+  if (equipped) {
+    const unequipRow = document.createElement("button");
+    unequipRow.className = "seed-row unequip-row";
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = "transparent";
+    dot.style.border = "1px solid var(--dim)";
+    const text = document.createElement("div");
+    text.className = "seed-name";
+    text.textContent = "Unequip " + equipped;
+    unequipRow.append(dot, text);
+    unequipRow.addEventListener("click", function () {
+      closeSheet();
+      unequipAxe();
+    });
+    body.append(unequipRow);
+  }
+
+  const options = Object.keys(EQUIPMENT).filter(function (name) {
+    return EQUIPMENT[name] === "axe" && name !== equipped && itemGet(state.bag, name) > 0;
+  });
+
+  if (options.length === 0 && !equipped) {
+    const empty = document.createElement("div");
+    empty.className = "inv-empty";
+    empty.textContent = "Nothing to equip here yet.";
+    body.append(empty);
+  }
+
+  options.forEach(function (name) {
+    const row = document.createElement("button");
+    row.className = "seed-row";
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = TINTS[name] || "#9a8f7d";
+    const text = document.createElement("div");
+    text.className = "seed-name";
+    text.textContent = name;
+    const count = document.createElement("span");
+    count.className = "seed-count";
+    count.textContent = itemGet(state.bag, name) + " owned";
+    row.append(dot, text, count);
+    row.addEventListener("click", function () {
+      closeSheet();
+      equipAxe(name);
+    });
+    body.append(row);
+  });
+
+  openSheet(AXE_SLOT ? "Equip " + AXE_SLOT.name.toLowerCase() : "Equip axe");
+}
+
+// -------------------------------------------------------------- plot actions
+
+function flashLog(node, cls, ms) {
+  node.classList.remove(cls);
+  void node.offsetWidth;
+  node.classList.add(cls);
+  setTimeout(function () { node.classList.remove(cls); }, ms);
+}
+
+// A tap on a growing plot is a hint + shake; a tap on one already mid-chop
+// is a silent no-op (same "already running" rule every other pill's own
+// tap-while-active follows); a tap on a ripe, idle plot starts the swing.
+// Swing length is locked in right here -- the tree's own health divided by
+// whatever's equipped *right now*, in seconds -- so re-equipping mid-chop
+// only speeds up the next tree, not this one already falling.
+function touchLogPlot(i) {
+  const plot = state.logPlots[i];
+  const node = el("log-plots").children[i];
+  const status = logPlotStatus(plot);
+
+  if (status === "growing") {
+    logHint("Still growing.");
+    flashLog(node, "nope", 340);
     return;
   }
-  logHint("-" + dmg + " HP (" + plot.chopHealth + "/" + TREE.health + " left).");
+  if (status === "chopping") return;
+
+  const ms = (TREE.health / axeDamage()) * 1000;
+  plot.chopSwing = { startedAt: Date.now(), readyAt: Date.now() + ms };
+  flashLog(node, "chop-hit", 220);
+  save();
+  drawLogging();
 }
 
 function gainLogXp(amount) {
@@ -289,7 +452,7 @@ function buyPlot() {
     return;
   }
   spendCost(cost);
-  const plot = { startedAt: 0, readyAt: null, chopHealth: null };
+  const plot = { startedAt: 0, readyAt: null, chopHealth: null, chopSwing: null };
   startGrowing(plot);
   state.logPlots.push(plot);
   save();
