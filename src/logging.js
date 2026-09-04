@@ -1,9 +1,22 @@
 // ================================================================= logging
 //
-// Reworked 2026-08-30: no cones, no watering can -- every plot is always a
-// Pine, and the instant one falls it starts growing again on its own.
-// Growth is still a real deadline (readyAt), so it keeps progressing while
-// the game is closed, exactly like every other timer in this game.
+// Reworked 2026-08-30: no cones, no watering can -- every plot always has
+// a tree growing, and the instant one falls it starts growing again on
+// its own. Growth is still a real deadline (readyAt), so it keeps
+// progressing while the game is closed, exactly like every other timer
+// in this game.
+//
+// Which species (2026-09-04) is no longer hardcoded to Pine -- it's
+// whatever LOCATIONS[...].tree says the player's *current* location grows
+// (treeForCurrentLocation() below), same "read the location's own pool"
+// idea forage.js's currentPoolId()/fishing.js's own location check already
+// use. Locked into the plot itself the moment a fresh growth cycle starts
+// (plot.tree, set by startGrowing()) -- same "recipe locked at start" rule
+// every other timer in this game follows, so a plot that started growing
+// Pine at Aerendell doesn't silently become a Birch plot just because the
+// player wandered off to Forest Road before it was ready. treeFor(plot)
+// is the one place that actually reads a *specific* plot's own species
+// back out; nothing else should read TREES[...] directly for a plot.
 //
 // Chopping is single-tap-and-timer now (2026-08-31), same shape as every
 // other pill (Crafting, Foraging, Mining's own Dig): one tap on a ripe
@@ -12,8 +25,10 @@
 // moment that deadline passes (see settleLogging() below). Swing length
 // is the ripe tree's own `health` divided by the equipped axe's `damage`
 // (both in data.js), locked in at the moment the swing starts so
-// re-equipping mid-chop only speeds up the *next* tree. The axe itself is
-// equipped straight from this screen now too (drawAxeSlot()/
+// re-equipping mid-chop only speeds up the *next* tree. A tree's own
+// `minAxeDamage` (Birch's is 3, Stone Axe or better) blocks starting a
+// swing at all with anything weaker -- see touchLogPlot() below. The axe
+// itself is equipped straight from this screen now too (drawAxeSlot()/
 // openAxePicker() below) -- the exact same state.equipment.axe field
 // Inventory's own Equipment page reads and writes, so a change made here
 // is already a change everywhere else, no separate "logging axe" to keep
@@ -33,7 +48,23 @@ import { show } from "./screens.js";
 import { openSheet, closeSheet } from "./sheet.js";
 import { drawBag, updateSkillsNote } from "./hub.js";
 
-const TREE = TREES.pine;
+// Whichever TREES key the player's *current* location grows -- read live,
+// only ever called at the exact moment a fresh growth cycle actually
+// starts (startGrowing() below), so it's a snapshot from then on, not a
+// live value the rest of this file re-reads. Falls back to "pine" for
+// every location that doesn't set its own `tree` (LOCATIONS in data.js).
+function treeForCurrentLocation() {
+  const loc = LOCATIONS[state.currentLocation];
+  return (loc && loc.tree) || "pine";
+}
+
+// A specific plot's own locked-in species -- what every other function in
+// this file should read instead of a bare TREES.pine. Falls back to pine
+// for a plot with no `tree` at all (a save from before this existed --
+// see state.js's own load() migration).
+function treeFor(plot) {
+  return TREES[plot.tree] || TREES.pine;
+}
 
 const TREE_SVG =
   '<svg viewBox="0 0 40 40" aria-hidden="true">' +
@@ -84,15 +115,20 @@ function logPlotStatus(plot) {
 // baked into that cycle's own readyAt. Doesn't speed up or slow down
 // retroactively if the player levels up or the sun sets mid-grow, same
 // rule Farm's own water() follows.
-function growthMs() {
+function growthMs(tree) {
   const levelSpeed = 1 + levelFromXp(state.loggingXp) * GROWTH_PER_LEVEL;
   const timeSpeed = growthMultiplier(state.startedAt, "logging");
-  return (TREE.stageSeconds * 1000) / (levelSpeed * timeSpeed);
+  return (tree.stageSeconds * 1000) / (levelSpeed * timeSpeed);
 }
 
+// Locks in this cycle's own species (treeForCurrentLocation()) before
+// anything else reads it -- growthMs() right below needs the *new*
+// species' own stageSeconds, and every other function that later reads
+// this plot back (treeFor()) needs `plot.tree` already set.
 function startGrowing(plot) {
+  plot.tree = treeForCurrentLocation();
   plot.startedAt = Date.now();
-  plot.readyAt = plot.startedAt + growthMs();
+  plot.readyAt = plot.startedAt + growthMs(treeFor(plot));
   plot.chopHealth = null;
 }
 
@@ -111,7 +147,7 @@ export function settleLogging() {
   state.logPlots.forEach(function (plot, i) {
     if (plot.readyAt !== null && now >= plot.readyAt) {
       plot.readyAt = null;
-      plot.chopHealth = TREE.health;
+      plot.chopHealth = treeFor(plot).health;
       changed = true;
     }
     if (plot.chopSwing && now >= plot.chopSwing.readyAt) {
@@ -128,10 +164,14 @@ export function settleLogging() {
 // Immediately starts the next growth cycle -- there's no empty/idle state
 // for a plot to sit in any more.
 function fellTree(i, plot, node) {
+  // Captured before startGrowing() below overwrites plot.tree with the
+  // *next* cycle's species -- this fell tree's own name/gives/xp must
+  // stay whatever it actually was.
+  const tree = treeFor(plot);
   const parts = [];
-  Object.keys(TREE.gives).forEach(function (item) {
-    gainItem(item, TREE.gives[item]);
-    parts.push("+" + TREE.gives[item] + " " + item);
+  Object.keys(tree.gives).forEach(function (item) {
+    gainItem(item, tree.gives[item]);
+    parts.push("+" + tree.gives[item] + " " + item);
   });
 
   startGrowing(plot);
@@ -152,8 +192,8 @@ function fellTree(i, plot, node) {
     drawBag();
   }
 
-  logHint("Chopped " + TREE.name + ". A new one's already taking root.");
-  gainLogXp(TREE.xp);
+  logHint("Chopped " + tree.name + ". A new one's already taking root.");
+  gainLogXp(tree.xp);
 }
 
 export function drawLogging() {
@@ -192,13 +232,14 @@ export function drawLogging() {
       fill.style.width = "0%";
     }
 
+    const tree = treeFor(plot);
     const icon = node.querySelector(".pill-icon");
     const frame = status === "growing" ? 0 : 1;
-    if (!useSprite(icon, "trees/pine/" + frame)) {
-      icon.querySelector(".fruit").setAttribute("fill", TREE.tint);
+    if (!useSprite(icon, "trees/" + plot.tree + "/" + frame)) {
+      icon.querySelector(".fruit").setAttribute("fill", tree.tint);
     }
 
-    node.querySelector(".pill-name").textContent = TREE.name;
+    node.querySelector(".pill-name").textContent = tree.name;
     node.querySelector(".pill-sub").textContent =
       status === "growing" ? "Growing…" :
       status === "chopping" ? "Chopping…" :
@@ -372,10 +413,13 @@ function flashLog(node, cls, ms) {
 
 // A tap on a growing plot is a hint + shake; a tap on one already mid-chop
 // is a silent no-op (same "already running" rule every other pill's own
-// tap-while-active follows); a tap on a ripe, idle plot starts the swing.
-// Swing length is locked in right here -- the tree's own health divided by
-// whatever's equipped *right now*, in seconds -- so re-equipping mid-chop
-// only speeds up the next tree, not this one already falling.
+// tap-while-active follows); a tap on a ripe plot with too weak an axe is
+// a hint + shake too, same "equip the right tier or nothing happens" rule
+// mining.js's own maxDepth wall uses; only a ripe, idle plot with a strong
+// enough axe actually starts the swing. Swing length is locked in right
+// here -- the tree's own health divided by whatever's equipped *right
+// now*, in seconds -- so re-equipping mid-chop only speeds up the next
+// tree, not this one already falling.
 function touchLogPlot(i) {
   const plot = state.logPlots[i];
   const node = el("log-plots").children[i];
@@ -388,7 +432,14 @@ function touchLogPlot(i) {
   }
   if (status === "chopping") return;
 
-  const ms = (TREE.health / axeDamage()) * 1000;
+  const tree = treeFor(plot);
+  if (tree.minAxeDamage && axeDamage() < tree.minAxeDamage) {
+    logHint("Requires a stronger axe to fell a " + tree.name + ".");
+    flashLog(node, "nope", 340);
+    return;
+  }
+
+  const ms = (tree.health / axeDamage()) * 1000;
   plot.chopSwing = { startedAt: Date.now(), readyAt: Date.now() + ms };
   flashLog(node, "chop-hit", 220);
   save();
@@ -418,7 +469,7 @@ function logHint(text) {
   el("log-hint").textContent = text;
   clearTimeout(logHintTimer);
   logHintTimer = setTimeout(function () {
-    el("log-hint").textContent = "Tap a grown Pine to chop it.";
+    el("log-hint").textContent = "Tap a grown tree to chop it.";
   }, 2200);
 }
 

@@ -32,7 +32,7 @@
 import {
   COMBAT_UNARMED, COMBAT_BASE_DEFENSE, COMBAT_BASE_RECOVERY_MS, COMBAT_XP,
   COMBAT_PLAYER_MAX_HP, FLEE_CHANCE, COMBAT_NIGHT_MULT, WEAPONS, ARMORS, SHIELDS, FOODS, ENEMIES,
-  LOCATIONS,
+  LOCATIONS, COMBAT_AUTO_ATTACK_DELAY_MS,
 } from "./data.js";
 import { state, save, gainItem, gainSkillXp } from "./state.js";
 import { openZoneWheel } from "./zoneWheel.js";
@@ -79,6 +79,19 @@ function recoveryMs() {
   return Math.round(
     COMBAT_BASE_RECOVERY_MS * armorStats("helm").recoveryMult * armorStats("chest").recoveryMult * armorStats("legs").recoveryMult
   );
+}
+
+// Sets the player's own cooldown *and* schedules the auto-attack fallback
+// alongside it -- the one place every action (attack/defend/eat/a failed
+// flee) reschedules both together, so nothing can set one without the
+// other drifting out of sync. `c.autoAttackAt` is always
+// COMBAT_AUTO_ATTACK_DELAY_MS past whenever the player next becomes ready,
+// recomputed fresh every time -- same "read live, don't cache" rule
+// recoveryMs() itself already follows, so an armor swap or a level-up
+// mid-fight changes the very next window, not just future ones.
+function scheduleCooldown(c, ms) {
+  c.playerCooldownUntil = Date.now() + ms;
+  c.autoAttackAt = c.playerCooldownUntil + COMBAT_AUTO_ATTACK_DELAY_MS;
 }
 
 function roll(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
@@ -195,6 +208,11 @@ function startFight(enemyKey) {
     playerMaxHP: COMBAT_PLAYER_MAX_HP,
     enemyNextAttackAt: Date.now() + enemy.attackMs,
     playerCooldownUntil: Date.now(),
+    // The very first attack of a fight no longer needs an exact-timed tap
+    // the instant the enemy appears -- it fires on its own after the same
+    // COMBAT_AUTO_ATTACK_DELAY_MS grace every other auto-attack gets,
+    // unless the player acts (Attack/Defend/Eat/Flee) first.
+    autoAttackAt: Date.now() + COMBAT_AUTO_ATTACK_DELAY_MS,
     braced: false,
     over: null,
     nightBoost: night,
@@ -225,6 +243,18 @@ export function settleCombat() {
   let changed = false;
   while (state.combat && !state.combat.over && Date.now() >= state.combat.enemyNextAttackAt) {
     resolveEnemyAttack(enemy);
+    changed = true;
+  }
+  // Attack fires on its own once the player's own grace window
+  // (autoAttackAt, see scheduleCooldown()) runs out -- reuses attack()
+  // itself rather than duplicating its logic, so this behaves exactly
+  // like a manual tap would (same ammo check, same damage roll, same
+  // recovery/auto-attack rescheduling for the *next* window). A no-op if
+  // the player already acted this window (attack()'s own cooldown guard)
+  // or is out of ammo (nothing left to reschedule until the player
+  // intervenes -- same as today's manual-attack-blocked case).
+  if (state.combat && !state.combat.over && Date.now() >= state.combat.autoAttackAt) {
+    attack();
     changed = true;
   }
   if (changed) {
@@ -269,7 +299,7 @@ function attack() {
   c.enemyHP = clamp(c.enemyHP - dmg, 0, c.enemyMaxHP);
   const boosted = c.recoveryBoost > 0;
   log("You hit the " + enemy.name + " for " + dmg + (boosted ? " (honey-quick)" : "") + ".", "hit-enemy");
-  c.playerCooldownUntil = Date.now() + Math.round(recoveryMs() * (boosted ? c.recoveryBoostMult : 1));
+  scheduleCooldown(c, Math.round(recoveryMs() * (boosted ? c.recoveryBoostMult : 1)));
   if (boosted) {
     c.recoveryBoost -= 1;
     if (c.recoveryBoost === 0) log("The honey's energy fades.", "system");
@@ -286,7 +316,7 @@ function defend() {
   if (!c || c.over || Date.now() < c.playerCooldownUntil) return;
   c.braced = true;
   log("You brace for the next attack.", "brace");
-  c.playerCooldownUntil = Date.now() + recoveryMs();
+  scheduleCooldown(c, recoveryMs());
   save();
   refreshCombat();
   syncTimerBars();
@@ -312,7 +342,7 @@ function eat() {
     healLog += " Recovery's quicker for your next " + food.recoveryBoostAttacks + " attacks.";
   }
   log(healLog, "heal");
-  c.playerCooldownUntil = Date.now() + recoveryMs();
+  scheduleCooldown(c, recoveryMs());
   save();
   drawBag();
   refreshCombat();
@@ -334,7 +364,7 @@ function flee() {
     return;
   }
   log("You can't get away!", "system");
-  c.playerCooldownUntil = Date.now() + recoveryMs();
+  scheduleCooldown(c, recoveryMs());
   save();
   refreshCombat();
   syncTimerBars();
@@ -469,9 +499,20 @@ export function refreshCombat() {
   // moment ago.
   const w = weaponStats();
   const outOfAmmo = !!w.ammo && (state.bag[w.ammo] || 0) < 1;
-  el("combat-attack-sub").textContent = !w.ammo
+  let attackSub = !w.ammo
     ? "Weapon damage, no defense"
     : outOfAmmo ? "Out of " + w.ammo : w.ammo + " x" + state.bag[w.ammo];
+  // Attack fires on its own now (see scheduleCooldown()/settleCombat()) --
+  // this is just the countdown to that, so the player can see at a glance
+  // how long they've got left to tap Defend/Eat/Flee instead before it
+  // happens for them. Silent once out of ammo (nothing's about to
+  // auto-fire) or already mid-recovery (the number would be stale/
+  // negative until the next window opens).
+  if (running && ready && !outOfAmmo) {
+    const untilAuto = Math.max(0, c.autoAttackAt - Date.now());
+    attackSub += " — auto-attacking in " + (untilAuto / 1000).toFixed(1) + "s";
+  }
+  el("combat-attack-sub").textContent = attackSub;
 
   const canAct = ready;
   el("combat-btn-attack").disabled = !canAct || outOfAmmo;

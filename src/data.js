@@ -24,6 +24,13 @@ export const ITEM_STACK_CAPS = {};
 // bag upgrade. Highland Sack (Craft Bench, RECIPES below) is the first
 // real entry: crafting one grants +3 bag slots for as long as it's kept.
 export const BAG_SLOT_BONUS = { "Highland Sack": 3 };
+// Aerendell's own local storage crate -- same slot-and-stack shape as the
+// bag (same per-item stackCapFor()), just a much higher flat cap and no
+// bonus-item hook (yet). One shared crate for now, not per-location (see
+// state.storage's own comment in state.js), so this is one flat number
+// rather than a per-LOCATIONS table -- first-pass, per the user's own "for
+// now" framing.
+export const STORAGE_SLOTS = 100;
 
 // The hub. Add a destination by adding a line here.
 // `hub` controls whether a place shows as a card on the home screen. Inventory,
@@ -155,12 +162,8 @@ export const AXES = {
   "Wooden Axe": { damage: 1 },
   "Flint Axe":  { damage: 2 },
   "Stone Axe":  { damage: 3 },
-  // Stronger than Stone Axe per the request -- also meant to be the one
-  // that can fell Birch (TREES.birch below), not just chop Pine faster.
-  // Birch itself has no plot to grow in yet (Logging is still hardcoded
-  // to Pine alone -- see logging.js's own `const TREE = TREES.pine`), so
-  // this axe is fully real and useful today against Pine, with Birch as
-  // a real spot nothing's behind yet.
+  // Stronger than Stone Axe -- both it and Stone Axe clear Birch's own
+  // minAxeDamage gate (TREES.birch, 3), Flint/Wooden Axe don't.
   "Scrap Axe":  { damage: 4 },
 };
 
@@ -271,17 +274,20 @@ export const TREES = {
     waters: 1, stageSeconds: 180, xp: 34, health: 24,
     gives: { "Pine Logs": 3 },
   },
-  // Real data (2026-09-02), no plot to actually grow in yet -- Logging is
-  // still hardcoded to Pine alone (`const TREE = TREES.pine;` in
-  // logging.js), so nothing plants or chops a Birch today. Registered
-  // anyway, same "real spot, nothing behind it yet" treatment Oak Planks/
-  // Fine String just got -- tougher than Pine (higher health, longer
-  // grow, more XP) so Scrap Axe's own extra damage over Stone Axe means
-  // something once there's a Birch plot to swing it at.
+  // Real plot now (2026-09-04) -- Forest Road's own Logging screen grows
+  // these instead of Pine (see LOCATIONS.forestRoad's own `tree` field and
+  // logging.js's treeFor()/treeForCurrentLocation()). "Same base stats as
+  // Pine trees" per the request -- waters/stageSeconds/xp/health all match
+  // TREES.pine exactly, only the seed/tint/output actually differ.
+  // `minAxeDamage` (3, Stone Axe's own damage) is the felling gate --
+  // touchLogPlot() blocks starting a swing on a Birch with anything
+  // weaker, same "equip the right tier or nothing happens" reasoning
+  // mining.js's own maxDepth wall already uses for pickaxes.
   birch: {
     name: "Birch", seed: "Birch Cones", tint: "#c9c19a",
-    waters: 1, stageSeconds: 240, xp: 50, health: 40,
+    waters: 1, stageSeconds: 180, xp: 34, health: 24,
     gives: { "Birch Logs": 3 },
+    minAxeDamage: 3,
   },
 };
 
@@ -297,7 +303,7 @@ export const TINTS = {
   "Flint Dagger": "#a3a8ad", "Wooden Buckler": "#8a6a45",
   "Padded Vest": "#9c7a54", "Stone Plate": "#7d7d76",
   "Highland Cloak": "#5c7a5e", "Highland Chest": "#4f6b52", "Highland Legs": "#425a45",
-  "Scrap Pickaxe": "#8c8f96", "Scrap Axe": "#8c8f96",
+  "Scrap Pickaxe": "#8c8f96", "Scrap Axe": "#8c8f96", "Scrap Watering Can": "#8c8f96",
   "Scrap Helm": "#75787f", "Scrap Armor": "#6a6d73", "Scrap Legs": "#65686e",
   "Short Bow": "#b98552", "Flint Arrows": "#9098a3",
   "Charcoal": "#3a3632", "Cooked Berries": "#8f3347",
@@ -554,11 +560,21 @@ export const RECIPES = {
   flintPickaxe: { name: "Flint Pickaxe", cost: { "Flint": 10, "Sticks": 10 } },
   stonePickaxe: { name: "Stone Pickaxe", cost: { "Stone Block": 9, "Pine Planks": 9 } },
   stoneAxe:     { name: "Stone Axe",     cost: { "Stone Block": 9, "Pine Planks": 9 } },
-  // Scrap tools (2026-09-02) -- Pine Planks + Scrap Metal per the request,
-  // the first tools to use Scrap Metal (Road Goblin's own drop) as a cost
-  // rather than just referencing it in a not-yet-real PICKAXES entry.
-  scrapPickaxe: { name: "Scrap Pickaxe", cost: { "Pine Planks": 10, "Scrap Metal": 8 } },
-  scrapAxe:     { name: "Scrap Axe",     cost: { "Pine Planks": 10, "Scrap Metal": 8 } },
+  // Scrap tools (2026-09-02) -- Scrap Metal, the first tools to use it
+  // (Road Goblin's own drop) as a cost rather than just referencing it in
+  // a not-yet-real PICKAXES entry. Switched from Pine Planks to Birch
+  // Planks (2026-09-04, per the request) -- Birch Planks' own recipe
+  // still needs a Pine Plank as one of its ingredients (see STATIONS.
+  // birchPlanks), so this reads as a real upgrade tier built *on top of*
+  // Pine, not a parallel track that skips it.
+  scrapPickaxe: { name: "Scrap Pickaxe", cost: { "Birch Planks": 10, "Scrap Metal": 8 } },
+  scrapAxe:     { name: "Scrap Axe",     cost: { "Birch Planks": 10, "Scrap Metal": 8 } },
+  // Same cost as its two scrap siblings above, per the request ("built
+  // with the same resources"). +8 capacity over the Wooden Can's 4 (see
+  // CANS below); refills through the same shared CAN_REFILL_MS everything
+  // else already uses, so "same amount of time to refill" needed no extra
+  // code at all.
+  scrapWateringCan: { name: "Scrap Watering Can", cost: { "Birch Planks": 10, "Scrap Metal": 8 } },
   flintDagger:  { name: "Flint Dagger",  cost: { "Flint": 15, "Sticks": 10 } },
   woodenBuckler:{ name: "Wooden Buckler", cost: { "Sticks": 20, "Stone": 10 } },
   paddedVest:   { name: "Padded Vest",   cost: { "Sticks": 20, "Flint": 15 } },
@@ -641,6 +657,7 @@ export const EQUIPMENT = {
   "Stone Axe": "axe",
   "Scrap Axe": "axe",
   "Wooden Can": "can",
+  "Scrap Watering Can": "can",
   "Wooden Pickaxe": "pick",
   "Flint Pickaxe": "pick",
   "Stone Pickaxe": "pick",
@@ -704,6 +721,11 @@ export const EQUIPMENT = {
 // the CAN_CAPACITY every can used to share before this was per-item.
 export const CANS = {
   "Wooden Can": { capacity: CAN_CAPACITY },
+  // 12 charges per the request -- 3x the Wooden Can's own 4. Refills
+  // through the same shared CAN_REFILL_MS canmeter.js already uses for
+  // every can, so "same amount of time to refill" is already true with
+  // no separate number needed here.
+  "Scrap Watering Can": { capacity: 12 },
 };
 
 // ------------------------------------------------------------- pickaxes
@@ -800,6 +822,14 @@ export const COMBAT_BASE_DEFENSE = 1;
 export const COMBAT_BASE_RECOVERY_MS = 1000;   // was 2200 -- 2026-08-28
 export const COMBAT_TICK_MS = 200;
 export const COMBAT_XP = 20;
+// Attack now fires on its own (2026-09-04) -- the moment the player's own
+// cooldown clears, this is how much real time they get to tap Defend/Eat/
+// Flee *instead* before combat.js's settleCombat() attacks on their
+// behalf. Defend and Eat stay real, deliberate choices (nothing about
+// them changed), this is just a fallback so Attack itself never has to be
+// tapped by hand -- including the very first hit of a fight, which used
+// to need an exact-timed tap the instant the enemy appeared.
+export const COMBAT_AUTO_ATTACK_DELAY_MS = 1200;
 
 export const WEAPONS = {
   "Flint Dagger": { atkMin: 4, atkMax: 8, twoHanded: false },
@@ -948,7 +978,7 @@ export const CATEGORIES = {
   "Flax Seeds": "farming", "Flax": "farming",
   "Pine Cones": "logging", "Pine Logs": "logging",
   "Birch Cones": "logging", "Birch Logs": "logging",
-  "Scrap Pickaxe": "crafting", "Scrap Axe": "crafting",
+  "Scrap Pickaxe": "crafting", "Scrap Axe": "crafting", "Scrap Watering Can": "crafting",
   "Scrap Helm": "crafting", "Scrap Armor": "crafting", "Scrap Legs": "crafting",
   "Short Bow": "fletcher", "Flint Arrows": "fletcher",
   "Berries": "foraging", "Flint": "foraging", "Sticks": "foraging",
@@ -1037,7 +1067,7 @@ export const BASE_VALUE = {
   "Pine Cones": 10, "Pine Logs": 10,
   "Berries": 7, "Flint": 5, "Sticks": 5,
   "Flint Axe": 50, "Flint Pickaxe": 50, "Stone Pickaxe": 90, "Stone Axe": 90,
-  "Scrap Pickaxe": 130, "Scrap Axe": 130,
+  "Scrap Pickaxe": 130, "Scrap Axe": 130, "Scrap Watering Can": 130,
   "Wooden Pickaxe": 1, "Wooden Axe": 1, "Wooden Can": 1,
   "Flint Dagger": 45, "Wooden Buckler": 40, "Padded Vest": 55, "Stone Plate": 95,
   "Highland Cloak": 25, "Highland Chest": 25, "Highland Legs": 25,
@@ -1264,6 +1294,16 @@ export const STATIONS = {
     screenTitle: "Sawmill", screenSub: "Turn pine logs into pine planks",
     actionName: "Pine Planks",
     input: "Pine Logs", inputQty: 3, output: "Pine Planks", ms: 10000, xp: 10,
+    skillXp: "millingXp", skillName: "Woodcutting",
+  },
+  // Needs a Pine Plank alongside the Birch Logs, not just Birch Logs
+  // alone -- per the request, literally: "3 Birch Logs and 1 Pine Plank."
+  // Second recipe sharing the Sawmill's own screen and skill, same shape
+  // Stone Cutter/Armor Bench/Fletching Bench already established.
+  birchPlanks: {
+    screenTitle: "Sawmill", screenSub: "Turn pine logs into pine planks",
+    actionName: "Birch Planks",
+    cost: { "Birch Logs": 3, "Pine Planks": 1 }, output: "Birch Planks", ms: 10000, xp: 12,
     skillXp: "millingXp", skillName: "Woodcutting",
   },
   // Two recipes sharing one screen -- the first STATIONS pair to need
@@ -1611,9 +1651,15 @@ export const LOCATIONS = {
     // own geography is what its `fishing` points at.
     forage: "aerendell", fishing: null,
   },
+  // `tree` (2026-09-04) -- which TREES key Logging grows here, read live
+  // by logging.js's treeForCurrentLocation() the moment a plot starts a
+  // fresh growth cycle. Absent everywhere else, same "falls back to pine"
+  // rule LOCATIONS' own `forage`/`fishing` null-means-nothing fields
+  // don't quite share, but the idea's the same: only the one location
+  // that actually differs needs an entry at all.
   forestRoad: {
     name: "Forest Road", type: "wilderness", pos: { x: 1, y: 1 }, stations: [],
-    forage: "forestRoad", fishing: "stream",
+    forage: "forestRoad", fishing: "stream", tree: "birch",
   },
   thalBarak: { name: "Thal-Barak", type: "city", pos: { x: 0, y: 2 }, stations: [], forage: null, fishing: "river" },
   stilltidePass: { name: "Stilltide Pass", type: "wilderness", pos: { x: 1, y: 3 }, stations: [], forage: null, fishing: "river" },

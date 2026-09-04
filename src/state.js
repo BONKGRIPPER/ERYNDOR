@@ -7,7 +7,7 @@
 import {
   PLOT_COUNT, RECIPES, EQUIP_SLOTS, BUILDINGS, CAN_CAPACITY, STATIONS, VILLAGER_TICK_MS, TREES,
   LOCATIONS, ZONE_XP_SHARE, ZONE_XP_PER_LEVEL, VILLAGE_UPKEEP_MS,
-  BAG_SLOTS, STACK_CAP_DEFAULT, ITEM_STACK_CAPS, BAG_SLOT_BONUS,
+  BAG_SLOTS, STACK_CAP_DEFAULT, ITEM_STACK_CAPS, BAG_SLOT_BONUS, STORAGE_SLOTS,
 } from "./data.js";
 
 export const SAVE_KEY = "eryndor:save";
@@ -23,10 +23,19 @@ export const state = {
   // Empty except for the free starting toolkit -- seeds and cones are
   // something you forage or buy, not a kit, but one of each tool has to
   // exist from the first boot or Farming/Logging/Mining have nothing to
-  // equip. All four are deliberately weak/starter-tier (see EQUIPMENT,
+  // equip. All three are deliberately weak/starter-tier (see EQUIPMENT,
   // PICKAXES, CANS in data.js) -- crafting or finding better ones is the
-  // point, not a shortcut around them.
-  bag: { "Wooden Pickaxe": 1, "Wooden Axe": 1, "Wooden Scythe": 1, "Wooden Can": 1 },
+  // point, not a shortcut around them. "Wooden Scythe" (a fourth starter)
+  // was dropped from here (2026-09-04) -- harvesting has been a toolless
+  // instant tap since the Scythe tool itself was removed (2026-08-31, see
+  // TREES' own comment on it having "nothing left to differentiate"), and
+  // the item was never re-registered in TINTS/EQUIPMENT/anywhere -- every
+  // save had one sitting in the bag forever, permanently invisible (no
+  // sprite, no equip slot, filtered out of every item list that reads
+  // TINTS) yet still counting as one real, un-freeable slot the moment the
+  // slot-cap system started counting raw bag keys instead. New saves start
+  // without it; see load()'s own migration for existing ones.
+  bag: { "Wooden Pickaxe": 1, "Wooden Axe": 1, "Wooden Can": 1 },
   // Ephemeral, never saved/loaded on purpose -- incremented by gainItem()
   // below every time a grant gets truncated by the bag's own slot cap.
   // main.js's tick loop watches this for changes (not its raw value) to
@@ -301,17 +310,36 @@ export function bagSlotCap() {
   return cap;
 }
 
-function slotsForQty(qty, cap) {
+// Exported (inventory.js's own slot grid reads this directly) -- how many
+// discrete stacks a given qty actually occupies at a given per-item cap,
+// the same number a real array of stack objects would have this many
+// elements in.
+export function slotsForQty(qty, cap) {
   return qty > 0 ? Math.ceil(qty / cap) : 0;
 }
 
-export function bagSlotsUsed() {
+// Generic across any {name: qty} container -- shared by the bag's own
+// wrappers below and storage's own (storageSlotsUsed()/storageRoomFor()),
+// so the exact same slot-and-stack math backs both rather than two
+// separate implementations to keep in sync.
+function slotsUsedIn(container) {
   let used = 0;
-  Object.keys(state.bag).forEach(function (name) {
-    used += slotsForQty(state.bag[name] || 0, stackCapFor(name));
+  Object.keys(container).forEach(function (name) {
+    used += slotsForQty(container[name] || 0, stackCapFor(name));
   });
   return used;
 }
+
+function roomForIn(container, name, cap) {
+  const itemCap = stackCapFor(name);
+  const current = container[name] || 0;
+  const currentSlots = slotsForQty(current, itemCap);
+  const otherSlots = slotsUsedIn(container) - currentSlots;
+  const availableSlots = Math.max(0, cap - otherSlots);
+  return Math.max(0, availableSlots * itemCap - current);
+}
+
+export function bagSlotsUsed() { return slotsUsedIn(state.bag); }
 
 // How many more of `name` can actually be added to the bag right now --
 // shared by gainItem() below and inventory.js's Storage -> Bag transfer
@@ -319,14 +347,15 @@ export function bagSlotsUsed() {
 // already-owned item back into the bag and is deliberately NOT gated here,
 // same reasoning "you can't get locked out of unequipping your own armor
 // by an unrelated full bag" argues against it).
-export function bagRoomFor(name) {
-  const cap = stackCapFor(name);
-  const current = state.bag[name] || 0;
-  const currentSlots = slotsForQty(current, cap);
-  const otherSlots = bagSlotsUsed() - currentSlots;
-  const availableSlots = Math.max(0, bagSlotCap() - otherSlots);
-  return Math.max(0, availableSlots * cap - current);
-}
+export function bagRoomFor(name) { return roomForIn(state.bag, name, bagSlotCap()); }
+
+// Storage's own slot accounting -- same STORAGE_SLOTS-and-per-item-cap
+// shape the bag uses (see STORAGE_SLOTS in data.js), just a flat cap with
+// no bonus-item hook yet. Used by inventory.js's own slot grid and to gate
+// its Bag -> Storage transfer the same way Storage -> Bag is already
+// gated against the bag's own cap.
+export function storageSlotsUsed() { return slotsUsedIn(state.storage); }
+export function storageRoomFor(name) { return roomForIn(state.storage, name, STORAGE_SLOTS); }
 
 // The one place every producer (foraging, crafting, cooking, mining,
 // farming, logging, stations, buying, both villager systems) routes a bag
@@ -411,6 +440,12 @@ for (let i = 0; i < PLOT_COUNT; i++) {
     // readyAt}, same shape state.mineSwing already uses. See logging.js's
     // startChop()/settleLogging().
     chopSwing: null,
+    // Which TREES key this plot is actually growing -- pine at boot,
+    // always (a new save always starts at Aerendell); logging.js's own
+    // startGrowing() overwrites this on every later regrow with whatever
+    // LOCATIONS[...].tree says the player's current location grows. See
+    // logging.js's own treeFor()/treeForCurrentLocation().
+    tree: "pine",
   });
 }
 // Starts with exactly one Honey slot, idle -- see BEEHIVE_EXPAND_COST in
@@ -507,6 +542,13 @@ export function load() {
     const data = JSON.parse(raw);
     if (typeof data.startedAt === "number") state.startedAt = data.startedAt;
     if (data.bag) state.bag = data.bag;
+    // One-time cleanup for a save from before "Wooden Scythe" was dropped
+    // from the starting bag (see state.js's own comment on it above) --
+    // it was never a real item (no TINTS entry, nothing could ever equip
+    // or show it), just an invisible slot permanently occupied. Simply
+    // deleted, not refunded -- there's nothing to refund a phantom item
+    // into.
+    delete state.bag["Wooden Scythe"];
     if (data.storage) state.storage = data.storage;
     if (data.equipment) {
       EQUIP_SLOTS.forEach(function (slot) {
@@ -657,6 +699,10 @@ export function load() {
           // other mid-progress state this game doesn't try to carry
           // across a shape change (see mineSwing's own load guard above).
           if (!p.chopSwing || typeof p.chopSwing.readyAt !== "number") p.chopSwing = null;
+          // A save from before per-location species existed (2026-09-04)
+          // has no `tree` at all -- every plot was Pine, always, so that's
+          // the honest default rather than leaving it undefined.
+          if (typeof p.tree !== "string") p.tree = "pine";
         });
       }
     }

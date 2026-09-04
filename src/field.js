@@ -1,13 +1,16 @@
 // =================================================================== field
 
-import { CROPS, FERTILIZERS, WATER_TAPS_NEEDED, PLOT_EXPAND_COST, PLOT_COUNT, LOCATIONS } from "./data.js";
+import {
+  CROPS, FERTILIZERS, WATER_TAPS_NEEDED, PLOT_EXPAND_COST, PLOT_COUNT, LOCATIONS,
+  CANS, EQUIP_SLOTS, EQUIPMENT, TINTS,
+} from "./data.js";
 import { state, save, gainItem, gainSkillXp } from "./state.js";
 import { openZoneWheel } from "./zoneWheel.js";
 import { GROWTH_PER_LEVEL, WATER_XP, levelFromXp, levelProgress } from "./skills.js";
 import { growthMultiplier } from "./time.js";
 import { tryStartCanRefill, settleCanRefill, drawCanMeter } from "./canmeter.js";
 import { canAfford, buildCostNodes, spendCost } from "./costDisplay.js";
-import { useSprite } from "./sprites.js";
+import { useSprite, slug } from "./sprites.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { drawBag, updateSkillsNote } from "./hub.js";
@@ -133,6 +136,153 @@ function drawExpandCard() {
   card.append(label, cost_);
 }
 
+// ---------------------------------------------------------------- can slot
+//
+// Equip/change the Watering Can straight from here -- same system Logging
+// already set up for its own Axe (see logging.js's drawAxeSlot()/
+// openAxePicker(), which this mirrors), writing the exact same
+// state.equipment.can field canmeter.js's own canCapacity() already reads
+// live. Farm and Logging share the one equipped can (see canmeter.js's own
+// comment), so a change made here already applies to Logging's own
+// watering too, no separate "farm can" to keep in sync. Only one tier
+// (Wooden Can) exists today -- same "ready for it" state Logging's own Axe
+// picker was in before Flint/Stone/Scrap Axe existed -- so this has
+// nothing to switch *to* yet, just somewhere for a future tier to slot in.
+
+function itemGet(container, name) { return container[name] || 0; }
+
+function itemAdd(container, name, amount) {
+  const next = itemGet(container, name) + amount;
+  if (next <= 0) delete container[name];
+  else container[name] = next;
+}
+
+const CAN_SLOT = EQUIP_SLOTS.find(function (s) { return s.id === "can"; });
+
+// Equipping over an already-filled slot swaps in one tap -- the old can
+// goes back to the bag first, same rule inventory.js's own equip() follows.
+// Whatever's mid-charge/mid-refill on state.wateringCan is untouched --
+// swapping cans doesn't reset or top off the one already in hand.
+function equipCan(name) {
+  const previous = state.equipment.can;
+  if (previous) itemAdd(state.bag, previous, 1);
+  itemAdd(state.bag, name, -1);
+  state.equipment.can = name;
+  save();
+  drawField();
+}
+
+function unequipCan() {
+  const name = state.equipment.can;
+  if (!name) return;
+  itemAdd(state.bag, name, 1);
+  state.equipment.can = null;
+  save();
+  drawField();
+}
+
+// One full-width pill, same shape Logging's own drawAxeSlot() builds.
+function drawCanSlot() {
+  const wrap = el("field-can-slot");
+  if (!wrap) return;
+  wrap.replaceChildren();
+  const equipped = state.equipment.can;
+
+  const btn = document.createElement("button");
+  btn.className = "pill equip-row";
+
+  const icon = document.createElement("span");
+  icon.className = "pill-icon";
+  const img = document.createElement("img");
+  img.className = "sprite-img";
+  img.alt = "";
+  img.draggable = false;
+  const fallback = document.createElement("span");
+  fallback.className = "sprite-fallback";
+  if (equipped) fallback.style.background = TINTS[equipped] || "#9a8f7d";
+  icon.append(img, fallback);
+  if (equipped) useSprite(icon, "items/" + slug(equipped));
+
+  const body = document.createElement("span");
+  body.className = "pill-body";
+  const name = document.createElement("span");
+  name.className = "pill-name";
+  name.textContent = "Watering Can";
+  const sub = document.createElement("span");
+  sub.className = "pill-sub";
+  // The capacity stat right alongside the name -- what's actually driving
+  // canmeter.js's own canCapacity() -- rather than a bare item name the
+  // player has to already know the numbers behind.
+  sub.textContent = equipped
+    ? equipped + " · " + CANS[equipped].capacity + " charges"
+    : "Empty — tap to equip";
+  body.append(name, sub);
+
+  btn.append(icon, body);
+  btn.addEventListener("click", openCanPicker);
+  wrap.append(btn);
+}
+
+// Same picker shape Logging's own openAxePicker() uses -- an "Unequip" row
+// (if something's equipped) followed by every owned can not already
+// equipped, using the shared sheet rather than a picker this screen owns.
+function openCanPicker() {
+  const body = el("sheet-body");
+  body.replaceChildren();
+
+  const equipped = state.equipment.can;
+  if (equipped) {
+    const unequipRow = document.createElement("button");
+    unequipRow.className = "seed-row unequip-row";
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = "transparent";
+    dot.style.border = "1px solid var(--dim)";
+    const text = document.createElement("div");
+    text.className = "seed-name";
+    text.textContent = "Unequip " + equipped;
+    unequipRow.append(dot, text);
+    unequipRow.addEventListener("click", function () {
+      closeSheet();
+      unequipCan();
+    });
+    body.append(unequipRow);
+  }
+
+  const options = Object.keys(EQUIPMENT).filter(function (name) {
+    return EQUIPMENT[name] === "can" && name !== equipped && itemGet(state.bag, name) > 0;
+  });
+
+  if (options.length === 0 && !equipped) {
+    const empty = document.createElement("div");
+    empty.className = "inv-empty";
+    empty.textContent = "Nothing to equip here yet.";
+    body.append(empty);
+  }
+
+  options.forEach(function (name) {
+    const row = document.createElement("button");
+    row.className = "seed-row";
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = TINTS[name] || "#9a8f7d";
+    const text = document.createElement("div");
+    text.className = "seed-name";
+    text.textContent = name;
+    const count = document.createElement("span");
+    count.className = "seed-count";
+    count.textContent = itemGet(state.bag, name) + " owned";
+    row.append(dot, text, count);
+    row.addEventListener("click", function () {
+      closeSheet();
+      equipCan(name);
+    });
+    body.append(row);
+  });
+
+  openSheet(CAN_SLOT ? "Equip " + CAN_SLOT.name.toLowerCase() : "Equip watering can");
+}
+
 /** empty | thirsty | growing | ripe */
 function plotStatus(plot) {
   if (!plot.crop) return "empty";
@@ -236,6 +386,7 @@ export function drawField() {
   });
 
   drawCanMeter("screen-field", state.wateringCan);
+  drawCanSlot();
   // Keeps the expand card's afford styling current every tick this screen
   // is visible, not just right after buildPlots() rebuilds it -- same
   // "don't let it go stale while sitting here" fix Craft/the conversion

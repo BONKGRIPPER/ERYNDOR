@@ -3255,6 +3255,319 @@ Bench cycle and confirmed it lands in the bag as a real, capped-and-
 gained item (same gainItem() path everything else uses). No console
 errors throughout. Test save reset afterward.
 
+### Home dock QOL: a station quick-nav popup (2026-09-04)
+
+The Home dock button no longer jumps straight to the Home screen -- it
+opens a small popup instead (`src/dock.js`'s `openStationQuickNav()`,
+reusing the same shared bottom sheet every picker in this game already
+uses), a dense icon grid of every built crafting station plus Home itself
+as the first entry. Tapping any icon navigates straight there and closes
+the popup -- no more detour through Home to re-pick a different station
+mid-session. "Crafting station" means every `BUILDINGS`-backed place
+(Campfire, Spinning Wheel, Sawmill, Stone Cutter, Tanning Station,
+Township, Armor Bench, Grind Stone, Beehive, Fletching Bench, Loom) plus
+the always-available Craft Bench -- not Farm/Forest/Mining/Combat/
+Fishing/Market, which are gathering/combat destinations, not stations.
+
+Reuses `hub.js`'s own `visiblePlaces()` (newly exported) for the exact
+same "actually built, and belongs at this location" gating the real hub
+cards already use, so the popup never offers a station the player
+couldn't really reach by walking to Home and tapping its card by hand.
+
+Verified live: a fresh save's popup shows just Home + Craft Bench (the
+only two always-available entries); building every station and reopening
+it shows all 11 stations in a clean 4-column grid, each with its real
+sprite icon already loading; tapping Craft Bench closed the popup and
+landed on the Crafting screen directly; the sheet's own Close button and
+click-outside-to-close both still work unchanged. No console errors.
+
+### Attack fires on its own now -- a step toward idle combat (2026-09-04)
+
+Attack no longer needs a manual tap. The player's own cooldown clock
+already existed (`playerCooldownUntil`); this adds a second deadline
+alongside it, `state.combat.autoAttackAt`, always
+`COMBAT_AUTO_ATTACK_DELAY_MS` (1.2s, first-pass number) past whenever the
+player next becomes ready. `settleCombat()` -- already running every tick
+regardless of which screen is open, same as every other settle() in this
+game -- now checks that deadline too, and just calls `attack()` itself
+once it passes. Reuses the exact same function a manual tap already
+calls, so an auto-fired attack behaves identically in every way (ammo
+check, damage roll, drops, XP, rescheduling the *next* window) -- nothing
+about `attack()` itself changed.
+
+Defend, Eat, and Flee are unchanged and still fully manual -- tapping any
+of them during the same ready window fires that action instead (its own
+handler already runs synchronously the instant it's clicked, before the
+next ~200ms tick could reach the auto-attack check), consumes the
+cooldown, and reschedules `autoAttackAt` for the window after. One new
+helper, `scheduleCooldown()`, is now the single place every action
+(attack/defend/eat/a failed flee) sets `playerCooldownUntil` *and*
+`autoAttackAt` together, so nothing can set one without the other
+drifting out of sync.
+
+This also fixes the exact complaint that prompted it: the fight's very
+first attack, which used to need an exact-timed tap the instant an enemy
+appeared, now just fires on its own ~1.2s in if the player doesn't act
+first -- same grace window every later attack gets, no special-casing.
+And since `settleCombat()` already ran unconditionally in the background
+(the enemy's own attacks always have), a fight can now fully play itself
+out -- won, lost, or left alone -- without the Combat screen ever being
+open, which is the explicit point: a real step toward idle combat, not
+just this one QOL fix.
+
+The Attack button's own sub-text now shows a live countdown ("auto-
+attacking in 0.8s") whenever the player's ready and not out of ammo, so
+it's clear at a glance how long's left to Defend/Eat/Flee instead before
+it happens automatically.
+
+One small, deliberately-unhandled edge case: a fight already in progress
+on a save from *before* this change has no `autoAttackAt` on its saved
+`state.combat` at all -- that one fight just stays fully manual (the
+`Date.now() >= undefined` check is always false) until the player's next
+manual action reschedules it via `scheduleCooldown()`, at which point
+every window after behaves normally. No migration code written for this
+-- it self-heals on the very next tap and never recurs.
+
+Verified live: started a fight and touched nothing -- the player's own
+attack fired on its own after the grace window with no manual tap at
+all, `autoAttackAt` rescheduling correctly each time; on a second fight,
+tapping Defend inside the grace window fired Defend instead (set
+`braced`) and rescheduled the next auto-attack window, confirming the
+override still works. No console errors. Test save reset afterward.
+
+### In-screen tool switching for Farm and Mining, same as Logging's Axe (2026-09-04)
+
+Farm and Mining get the exact same inline equip-picker Logging's own Axe
+slot already had -- tap the tool row, swap to another owned one, no trip
+through Inventory needed. Both mirror `logging.js`'s
+`drawAxeSlot()`/`openAxePicker()` shape closely on purpose: an
+`equip row` pill showing the equipped item's own driving stat, a shared-
+sheet picker with an Unequip row plus every other owned option, writing
+straight to the same `state.equipment.*` field Inventory's own Equipment
+page already reads.
+
+- **Farm** -- a new Watering Can slot (`field.js`'s `drawCanSlot()`/
+  `openCanPicker()`, `state.equipment.can`), placed right under the XP bar
+  like Logging's Axe. `canmeter.js` already read this field live for its
+  own `canCapacity()`, and Farm/Logging already share the one equipped
+  can -- this was genuinely just the missing UI, no new mechanics. Only
+  one Can tier (Wooden Can) exists today, so there's nothing to switch
+  *to* yet -- same state Logging's own Axe slot was in before Flint/
+  Stone/Scrap Axe existed.
+- **Mining** -- a new Pickaxe slot (`mining.js`'s `drawPickaxeSlot()`/
+  `openPickaxePicker()`, `state.equipment.pick`), same placement. Blocked
+  entirely while a swing's in flight (`state.mineSwing`) -- same "can't
+  swap tools mid-action" reasoning `startDig()`/`bankAndSurface()`
+  already enforce, so a swing already locked to the old pickaxe's numbers
+  (see `startDig()`'s own "recipe locked at start" comment) can't get
+  silently invalidated out from under itself by an equip change mid-swing.
+  The compact pickaxe-name label already sitting in the art banner
+  overlay is untouched, informative in both places now rather than
+  replaced.
+
+Verified live: Farm's Can slot showed "Wooden Can · 4 charges", opened
+the picker, unequipped and re-equipped it, bag count tracking correctly
+both ways. Mining's Pickaxe slot showed "Wooden Pickaxe · 20% risk ·
++5m"; equipping an owned Stone Pickaxe instead updated both the slot's
+own stat line *and* the Dig pill's own sub-text to "5% risk · +5m" in the
+same redraw, confirming both read the one live `state.equipment.pick`.
+Confirmed the picker refuses to even open while a swing's running. No
+console errors. Test save reset afterward.
+
+### A real slot grid for Bag and Storage, Storage's own 100-slot cap, Bag as Inventory's default (2026-09-04)
+
+Bag and Storage now draw every slot the player actually has, filled or
+not, instead of a flat list of just what's owned -- the point being to
+see at a glance how much room is left, not just what's in there. An item
+past its own `stackCapFor()` still spills into a second (third, ...) card
+exactly like `gainItem()`'s own slot accounting already counted it, so
+the grid and the cap enforcement now visibly agree with each other.
+
+Storage gets a real cap for the first time -- `STORAGE_SLOTS` (100,
+data.js), same slot-and-stack shape the bag already used, generalized in
+state.js (`slotsUsedIn()`/`roomForIn()` now back both `bagSlotCap()`'s own
+family and the new `storageSlotsUsed()`/`storageRoomFor()`) rather than
+copy-pasting the bag's own math a second time. Both transfer directions
+between Bag and Storage are now clamped against whichever side is the
+*destination* -- Storage -> Bag already was (an earlier pass); Bag ->
+Storage is new now that Storage isn't unlimited any more.
+
+Inventory now opens to the Bag tab by default, not Equipment -- what the
+player's actually carrying is almost always what they opened Inventory to
+check.
+
+Also fixed, found while building this: "Wooden Scythe" was a leftover
+starting-bag item with no `TINTS` entry at all (harvesting became a
+toolless instant tap back on 2026-08-31, and the item itself was never
+re-registered anywhere) -- completely invisible, but still counted as one
+real, permanent slot in every save the moment slot accounting started
+reading raw bag keys. Dropped from the starting bag, with a one-time
+`load()` cleanup (`delete state.bag["Wooden Scythe"]`) for saves that
+already have one sitting there.
+
+Also widened the same day's earlier Home-dock quick-nav popup
+(`dock.js`) to show every hub-visible place, not just crafting stations
+-- Farm, Forest, Mining, Combat now show up there too, alongside every
+built station.
+
+Verified live: Bag's grid showed exactly 25 cells (24 empty + 1 Flint)
+matching "1/25 slots used" precisely -- before the Wooden Scythe fix this
+read "2/25" with only 1 real card, the exact discrepancy that surfaced
+the bug. Storage's grid showed 100 cells at "0/100 slots used". The quick-
+nav popup now lists Home, Farm, Forest, Mining, Craft Bench, Combat. No
+console errors. Test save reset afterward.
+
+### Fixed: Storage's slot grid overlapping, and a visible inner scrollbar (2026-09-04)
+
+Two real bugs in the slot grid shipped earlier today. Every card was
+squashed into a sliver and spilling into the row below it -- `.inv-grid`
+sizes its rows as `auto` by default, but inside its own `flex:1`/
+`min-height:0`/`overflow-y:auto` zone, that auto-sizing was collapsing
+every row to a few pixels instead of the square `aspect-ratio` each
+`.inv-card` actually needs, letting every card overflow into the next
+row down. Fixed with an explicit `grid-auto-rows: min-content`, which
+pins row height to the content's own natural size instead of whatever
+sizing quirk `overflow:auto` was introducing. Also hid the grid's own
+visible scrollbar (`scrollbar-width: none` / `::-webkit-scrollbar
+{ display: none }`) -- still fully touch/wheel-scrollable, just no boxed-
+in slider, so it reads the same as every other screen's own plain scroll
+rather than a distinct scroll region. The bounded-zone/pinned-toggle
+layout itself (shared with Fishing's own Rod/Net/Trap page) is
+unchanged and intentional -- only the broken row sizing and the visible
+scrollbar chrome were the actual bugs.
+
+Verified live: Storage's 100-slot grid now renders as clean, square,
+non-overlapping cards with no visible scrollbar, and still scrolls
+correctly via `scrollTop`/wheel/touch.
+
+### Birch at Forest Road, a real axe-tier gate, and two new Scrap tools (2026-09-04)
+
+Logging's tree species is no longer hardcoded to Pine -- `LOCATIONS[...].
+tree` (new field, only Forest Road sets one: `"birch"`) says what a
+location grows, read live by `treeForCurrentLocation()` the moment a
+plot's growth cycle actually starts, then locked onto that plot
+(`plot.tree`) the same "recipe locked at start" way every other timer in
+this game already works -- wandering to a different location mid-cycle
+never retroactively changes what a tree already growing turns out to be.
+Every function that used to reach for one hardcoded `TREE` constant now
+reads a specific plot's own species through `treeFor(plot)` instead.
+Birch itself now has Pine's exact stats (waters/stageSeconds/xp/health)
+per the request -- only its seed/tint/output actually differ -- plus a
+real felling gate: `minAxeDamage: 3` (Stone Axe's own damage) blocks
+`touchLogPlot()` from even starting a swing with anything weaker, same
+"equip the right tier or nothing happens" reasoning Mining's own
+`maxDepth` wall already uses for pickaxes.
+
+Birch Planks -- a second Sawmill recipe, 3 Birch Logs *and* 1 Pine Plank
+(per the request, literally both, not Birch Logs alone) -- so the recipe
+reads as a real upgrade built on top of the existing Pine chain, not a
+parallel track that skips it. Scrap Pickaxe and Scrap Axe now cost Birch
+Planks instead of Pine Planks; a new Scrap Watering Can joins them at the
+Craft Bench with the same cost (10 Birch Planks/8 Scrap Metal) and 12
+charges (3x the Wooden Can's 4) -- refills through the same shared
+`CAN_REFILL_MS` every can already uses, so "same amount of time to
+refill" needed no new code at all.
+
+Also fixed, found while touching Logging's own boot-time state: every
+starting `logPlots` entry, and every plot loaded from an existing save,
+now carries a real `tree` field (defaulting to `"pine"` for anything
+that predates this) -- without it, an old save's plots would have read
+back as `undefined` species and fallen through `treeFor()`'s own "pine"
+fallback silently forever, technically correct but by accident rather
+than by a real migration.
+
+Verified live: chopped a ripe Pine plot at Aerendell (correctly banked
+Pine Logs, the species locked in when *that* cycle started); switched to
+Forest Road and let the same plot regrow -- it came back labeled Birch,
+with the other two untouched plots still reading Pine. Confirmed the
+felling gate: a Wooden Axe on the ripe Birch produced "Requires a
+stronger axe to fell a Birch." and started no swing; equipping a Stone
+Axe started one immediately (8s = 24 health / 3 damage). Sawmill's Birch
+Planks recipe showed "3/3 Birch Logs · 0/1 Pine Planks" with real
+materials in the bag. Craft Bench showed Scrap Pickaxe/Axe both costing
+Birch Planks and the new Scrap Watering Can alongside them; crafted one
+and equipped it on Farm, which read "Scrap Watering Can · 12 charges."
+No console errors. Test save reset afterward.
+
+### Market hours shown on the Market screen and the dock itself (2026-09-04)
+
+The Market screen's own header now shows a town's actual hours --
+"Open 9 AM – 5 PM", plus "(closed now)" appended whenever it currently
+is (`market.js`'s `updateMarketHeader()`, reading the same
+`TOWN_MARKET_CLOSED_START_HOUR`/`END_HOUR` the closed-notice screen
+already used, through a new shared `formatHour()`). A city shows nothing
+here (open 24/7 by type, never checks the clock at all); a landmark/
+wilderness has no market to show hours for either.
+
+The dock's own Market icon (`dock.js`'s new `refreshMarketDockBadge()`,
+called every tick alongside the other small always-current badges) swaps
+its label to "Closed" and dims, the same language `.dock-btn.locked`
+already uses, whenever the player's *current* location is a town outside
+those hours -- picked over removing the icon outright (the request's own
+other option) since a shifting 4-vs-5-icon dock every time the clock
+crosses an hour boundary seemed more disorienting than a label that just
+changes in place.
+
+Verified live: real time landed inside market hours, so the header read
+"Open 9 AM – 5 PM" with no closed notice and the dock still said
+"Market". Simulated 8 PM by temporarily overriding `Date` in the page
+(reverted immediately after) -- header correctly appended
+"(closed now)", the in-list closed notice showed, and the dock's Market
+icon switched to "Closed" and dimmed. No console errors after
+restoring real time. Test save reset afterward.
+
+### Skills page redesign: a two-column stat-card grid (2026-09-04)
+
+Restyled to read closer to a reference screenshot the user shared -- a
+two-column grid of bordered "stat cards," each with a bigger bordered
+icon slot (inset shadow, rounded square) and a segmented (tick-marked)
+XP bar instead of one smooth fill. No markup or JS changed at all --
+`skillsScreen.js` still builds exactly the same DOM it always did; this
+is entirely `style.css`.
+
+- `.skills-list` is now `display: grid` with
+  `grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))` --
+  reflows on its own rather than a manual breakpoint. 200px (not the
+  rounder 240 tried first) specifically so two columns actually fit
+  within `#app`/`.screen`'s own 480px cap -- this game's whole canvas is
+  phone-shaped by design even in a wide browser window, so anything
+  wider than 200px-minimum would never clear two side by side there. A
+  genuinely narrow phone still collapses to one column on its own.
+- The segmented bar is a pure CSS trick, not a shape or markup change --
+  a `repeating-linear-gradient` overlay (`.skill-row .bar.xp-bar::after`)
+  draws ~20 evenly-spaced dark dividers on top of both the track and the
+  existing plain `.xp-fill`, so the fill's own width/transition logic is
+  completely untouched.
+- Found and fixed while narrowing the cards to fit two per row: a longer
+  name ("Woodcutting", "Stonecutting") wrapped to a second line and ran
+  straight into "Level N" sitting beside it. `.skill-name` now truncates
+  with an ellipsis instead (`overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap`), same treatment `.inv-name` already uses for the
+  same reason.
+
+**On the actual icon art**: the reference image's pixel-art icons (axe,
+pickaxe, spool of thread, etc.) are real bitmap sprites, and there's no
+image-generation tool available in this session to produce genuine
+pixel-art assets from scratch -- so those specific icons weren't
+recreated here. The sprite pipeline that would display them is already
+fully wired and waiting, unchanged from before: drop a real image at
+`assets/sprites/skills/<id>.png` (ids match `SKILLS`' own keys in
+data.js -- `farming`, `logging`, `mining`, `weaving`, etc.) and
+`useSprite()` picks it up automatically, no code changes needed. The
+emoji fallback (`.sprite-fallback`) is what's showing for every skill
+until then, same as every other icon slot in this game already works.
+If real PNG files exist somewhere, they can just be dropped into that
+folder; otherwise this would need either sourcing/generating actual
+bitmap art through some other tool, or building simplified inline SVG
+icons by hand as a vector stand-in (a real option, just a different look
+than true pixel art).
+
+Verified live: the Skills page now renders as a two-column grid on this
+session's own browser width, cards read cleanly with the icon/name/level/
+count/segmented-bar layout, and the earlier text-collision bug (checked
+by scrolling through the full list including "Woodcutting"/
+"Stonecutting") is gone. No console errors.
+
 ## Adding to it
 
 A new crop, tree, or recipe is one entry in `src/data.js`; a new zone's

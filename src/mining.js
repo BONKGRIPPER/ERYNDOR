@@ -30,6 +30,7 @@
 import {
   MINE_XP, MINE_HAZARD_MAX,
   MINE_SURFACE_MS_PER_10M, MINE_CAVEIN_MULT, MINE_MATERIALS, MINE_ZONES, PICKAXES,
+  EQUIP_SLOTS, EQUIPMENT, TINTS,
 } from "./data.js";
 import { state, save, gainItem, gainSkillXp } from "./state.js";
 import { openZoneWheel } from "./zoneWheel.js";
@@ -39,6 +40,7 @@ import { useSprite, slug } from "./sprites.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { drawBag, updateSkillsNote } from "./hub.js";
+import { openSheet, closeSheet } from "./sheet.js";
 
 function onCooldown() { return Date.now() < state.mineCooldownUntil; }
 
@@ -233,6 +235,156 @@ function bankAndSurface() {
   refreshMining();
 }
 
+// ------------------------------------------------------------ pickaxe slot
+//
+// Equip/change the Pickaxe straight from here -- same system Logging
+// already set up for its own Axe (see logging.js's drawAxeSlot()/
+// openAxePicker(), which this mirrors), writing the exact same
+// state.equipment.pick field pickaxe() above already reads live. The
+// compact "No pickaxe equipped" label inside the art banner overlay
+// (#mine-pickaxe-name) is untouched -- this is a second, real equip row
+// beneath the XP bar, same placement Logging's own Axe slot uses.
+
+function itemGet(container, name) { return container[name] || 0; }
+
+function itemAdd(container, name, amount) {
+  const next = itemGet(container, name) + amount;
+  if (next <= 0) delete container[name];
+  else container[name] = next;
+}
+
+const PICK_SLOT = EQUIP_SLOTS.find(function (s) { return s.id === "pick"; });
+
+// Equipping over an already-filled slot swaps in one tap -- the old
+// pickaxe goes back to the bag first, same rule inventory.js's own
+// equip() follows. Mid-swing is blocked -- same "can't swap tools while
+// mid-action" reasoning startDig()/bankAndSurface() already enforce
+// elsewhere, so a swing already locked to the old pickaxe's numbers
+// (startDig()'s own comment) never gets silently invalidated out from
+// under itself.
+function equipPickaxe(name) {
+  if (state.mineSwing) return;
+  const previous = state.equipment.pick;
+  if (previous) itemAdd(state.bag, previous, 1);
+  itemAdd(state.bag, name, -1);
+  state.equipment.pick = name;
+  save();
+  refreshMining();
+}
+
+function unequipPickaxe() {
+  if (state.mineSwing) return;
+  const name = state.equipment.pick;
+  if (!name) return;
+  itemAdd(state.bag, name, 1);
+  state.equipment.pick = null;
+  save();
+  refreshMining();
+}
+
+// One full-width pill, same shape Logging's own drawAxeSlot() builds.
+function drawPickaxeSlot() {
+  const wrap = el("mine-pickaxe-slot");
+  if (!wrap) return;
+  wrap.replaceChildren();
+  const equipped = state.equipment.pick;
+
+  const btn = document.createElement("button");
+  btn.className = "pill equip-row";
+
+  const icon = document.createElement("span");
+  icon.className = "pill-icon";
+  const img = document.createElement("img");
+  img.className = "sprite-img";
+  img.alt = "";
+  img.draggable = false;
+  const fallback = document.createElement("span");
+  fallback.className = "sprite-fallback";
+  if (equipped) fallback.style.background = TINTS[equipped] || "#9a8f7d";
+  icon.append(img, fallback);
+  if (equipped) useSprite(icon, "items/" + slug(equipped));
+
+  const body = document.createElement("span");
+  body.className = "pill-body";
+  const name = document.createElement("span");
+  name.className = "pill-name";
+  name.textContent = "Pickaxe";
+  const sub = document.createElement("span");
+  sub.className = "pill-sub";
+  // Speed/risk/depth right alongside the name -- what's actually driving
+  // startDig()'s own numbers -- rather than a bare item name the player
+  // has to already know the stats behind.
+  sub.textContent = equipped
+    ? equipped + " · " + Math.round(PICKAXES[equipped].riskPerSwing * 100) + "% risk · +" + PICKAXES[equipped].depthPerSwing + "m"
+    : "Empty — tap to equip";
+  body.append(name, sub);
+
+  btn.append(icon, body);
+  btn.addEventListener("click", openPickaxePicker);
+  wrap.append(btn);
+}
+
+// Same picker shape Logging's own openAxePicker() uses -- an "Unequip" row
+// (if something's equipped) followed by every owned pickaxe not already
+// equipped, using the shared sheet rather than a picker this screen owns.
+function openPickaxePicker() {
+  if (state.mineSwing) return;
+  const body = el("sheet-body");
+  body.replaceChildren();
+
+  const equipped = state.equipment.pick;
+  if (equipped) {
+    const unequipRow = document.createElement("button");
+    unequipRow.className = "seed-row unequip-row";
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = "transparent";
+    dot.style.border = "1px solid var(--dim)";
+    const text = document.createElement("div");
+    text.className = "seed-name";
+    text.textContent = "Unequip " + equipped;
+    unequipRow.append(dot, text);
+    unequipRow.addEventListener("click", function () {
+      closeSheet();
+      unequipPickaxe();
+    });
+    body.append(unequipRow);
+  }
+
+  const options = Object.keys(EQUIPMENT).filter(function (name) {
+    return EQUIPMENT[name] === "pick" && name !== equipped && itemGet(state.bag, name) > 0;
+  });
+
+  if (options.length === 0 && !equipped) {
+    const empty = document.createElement("div");
+    empty.className = "inv-empty";
+    empty.textContent = "Nothing to equip here yet.";
+    body.append(empty);
+  }
+
+  options.forEach(function (name) {
+    const row = document.createElement("button");
+    row.className = "seed-row";
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = TINTS[name] || "#9a8f7d";
+    const text = document.createElement("div");
+    text.className = "seed-name";
+    text.textContent = name;
+    const count = document.createElement("span");
+    count.className = "seed-count";
+    count.textContent = itemGet(state.bag, name) + " owned";
+    row.append(dot, text, count);
+    row.addEventListener("click", function () {
+      closeSheet();
+      equipPickaxe(name);
+    });
+    body.append(row);
+  });
+
+  openSheet(PICK_SLOT ? "Equip " + PICK_SLOT.name.toLowerCase() : "Equip pickaxe");
+}
+
 let miningLevelBefore = null;
 
 export function drawMiningXp() {
@@ -290,6 +442,7 @@ export function refreshMining() {
   drawMineArt();
   el("mine-depth-num").textContent = state.depth;
   el("mine-pickaxe-name").textContent = state.equipment.pick || "No pickaxe equipped";
+  drawPickaxeSlot();
   drawCarried();
 
   const pill = pillFor("mine-dig");

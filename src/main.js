@@ -12,7 +12,7 @@ import { showFromHash, STATION_SCREENS } from "./screens.js";
 import {
   drawMenu, drawBag, updateWalletNote, updateHubAttention, updateSeasonNote, updateDaytimeBadge,
 } from "./hub.js";
-import { buildDock } from "./dock.js";
+import { buildDock, refreshMarketDockBadge } from "./dock.js";
 import {
   buildPlots, applyToolSprites, settle, drawField, drawXp,
 } from "./field.js";
@@ -178,6 +178,7 @@ function start() {
   updateHubAttention();
   updateSeasonNote();
   updateDaytimeBadge();
+  refreshMarketDockBadge();
   checkBagFull();
 
   showFromHash();
@@ -296,6 +297,7 @@ function start() {
     updateHubAttention();
     updateSeasonNote();
     updateDaytimeBadge();
+    refreshMarketDockBadge();
     checkBagFull();
   }, 200);
 }

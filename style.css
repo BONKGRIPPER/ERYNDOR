@@ -768,9 +768,20 @@ body {
 .bar.xp-bar.small { height: 3px; margin: 4px 0 0; }
 
 /* ============================== skills screen ============================ */
+/* Two columns once there's room for them (a wide window/tablet), one
+   column on an actual phone-width viewport -- auto-fit/minmax means this
+   never needs a manual breakpoint, it just reflows with whatever width
+   #app/.screen actually has. Redesigned (2026-09-04) to read closer to a
+   game-y "stat card" grid: a bigger bordered icon slot, and a segmented
+   (tick-marked) XP bar instead of one smooth fill. */
 .skills-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  /* 200px, not a rounder 240 -- #app/.screen caps out at 480px even on a
+     wide window (this game's whole canvas is phone-shaped by design), so
+     240px-minimum columns would never actually fit two side by side there.
+     200px clears two within that same 480px cap while still collapsing to
+     one on a genuinely narrow phone. */
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 10px;
 }
 .skill-row {
@@ -779,26 +790,31 @@ body {
   gap: 12px;
   padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--panel);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 2px 6px rgba(0, 0, 0, 0.18);
 }
 .skill-row.maxed { border-color: var(--gold); }
 
 /* The one canonical skill icon, wired to the same useSprite() pipeline
    every other icon in the game uses -- an emoji placeholder today, a real
-   image the moment assets/sprites/skills/<id>.png exists. */
+   image the moment assets/sprites/skills/<id>.png exists. Sized and
+   bordered like a distinct "slot" (inset shadow, its own border) rather
+   than a flat tinted circle, closer to the reference's own icon tiles. */
 .skill-icon {
-  width: 40px;
-  height: 40px;
+  width: 52px;
+  height: 52px;
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
   background: var(--panel-2);
-  font-size: 20px;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.35);
+  font-size: 24px;
   overflow: hidden;
 }
-.skill-icon .sprite-img { display: none; width: 70%; height: 70%; object-fit: contain; }
+.skill-icon .sprite-img { display: none; width: 78%; height: 78%; object-fit: contain; image-rendering: pixelated; }
 .skill-icon.using-sprite .sprite-img { display: block; }
 .skill-icon.using-sprite .sprite-fallback { display: none; }
 
@@ -807,10 +823,22 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  font-size: 13.5px;
+  gap: 6px;
+  font-size: 14.5px;
 }
-.skill-name { font-weight: 650; color: var(--text); }
-.skill-level { color: var(--dim); font-variant-numeric: tabular-nums; }
+/* Truncates instead of wrapping -- at two-columns-wide a longer name
+   ("Woodcutting", "Stonecutting") wrapping to a second line would run
+   straight into "Level N" sitting to its right; an ellipsis reads better
+   here than either wrapping or shrinking the level text to fit. */
+.skill-name {
+  font-weight: 700;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-level { color: var(--dim); font-variant-numeric: tabular-nums; font-weight: 600; flex-shrink: 0; }
 .skill-row-sub {
   display: flex;
   justify-content: space-between;
@@ -818,7 +846,33 @@ body {
   color: var(--dim);
   margin-top: 2px;
 }
-.skill-row .bar.xp-bar { margin-top: 8px; }
+/* The segmented look -- a repeating-gradient overlay drawn on top of both
+   the empty track and the green fill divides it into ~20 even ticks with
+   no changes needed to the fill's own width/transition logic (still one
+   plain xp-fill underneath, same as every other bar in this game). */
+.skill-row .bar.xp-bar {
+  height: 11px;
+  margin-top: 9px;
+  border-radius: 4px;
+  position: relative;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+.skill-row .bar.xp-bar .xp-fill { border-radius: 0; height: 100%; }
+.skill-row .bar.xp-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(5% - 2px),
+    rgba(0, 0, 0, 0.4) calc(5% - 2px),
+    rgba(0, 0, 0, 0.4) 5%
+  );
+  pointer-events: none;
+}
 .skill-row.maxed .xp-fill { background: var(--gold); }
 
 /* Outlined in --warn rather than filled -- a destructive action that lives
@@ -1380,6 +1434,13 @@ body {
 .dock-btn.current { color: var(--text); }
 .dock-btn.current .dock-icon { transform: translateY(-1px); }
 .dock-btn.locked { color: var(--dim); opacity: 0.55; }
+/* The Market dock button while a town's market is closed for the night
+   (dock.js's refreshMarketDockBadge()) -- same dimmed language
+   .dock-btn.locked already uses, plus the swapped-in "Closed" label
+   itself (that text change is what actually communicates it; the dimming
+   alone would look identical to any other momentarily-inactive icon). */
+.dock-btn.closed { color: var(--dim); opacity: 0.55; }
+.dock-btn.closed .dock-label { color: var(--warn); }
 .dock-btn.shake { animation: nope 0.32s ease; }
 
 /* ================================ inventory ============================== */
@@ -1464,15 +1525,28 @@ body {
 .inv-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
+  /* Rows default to `auto`, sized off content -- but a grid item's own
+     aspect-ratio (.inv-card's 1:1) isn't stable content height the way
+     text is, and inside this element's own flex:1/min-height:0/
+     overflow-y:auto zone, auto-row sizing was collapsing every row to a
+     sliver and letting every square card spill into the ones below it
+     (Storage's 100-slot grid, especially, made this obvious). Fixed by
+     pinning rows to their content's own natural height explicitly.
+  */
+  grid-auto-rows: min-content;
   align-content: flex-start;
   gap: 7px;
   /* Same bounded-zone reasoning as .equip-layout -- a big Bag/Storage
      haul scrolls inside this grid instead of growing the whole screen
-     past the toggle pinned below it. */
+     past the toggle pinned below it. Scrollbar hidden (still fully
+     touch/wheel-scrollable) so this reads the same as every other
+     screen's own plain page scroll instead of a boxed-in slider. */
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-width: none;
 }
+.inv-grid::-webkit-scrollbar { display: none; }
 
 .inv-card {
   position: relative;
@@ -1538,6 +1612,18 @@ body {
   font-weight: 700;
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+/* An open, unused slot -- one per remaining Math.ceil(cap - used) in the
+   grid (src/inventory.js's buildInventory()), so the player can see at a
+   glance how much room is actually left rather than just what's owned.
+   Dashed and dim, no icon/count/label, and not a <button> -- there's
+   nothing to tap on an empty slot. */
+.inv-card.empty {
+  border-style: dashed;
+  border-color: var(--line);
+  background: transparent;
+  cursor: default;
 }
 
 .inv-empty {
@@ -1878,4 +1964,36 @@ body {
 .toast.shown {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+/* ============================== quick nav ================================ */
+/* The Home dock button's own popup (src/dock.js's openStationQuickNav()) --
+   a dense icon grid rather than the tall one-row-per-item list every other
+   sheet in this game uses (seed-row etc.), since the whole point is
+   scanning every built station at a glance and tapping straight to one. */
+.quicknav-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.quicknav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.quicknav-btn:active { background: var(--panel); }
+.quicknav-icon { font-size: 22px; line-height: 1; }
+.quicknav-name {
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
 }

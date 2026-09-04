@@ -28,7 +28,7 @@
 
 import {
   CATEGORIES, BASE_VALUE, BUYABLE, ZONE_DEMAND, MARKET_FLOOR, MARKET_K,
-  MARKET_HALF_LIFE_MS, TINTS, LOCATIONS,
+  MARKET_HALF_LIFE_MS, TINTS, LOCATIONS, TOWN_MARKET_CLOSED_START_HOUR, TOWN_MARKET_CLOSED_END_HOUR,
 } from "./data.js";
 import { state, save, gainItem, bagRoomFor } from "./state.js";
 import { useSprite, slug } from "./sprites.js";
@@ -347,7 +347,8 @@ function buildClosedNotice() {
   list.replaceChildren();
   const notice = document.createElement("div");
   notice.className = "inv-empty";
-  notice.textContent = LOCATIONS[zone()].name + "'s market is closed for the night. It reopens at 9 AM.";
+  notice.textContent = LOCATIONS[zone()].name + "'s market is closed for the night. It reopens at " +
+    formatHour(TOWN_MARKET_CLOSED_END_HOUR) + ".";
   list.append(notice);
   el("market-hint").textContent = "";
 }
@@ -430,9 +431,29 @@ function buildBankList() {
   }
 }
 
+// 17 -> "5 PM", 9 -> "9 AM" -- plain 12-hour clock, no minutes since every
+// TOWN_MARKET_CLOSED_*_HOUR in data.js is always a whole hour.
+function formatHour(hour) {
+  const period = hour >= 12 ? "PM" : "AM";
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return h12 + " " + period;
+}
+
+// Shows when a town's market actually keeps its hours -- per the request,
+// so the player doesn't have to guess or get surprised by the closed
+// notice. A city needs no hours at all (open 24/7 by type alone, see
+// marketOpenHere()); a landmark/wilderness has no market to show hours
+// for either.
 function updateMarketHeader() {
+  const loc = LOCATIONS[zone()];
   const sub = el("market-sub");
-  if (sub) sub.textContent = LOCATIONS[zone()].name;
+  if (sub) sub.textContent = loc.name;
+  const hours = el("market-hours");
+  if (!hours) return;
+  if (!locationHasMarket(loc) || loc.type === "city") { hours.textContent = ""; return; }
+  hours.textContent =
+    "Open " + formatHour(TOWN_MARKET_CLOSED_END_HOUR) + " – " + formatHour(TOWN_MARKET_CLOSED_START_HOUR) +
+    (marketOpenHere() ? "" : " (closed now)");
 }
 
 function syncMarketTabs() {

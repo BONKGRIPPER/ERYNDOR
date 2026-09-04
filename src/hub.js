@@ -40,7 +40,11 @@ function fishingHere() {
 // same rule buildings.js's own belongsHere() uses, so a station only ever
 // shows on the one Home it was built for. Fishing has no build step, just
 // its own location check (fishingHere() above).
-function visiblePlaces() {
+// Exported for dock.js's own Home quick-nav popup (see openStationQuickNav()
+// there) -- the exact same "built, and belongs at this location" gating the
+// real hub cards use, so the popup never offers a station the player
+// couldn't actually reach by walking to Home and tapping its card by hand.
+export function visiblePlaces() {
   return PLACES.filter(function (place) {
     if (!place.hub) return false;
     if (place.id in BUILDINGS) {

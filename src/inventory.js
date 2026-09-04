@@ -12,15 +12,22 @@
 // on a filled slot means: there's exactly one of that item, and it's either
 // in the bag grid or in its slot, never drawn twice.
 
-import { TINTS, EQUIP_SLOTS, EQUIPMENT, WEAPONS } from "./data.js";
-import { state, save, bagSlotCap, bagSlotsUsed, bagRoomFor } from "./state.js";
+import { TINTS, EQUIP_SLOTS, EQUIPMENT, WEAPONS, STORAGE_SLOTS } from "./data.js";
+import {
+  state, save, bagSlotCap, bagSlotsUsed, bagRoomFor, storageSlotsUsed, storageRoomFor,
+  stackCapFor, slotsForQty,
+} from "./state.js";
 import { useSprite, slug } from "./sprites.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { openSheet, closeSheet } from "./sheet.js";
 import { showToast } from "./toast.js";
 
-let view = "equipment";   // "equipment" | "bag" | "storage"
+// Bag by default (2026-09-04) -- what the player's actually carrying is
+// almost always what they opened Inventory to check; Equipment is one tap
+// away on the toggle same as Storage always was, it just isn't the first
+// thing shown any more.
+let view = "bag";   // "equipment" | "bag" | "storage"
 
 function bagFor(v) { return v === "storage" ? state.storage : state.bag; }
 
@@ -201,6 +208,30 @@ function openEquipPicker(slot) {
 
 // ------------------------------------------------------------------- grid
 
+// Splits a container's flat {name: qty} map into discrete stacks -- an
+// item past its own stackCapFor() spills into a second (third, ...) stack
+// rather than one card showing an oversized number, the same split
+// gainItem()'s own slot accounting (state.js) already counts toward the
+// cap. Order follows TINTS' own key order, same as the flat-list view
+// before this did, so a returning player finds things roughly where they
+// were.
+function stacksFor(container) {
+  const stacks = [];
+  Object.keys(TINTS).filter(function (n) { return itemGet(container, n) > 0; }).forEach(function (name) {
+    let remaining = itemGet(container, name);
+    const cap = stackCapFor(name);
+    while (remaining > 0) {
+      const qty = Math.min(remaining, cap);
+      stacks.push({ name: name, qty: qty });
+      remaining -= qty;
+    }
+  });
+  return stacks;
+}
+
+function slotCapFor(v) { return v === "storage" ? STORAGE_SLOTS : bagSlotCap(); }
+function slotsUsedFor(v) { return v === "storage" ? storageSlotsUsed() : bagSlotsUsed(); }
+
 export function buildInventory() {
   buildEquipSlots();
 
@@ -218,55 +249,62 @@ export function buildInventory() {
   hint.classList.remove("hidden");
   grid.classList.remove("hidden");
 
-  hint.textContent = view === "bag"
-    ? "Tap an item to store it. " + bagSlotsUsed() + "/" + bagSlotCap() + " slots used."
-    : "Tap an item to carry it.";
+  const cap = slotCapFor(view);
+  const used = slotsUsedFor(view);
+  hint.textContent =
+    (view === "bag" ? "Tap an item to store it." : "Tap an item to carry it.") +
+    " " + used + "/" + cap + " slots used.";
   grid.replaceChildren();
 
+  // Every slot the player actually has, filled or not -- the whole point
+  // of this grid (per the request) is seeing at a glance how much room is
+  // left, not just what's owned, so an empty container still draws `cap`
+  // open slots rather than a "nothing here" placeholder.
   const container = bagFor(view);
-  // Equipping physically moves an item out of `bag` now, so there's no
-  // "also equipped" case left to filter out here -- anything in `container`
-  // is genuinely just sitting there, unequipped.
-  const names = Object.keys(TINTS).filter(function (n) { return itemGet(container, n) > 0; });
-  if (names.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "inv-empty";
-    empty.textContent = view === "bag"
-      ? "Nothing yet. Go plant or forage something."
-      : "Nothing stored here yet.";
-    grid.append(empty);
-    return;
+  const stacks = stacksFor(container);
+  for (let i = 0; i < cap; i++) {
+    grid.append(i < stacks.length ? buildStackCard(stacks[i]) : buildEmptySlot());
   }
+}
 
-  names.forEach(function (name) {
-    const card = document.createElement("button");
-    card.className = "inv-card";
+function buildStackCard(stack) {
+  const name = stack.name;
+  const card = document.createElement("button");
+  card.className = "inv-card";
 
-    const img = document.createElement("img");
-    img.className = "sprite-img";
-    img.alt = "";
-    img.draggable = false;
+  const img = document.createElement("img");
+  img.className = "sprite-img";
+  img.alt = "";
+  img.draggable = false;
 
-    // No bespoke icon exists for most items yet, so the fallback is an
-    // honest placeholder -- a tinted dot, same language as the hub's bag
-    // chips -- rather than a guessed-at drawing.
-    const fallback = document.createElement("div");
-    fallback.className = "sprite-fallback";
-    fallback.style.background = TINTS[name] || "#9a8f7d";
+  // No bespoke icon exists for most items yet, so the fallback is an
+  // honest placeholder -- a tinted dot, same language as the hub's bag
+  // chips -- rather than a guessed-at drawing.
+  const fallback = document.createElement("div");
+  fallback.className = "sprite-fallback";
+  fallback.style.background = TINTS[name] || "#9a8f7d";
 
-    const count = document.createElement("div");
-    count.className = "inv-count";
-    count.textContent = itemGet(container, name);
+  const count = document.createElement("div");
+  count.className = "inv-count";
+  count.textContent = stack.qty;
 
-    const label = document.createElement("div");
-    label.className = "inv-name";
-    label.textContent = name;
+  const label = document.createElement("div");
+  label.className = "inv-name";
+  label.textContent = name;
 
-    card.append(img, fallback, count, label);
-    card.addEventListener("click", function () { openTransferPicker(name); });
-    grid.append(card);
-    useSprite(card, "items/" + slug(name));
-  });
+  card.append(img, fallback, count, label);
+  card.addEventListener("click", function () { openTransferPicker(name); });
+  useSprite(card, "items/" + slug(name));
+  return card;
+}
+
+// A plain, non-interactive open slot -- a <div>, not a <button>, since
+// there's nothing to tap here (same reasoning a locked equip row isn't a
+// live button either).
+function buildEmptySlot() {
+  const slot = document.createElement("div");
+  slot.className = "inv-card empty";
+  return slot;
 }
 
 // Same quantity-slider sheet Market's openQtyPicker uses, just moving a
@@ -277,14 +315,13 @@ export function buildInventory() {
 // Bag/Storage grid, so `view` is always one of those two here.
 function openTransferPicker(name) {
   const from = bagFor(view);
-  const toBag = view === "storage";   // moving Storage -> Bag is the only direction that can actually fill up
-  // Same bag-room clamp gainItem() itself enforces -- Storage has no cap
-  // of its own, so without this a full bag could be "topped up" past its
-  // own limit just by moving the exact same items in from Storage instead
-  // of gaining them fresh.
-  const max = toBag ? Math.min(itemGet(from, name), bagRoomFor(name)) : itemGet(from, name);
+  // Both directions can fill up now that Storage has its own real cap
+  // (STORAGE_SLOTS) -- same bag-room clamp gainItem() itself enforces,
+  // just against whichever container is the *destination* here.
+  const roomAtDest = view === "storage" ? bagRoomFor(name) : storageRoomFor(name);
+  const max = Math.min(itemGet(from, name), roomAtDest);
   if (max < 1) {
-    if (toBag && itemGet(from, name) > 0) showToast("Inventory full");
+    if (itemGet(from, name) > 0) showToast((view === "storage" ? "Bag" : "Storage") + " full");
     return;
   }
 

@@ -66,6 +66,11 @@
         <div class="bar xp-bar"><div id="xp-fill" class="xp-fill"></div></div>
       </div>
 
+      <!-- Equip/change the Watering Can straight from here -- same picker
+           system Logging's own Axe slot uses, writing the exact same
+           state.equipment.can field. See field.js's drawCanSlot(). -->
+      <div id="field-can-slot" class="log-axe-slot"></div>
+
       <div class="field-grid">
       <div id="plots" class="plots"></div>
 
@@ -173,6 +178,11 @@
         </div>
         <div class="bar xp-bar"><div id="mining-xp-fill" class="xp-fill"></div></div>
       </div>
+
+      <!-- Equip/change the Pickaxe straight from here -- same picker
+           system Logging's own Axe slot uses, writing the exact same
+           state.equipment.pick field. See mining.js's drawPickaxeSlot(). -->
+      <div id="mine-pickaxe-slot" class="log-axe-slot"></div>
 
       <!-- The current depth zone's own illustration -- one custom image per
            MINE_ZONES entry (src/data.js), dropped in at
@@ -444,16 +454,16 @@
         </div>
       </header>
 
-      <div id="equip-page" class="equip-layout">
+      <div id="equip-page" class="equip-layout hidden">
         <div id="equip-list" class="equip-list"></div>
       </div>
 
-      <div id="inv-hint" class="hint hidden">Tap an item to store it.</div>
-      <div id="inv-grid" class="inv-grid hidden"></div>
+      <div id="inv-hint" class="hint">Tap an item to store it.</div>
+      <div id="inv-grid" class="inv-grid"></div>
 
       <div class="inv-toggle">
-        <button id="inv-view-equipment" class="inv-view-btn active">Equipment</button>
-        <button id="inv-view-bag" class="inv-view-btn">Bag</button>
+        <button id="inv-view-equipment" class="inv-view-btn">Equipment</button>
+        <button id="inv-view-bag" class="inv-view-btn active">Bag</button>
         <button id="inv-view-storage" class="inv-view-btn">Storage</button>
       </div>
     </div>
@@ -602,7 +612,7 @@
           </span>
           <span class="pill-body">
             <span class="pill-name">Scrap Pickaxe</span>
-            <span class="pill-sub">10 Pine Planks · 8 Scrap Metal</span>
+            <span class="pill-sub">10 Birch Planks · 8 Scrap Metal</span>
           </span>
           <span class="pill-count">0</span>
         </button>
@@ -620,7 +630,27 @@
           </span>
           <span class="pill-body">
             <span class="pill-name">Scrap Axe</span>
-            <span class="pill-sub">10 Pine Planks · 8 Scrap Metal</span>
+            <span class="pill-sub">10 Birch Planks · 8 Scrap Metal</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="scrapWateringCan">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 11h9v6.5A2.5 2.5 0 0 1 12.5 20h-4A2.5 2.5 0 0 1 6 17.5V11Z" />
+              <path d="M15 12.5 19 9.5" />
+              <path d="M17.6 7.6 21 11.4" />
+              <path d="M8.6 11V9.2a2.4 2.4 0 0 1 4.8 0V11" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Scrap Watering Can</span>
+            <span class="pill-sub">10 Birch Planks · 8 Scrap Metal</span>
           </span>
           <span class="pill-count">0</span>
         </button>
@@ -763,6 +793,7 @@
         <div>
           <div class="field-title">Market</div>
           <div id="market-sub" class="field-sub">Aerendell</div>
+          <div id="market-hours" class="field-sub"></div>
         </div>
       </header>
 
@@ -934,6 +965,23 @@
           <span class="pill-body">
             <span class="pill-name">Pine Planks</span>
             <span class="pill-sub">3 Pine Logs</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="birchPlanks">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 8h16M4 12h16M4 16h16" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Birch Planks</span>
+            <span class="pill-sub">3 Birch Logs · 1 Pine Plank</span>
           </span>
           <span class="pill-count">0</span>
         </button>
