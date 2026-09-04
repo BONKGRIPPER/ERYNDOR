@@ -57,6 +57,10 @@ function allSpriteKeys() {
   Object.keys(TINTS).forEach(function (name) { keys.push("items/" + slug(name)); });
   Object.keys(SKILLS).forEach(function (id) { keys.push("skills/" + id); });
   MINE_ZONES.forEach(function (zone) { keys.push("mining/zones/" + slug(zone.name)); });
+  // Not a STATIONS entry (see beehive.js's own header for why), so it
+  // isn't picked up by the stations/<id> loop that'd normally cover this
+  // -- added by hand instead.
+  keys.push("stations/beehive");
   return keys;
 }
 

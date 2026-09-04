@@ -32,13 +32,21 @@ const SKILL_ROWS = [
   { id: "logging",  xpOf: function () { return state.loggingXp; } },
   { id: "foraging", xpOf: function () { return state.foragingXp; }, maxLevel: FORAGE_MAX_LEVEL },
   { id: "mining",   xpOf: function () { return state.miningXp; } },
-  { id: "combat",   xpOf: function () { return state.combatXp; } },
+  // Combat's own row is replaced by these two (2026-09-03), not shown
+  // alongside it -- state.combatXp still exists and still gains XP on
+  // every win (see combat.js's endFight()), it's just not its own row on
+  // this screen any more.
+  { id: "archery",  xpOf: function () { return state.archeryXp; } },
+  { id: "melee",    xpOf: function () { return state.meleeXp; } },
   { id: "sowing",   xpOf: function () { return state.sowingXp; } },
   { id: "milling",  xpOf: function () { return state.millingXp; } },
   { id: "stonecutting", xpOf: function () { return state.stonecuttingXp; } },
   { id: "tanning", xpOf: function () { return state.tanningXp; } },
   { id: "fishing", xpOf: function () { return state.fishingXp; } },
   { id: "tailoring", xpOf: function () { return state.tailoringXp; } },
+  { id: "grinding", xpOf: function () { return state.grindingXp; } },
+  { id: "beekeeping", xpOf: function () { return state.beekeepingXp; } },
+  { id: "fletcher", xpOf: function () { return state.fletcherXp; } },
 ];
 
 export function buildSkills() {

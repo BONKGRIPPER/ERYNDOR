@@ -32,13 +32,16 @@ import {
   settleStations, refreshStation, refreshAllStations, drawAllStationXp, drawAllItemLevels, applyStationSprites,
 } from "./stations.js";
 import { refreshMining, settleMining, drawMiningXp, applyMiningSprites } from "./mining.js";
-import { settleCombat, refreshCombat, drawCombatXp, syncTimerBars, buildCombatIdle } from "./combat.js";
+import {
+  settleCombat, refreshCombat, drawCombatXp, drawWeaponSkillsXp, syncTimerBars, buildCombatIdle,
+} from "./combat.js";
 import { settleTravel } from "./travel.js";
 import { buildMap, refreshMap } from "./map.js";
 import { buildMarket } from "./market.js";
 import {
   buildFishing, refreshFishing, settleFishingTrap, drawFishingXp, applyFishingSprites,
 } from "./fishing.js";
+import { buildBeehiveSlots, settleBeehive, drawBeehive } from "./beehive.js";
 import { el } from "./dom.js";
 
 // Foraging's own settle() can resolve more than one gather in a single
@@ -69,6 +72,7 @@ function start() {
   buildPlots();
   applyToolSprites();
   buildLogPlots();
+  buildBeehiveSlots();
   applyForageSprites();
   applyCraftSprites();
   applyStationSprites();
@@ -81,6 +85,8 @@ function start() {
   settleLogging();
   drawLogging();
   drawLogXp();
+  settleBeehive();
+  drawBeehive();
   updateSkillsNote();
   updateWalletNote();
 
@@ -138,6 +144,7 @@ function start() {
 
   settleCombat();
   drawCombatXp();
+  drawWeaponSkillsXp();
   refreshCombat();
   syncTimerBars();
 
@@ -165,6 +172,9 @@ function start() {
 
     settleLogging();
     if (!el("screen-logging").classList.contains("hidden")) drawLogging();
+
+    settleBeehive();
+    if (!el("screen-beehive").classList.contains("hidden")) drawBeehive();
 
     // Normally just the ~200ms tick interval -- only meaningfully larger if
     // a backgrounded tab got throttled, which reportForageCatchup treats
@@ -224,7 +234,7 @@ function start() {
     // nothing has "happened" yet.
     settleCombat();
     const combatVisible = !el("screen-combat").classList.contains("hidden");
-    if (combatVisible) { drawCombatXp(); refreshCombat(); }
+    if (combatVisible) { drawCombatXp(); drawWeaponSkillsXp(); refreshCombat(); }
 
     const campfireVisible = !el("screen-campfire").classList.contains("hidden");
     const cooked = settleCampfire();

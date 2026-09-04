@@ -20,7 +20,7 @@ import {
 } from "./data.js";
 import { state, save, gainItem, gainSkillXp } from "./state.js";
 import { openZoneWheel } from "./zoneWheel.js";
-import { isNight } from "./time.js";
+import { isFishingNight } from "./time.js";
 import { levelProgress } from "./skills.js";
 import { pillFor } from "./pills.js";
 import { useSprite } from "./sprites.js";
@@ -56,13 +56,23 @@ function weightedRoll(entries) {
   return entries[entries.length - 1].item;   // floating-point rounding safety net
 }
 
-// full=true (Rod): rare included, nightOnly included only if isNight().
-// full=false (Net/Trap): rare and nightOnly both excluded outright --
-// that's the whole reason those tools are worth less per catch.
+// standard | rare | night -- BAITS' own `tier` (data.js) targets one of
+// these, not a named fish, so a bait bought for one pool still does
+// something in any of the other four.
+function fishTier(f) {
+  if (f.rare) return "rare";
+  if (f.nightOnly) return "night";
+  return "standard";
+}
+
+// full=true (Rod): rare included, nightOnly included only if
+// isFishingNight() (9pm-5am, its own window -- see time.js). full=false
+// (Net/Trap): rare and nightOnly both excluded outright -- that's the
+// whole reason those tools are worth less per catch.
 function rollFish(poolId, full, baitName) {
   const pool = FISH_POOLS[poolId] || [];
-  const night = isNight();
-  const boosts = (full && baitName && BAITS[baitName]) ? BAITS[baitName].boosts : null;
+  const night = isFishingNight();
+  const bait = (full && baitName && BAITS[baitName]) ? BAITS[baitName] : null;
   const entries = pool
     .filter(function (f) {
       if (!full) return !f.rare && !f.nightOnly;
@@ -70,8 +80,8 @@ function rollFish(poolId, full, baitName) {
       return true;
     })
     .map(function (f) {
-      const boost = (boosts && boosts[f.item]) || 1;
-      return { item: f.item, chance: f.chance * boost };
+      const mult = (bait && fishTier(f) === bait.tier) ? bait.mult : 1;
+      return { item: f.item, chance: f.chance * mult };
     });
   return weightedRoll(entries);
 }

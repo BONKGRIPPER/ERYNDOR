@@ -751,6 +751,22 @@ body {
   100% { filter: brightness(1); box-shadow: none; }
 }
 
+/* Archery/Melee's own compact readout in the Combat arena (2026-09-02) --
+   half-width, no level-up flash, just enough to see the two skills moving
+   without competing with Combat's own full-size bar above. */
+.combat-skill-row {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.combat-skill { flex: 1; min-width: 0; }
+.combat-skill-label { font-size: 11px; font-weight: 600; color: var(--dim); }
+/* .small is combined directly on the same element as .bar.xp-bar in the
+   markup (`class="bar xp-bar small"`), not a nested child -- this needs
+   to out-specificity plain .bar's own height, not just re-declare it on
+   a descendant that doesn't exist. */
+.bar.xp-bar.small { height: 3px; margin: 4px 0 0; }
+
 /* ============================== skills screen ============================ */
 .skills-list {
   display: flex;

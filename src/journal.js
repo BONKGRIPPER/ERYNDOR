@@ -8,7 +8,7 @@
 // two is visible) and Collection, an Animal-Crossing-style completionist
 // log of every item that exists in the game.
 //
-// Collection groups all 51 items (TINTS/CATEGORIES in data.js -- already
+// Collection groups every item (TINTS/CATEGORIES in data.js -- already
 // the game's one canonical item list, kept in lockstep with each other)
 // by category, showing a real sprite for anything state.discoveredItems
 // has ever recorded and a "?" for anything it hasn't. Nothing here grants

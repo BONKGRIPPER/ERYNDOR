@@ -352,6 +352,21 @@
       </div>
 
       <div id="combat-arena" class="hidden">
+        <!-- Archery/Melee's own compact progress, visible while actually
+             fighting -- see combat.js's drawWeaponSkillsXp(). Whichever
+             one a kill feeds depends on the weapon equipped at the moment
+             the enemy falls, not which of these happens to be showing. -->
+        <div class="combat-skill-row">
+          <div class="combat-skill">
+            <span id="combat-archery-level" class="combat-skill-label">Archery — Lv 0</span>
+            <div class="bar xp-bar small"><div id="combat-archery-fill" class="xp-fill"></div></div>
+          </div>
+          <div class="combat-skill">
+            <span id="combat-melee-level" class="combat-skill-label">Melee — Lv 0</span>
+            <div class="bar xp-bar small"><div id="combat-melee-fill" class="xp-fill"></div></div>
+          </div>
+        </div>
+
         <div class="combatant">
           <div class="combatant-head">
             <span class="combatant-name">
@@ -383,7 +398,7 @@
         <div class="combat-actions">
           <button class="combat-action attack" id="combat-btn-attack">
             <span class="name">Attack</span>
-            <span class="sub">Weapon damage, no defense</span>
+            <span class="sub" id="combat-attack-sub">Weapon damage, no defense</span>
           </button>
           <button class="combat-action defend" id="combat-btn-defend">
             <span class="name">Defend</span>
@@ -570,6 +585,94 @@
           <span class="pill-body">
             <span class="pill-name">Stone Axe</span>
             <span class="pill-sub">15 Stone · 10 Pine Logs</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="scrapPickaxe">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 11 8 21" />
+              <path d="M4 8c3-3 6-4 8-3s5 0 8-3" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Scrap Pickaxe</span>
+            <span class="pill-sub">10 Pine Planks · 8 Scrap Metal</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="scrapAxe">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 20 15 9" />
+              <path d="M15 9 21 4 20 10 14 13Z" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Scrap Axe</span>
+            <span class="pill-sub">10 Pine Planks · 8 Scrap Metal</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="scrapHelm">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12a7 7 0 0 1 14 0v3H5Z" />
+              <path d="M5 15h14" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Scrap Helm</span>
+            <span class="pill-sub">6 Scrap Metal · 4 Leather</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="scrapArmor">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3 19 6v6c0 5-3 8-7 9-4-1-7-4-7-9V6Z" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Scrap Armor</span>
+            <span class="pill-sub">8 Scrap Metal · 6 Leather</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="scrapLegs">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 3h10l1 9-3 9h-2l-1-9-1 9H9l-3-9Z" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Scrap Legs</span>
+            <span class="pill-sub">8 Scrap Metal · 6 Leather</span>
           </span>
           <span class="pill-count">0</span>
         </button>
@@ -837,6 +940,95 @@
           <span class="pill-body">
             <span class="pill-name">Bonemeal</span>
             <span class="pill-sub">3 Bones</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ============================= BEEHIVE ================================ -->
+    <!-- Not a fixed .craft-list like every other station -- state.beehiveSlots
+         is a growable array of independent Honey timers (see beehive.js),
+         so this reuses the same .plots list shape Farm/Logging's own
+         expandable plot rows use, "+ New Honey Slot" card included. -->
+    <div id="screen-beehive" class="screen hidden">
+
+      <header class="field-head">
+        <button id="back-beehive" class="back" aria-label="Back">‹</button>
+        <div>
+          <div class="field-title">Beehive</div>
+          <div class="field-sub">Keep bees, craft honey</div>
+        </div>
+      </header>
+
+      <div class="xp">
+        <div class="xp-row">
+          <span id="beehive-xp-level" class="xp-level">Beekeeping — Level 0</span>
+          <span id="beehive-xp-count" class="xp-count">0 / 60</span>
+        </div>
+        <div class="bar xp-bar"><div id="beehive-xp-fill" class="xp-fill"></div></div>
+      </div>
+
+      <div id="beehive-slots" class="plots"></div>
+
+      <div id="beehive-hint" class="hint">Tap a hive to start a batch of Honey.</div>
+    </div>
+
+    <!-- ========================= FLETCHING BENCH ============================ -->
+    <div id="screen-fletchingBench" class="screen hidden">
+
+      <header class="field-head">
+        <button id="back-fletchingBench" class="back" aria-label="Back">‹</button>
+        <div>
+          <div class="field-title">Fletching Bench</div>
+          <div class="field-sub">Craft bows and arrows</div>
+        </div>
+      </header>
+
+      <div class="xp">
+        <div class="xp-row">
+          <span id="fletchingBench-xp-level" class="xp-level">Fletcher — Level 0</span>
+          <span id="fletchingBench-xp-count" class="xp-count">0 / 60</span>
+        </div>
+        <div class="bar xp-bar"><div id="fletchingBench-xp-fill" class="xp-fill"></div></div>
+      </div>
+
+      <div class="craft-list">
+        <button class="pill" data-item="shortBow">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 3c6 3 6 15 0 18" />
+              <path d="M6 3 6 21" />
+              <path d="M6 12h14" />
+              <path d="M17 9l3 3-3 3" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Short Bow</span>
+            <span class="pill-sub">12 Pine Planks · 10 String</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="flintArrows">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 20 18 6" />
+              <path d="M18 6 14 6 18 10Z" />
+              <path d="M6 18 4 20 6 22" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Flint Arrows</span>
+            <span class="pill-sub">1 Sticks · 1 Flint · 1 Feathers</span>
           </span>
           <span class="pill-count">0</span>
         </button>

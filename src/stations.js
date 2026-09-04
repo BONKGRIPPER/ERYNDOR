@@ -91,7 +91,7 @@ export function settleStations() {
     const c = state.stations[id];
     if (!c || Date.now() < c.readyAt) return;
     const cfg = STATIONS[id];
-    gainItem(cfg.output, 1);
+    gainItem(cfg.output, cfg.outputQty || 1);
     zoneLevels += gainSkillXp(cfg.skillXp, cfg.xp);
     state.stations[id] = null;
     // Same reset craft.js's settleCraft() does -- without it, a finished

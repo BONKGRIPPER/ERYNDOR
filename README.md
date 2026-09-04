@@ -2775,6 +2775,278 @@ growing; and the Grind Stone itself built, moved onto Home, and its own
 recipe correctly spent 3 Bones and granted 1 Bonemeal plus 10 Grinding XP
 on completion.
 
+## The Beehive: a growable station, and Honey's combat buff
+
+The first station that doesn't fit the generic STATIONS registry
+(2026-09-02) -- every other conversion station is a *fixed* set of named
+recipes, but the Beehive's whole point is a number of identical Honey
+slots the player buys one at a time, so it gets its own bespoke module
+(`src/beehive.js`) instead. `state.beehiveSlots` is a growable array --
+starts with 1, same `{startedAt, readyAt} | null` shape state.mineSwing/
+state.stations already use per-entry, same array-of-independent-timers
+shape state.plots/state.logPlots already use for the array itself. A tap
+starts a slot's own 15-minute (`BEEHIVE_HONEY_MS`) brew with **no material
+cost** -- unlike every other station's recipe, a beehive is meant to read
+as passive production once it exists, not something fed each batch -- and
+a finished slot goes straight back to idle, waiting for the next tap
+(no auto-restart the way Logging's trees get). Buying another slot costs
+a flat 1 Queen Bee + 10 Sticks (`BEEHIVE_EXPAND_COST`, not doubling like
+Farm/Logging's own plot expansion -- only one price was given, not an
+escalating series), rendered as the same "+ New ___" expand card those two
+screens already use. Building the Beehive itself costs 1 Queen Bee + 20
+Sticks. New "Beekeeping" skill (`beekeepingXp`), 15 XP per batch.
+
+**Queen Bee** is a new, real forage drop -- Aerendell's own pool gained a
+genuine 0.5% chance at it, shaved directly off Red Berries Seeds (0.20 ->
+0.195) so the pool still sums to exactly 1. That mattered here: a chance
+just appended to the end of an already-summing-to-1 pool would sit past
+where `Math.random()`'s own `[0, 1)` range can ever reach, making it
+silently unobtainable -- rollDrop() walks the pool in order accumulating
+each entry's own chance, so a slice has to actually fit *under* 1.0, not
+just be listed, to ever fire. Verified live: `FORAGE_POOLS.aerendell`
+sums to exactly 1 with Queen Bee's own slice sitting in the reachable
+[0.995, 1.0) range.
+
+**Honey** is the first food with a secondary effect beyond `heal` -- 5 HP,
+plus (new FOODS fields `recoveryBoostAttacks`/`recoveryBoostMult`, generic
+rather than hardcoded to Honey by name) a flat 25% faster recovery
+(`recoveryBoostMult: 0.75`, matching `VILLAGER_UPGRADE_MULT`'s own
+precedent for "noticeably faster, not broken") for the next 5 attacks
+specifically -- not Defend/Eat/Flee, per the request's own wording. Eating
+sets `state.combat.recoveryBoost`/`recoveryBoostMult`; `attack()` (only
+attack()) reads them, applies the multiplier to that hit's own cooldown,
+and ticks the counter down, logging when it runs out. Verified live: eating
+Honey at 5 HP healed to 10 exactly and set `recoveryBoost: 5,
+recoveryBoostMult: 0.75`; a clean single attack measured exactly 750ms
+(1000 x 0.75) and dropped the counter to 4.
+
+## Currency scaffolding: Marks, Crowns, Spires
+
+Pure scaffolding (2026-09-02), nothing wired to gameplay yet, per the
+request ("they don't all need to show up now, but I want them for
+later"). `CURRENCIES` in data.js chains three new denominations onto
+Shards the way coins step up to bills, each `worth` 100 of the previous
+tier: 1 Mark = 100 Shards, 1 Crown = 100 Marks (10,000 Shards), 1 Spire =
+100 Crowns (1,000,000 Shards). The request's own numbers had Crowns *and*
+Spires both "worth 100 marks" -- read here as the obvious continuation of
+the x100 chain (Spires worth 100 Crowns) rather than two denominations
+worth the literal same amount, which would make one of them pointless to
+have named at all; worth double-checking with real numbers once something
+actually starts awarding them. `state.marks`/`state.crowns`/`state.spires`
+exist and save/load exactly like `state.shards` already does, so a future
+feature can start earning or spending them without another state-shape
+pass -- nothing does yet, and no UI (the wallet note, Market, anywhere
+else) shows them, on purpose.
+
+## Five fishing-hole types, twenty new fish, and a real Fishing Rod recipe
+
+Fishing had exactly one pool (keyed "aerendell") with five fish and no
+location that actually pointed at it. Now there are five pool *types* --
+river, pond, lake, stream, ocean -- and real locations to fish them
+(2026-09-02):
+
+- **`FISH_POOLS`** gained `pond`/`lake`/`stream`/`ocean`, each with the
+  same shape the original pool already had (3 standard + 1 rare + 1
+  nightOnly, same 0.45/0.30/0.16/0.05/0.04 weights) -- "river" is that
+  original pool, renamed, not rebuilt (same five fish -- Minnow, River
+  Trout, Catfish, Golden Carp, Moonfin Eel -- untouched). 20 new fish
+  named to match the two conventions the original pool already set: plain,
+  real-fish-ish names for the three standard catches per pool, a
+  "Golden ___" name for the rare one, a "Moon___" name for the nightOnly
+  one, so a fish's own name already hints at its tier. Pond (Mudscale
+  Perch/Reed Sunfish/Bog Loach/Golden Koi/Moonpond Eel), Lake (Lake
+  Herring/Silverback Bass/Deepwater Pike/Golden Sturgeon/Moonveil Trout),
+  Stream (Brook Char/Speckled Dace/Stonefly Grayling/Golden Grayling/
+  Moonshadow Char), Ocean (Saltback Herring/Reef Snapper/Tideskimmer
+  Mackerel/Golden Marlin/Moontide Eel). BASE_VALUE escalates pool to pool
+  (Pond lowest, Ocean highest) and tier to tier within each pool (rare >
+  night > standard), first-pass numbers.
+- **Locations**: Forest Road gets `stream`; Thal-Barak, Stilltide Pass,
+  and Riverhold all get `river`. Aerendell itself is still `fishing:
+  null` -- unchanged, the farmstead was never meant to have its own hole.
+- **`isFishingNight()`** (time.js) -- a nightOnly catch's own 9pm-5am
+  window, separate from the general `isNight()` crops/combat already
+  share (9pm-7am). Two narrower hours on the morning end, per the user's
+  own spec, not a typo carried over from the existing constant.
+- **Cooking + Collection, for all 25 fish (existing five included)**:
+  every raw fish is now a real `COOKABLES` entry (Campfire-only, same
+  "raw isn't edible" rule Poultry/Beef/Mutton already follow) with its
+  own `Cooked ___` FOODS/EQUIPMENT entry -- standard catches heal 5
+  (matching Cooked Poultry's own precedent), rare catches heal 10, night
+  catches heal 8, a flat tier rather than 25 individually-tuned numbers.
+  Every raw and cooked name is a real `TINTS`/`CATEGORIES`/`BASE_VALUE`
+  entry, which is the *entire* mechanism Collection needs (journal.js's
+  own Collection page already renders anything in TINTS as "?" until
+  `state.discoveredItems` has it, zero code changes required) -- verified
+  live that a freshly-caught, freshly-cooked fish showed its real name
+  while an unrelated ocean fish still rendered as the generic
+  `? / ???` card.
+- **Bait went generic**: `BAITS` used to name two specific river fish by
+  hand (`"River Trout": 2, "Catfish": 2`), which would've done nothing at
+  all in a pond or an ocean. Now each bait targets a *tier*
+  (`{ tier: "standard", mult: 2 }` / `{ tier: "rare", mult: 5 }`) via a
+  new `fishTier()` helper in fishing.js, so Worm Bait/Shiny Lure work the
+  same in every pool.
+- **Net's recipe was already String + Sticks** (Spinning Wheel's own
+  output, per the user's ask) -- no change needed there. **Fishing Rod's**
+  recipe switched to Oak Planks + Fine String, per the request -- both
+  are real, registered items with **no production source yet** (Sawmill
+  only makes Pine Planks; nothing makes Fine String, which the user's own
+  message flagged as undecided). Same "real spot, nothing behind it yet"
+  treatment Scrap Metal got before Road Goblin ever dropped it -- the
+  recipe is real data, just not craftable until one of those two gets a
+  source.
+
+Verified live: Forest Road's Net sweep correctly rolled Stream-pool fish
+(Brook Char, Stonefly Grayling) and nothing from any other pool; cooking
+one on the Campfire granted its `Cooked ___` form; rare/night BASE_VALUE
+and cooked heal both read back in the expected `rare > night > standard`
+order for a pool other than the original (Ocean); and the Collection page
+showed the exact "real name once caught, `?` until then" split described
+above.
+
+## Scrap tools and armor -- Scrap Metal's first real gear
+
+Scrap Metal (Road Goblin's own drop) gets its first real uses beyond
+Grind Stone's own recipe (2026-09-02):
+
+- **Scrap Pickaxe** -- this was actually a rename, not a new entry: a
+  "Scrap Metal Pickaxe" placeholder had sat in PICKAXES since before
+  Scrap Metal even existed as an item, never craftable, never registered
+  anywhere else. Renamed to match the plain "Material + Pickaxe"
+  convention every other tier uses, and given the request's own numbers
+  -- 25m/swing, 10% risk, `maxDepth: 400` (reaches Copper/Tin Ore's own
+  100m floor and beyond, right up to Iron Ore's 400m one), 3000ms, a full
+  second faster than Stone Pickaxe's 4000ms, not just a token difference.
+  Costs 10 Pine Planks + 8 Scrap Metal to craft.
+- **Scrap Axe** -- damage 4 (Stone Axe's own 3, +1), same Pine Planks +
+  Scrap Metal cost. Meant to be the one that fells Birch -- a new `TREES`
+  entry, tougher than Pine (40 health vs. 24, longer grow, more XP) --
+  but Logging is still hardcoded to Pine alone
+  (`const TREE = TREES.pine;`), so there's no plot for a Birch to
+  actually grow in yet. The axe itself is fully real and already useful
+  against Pine today; Birch is a real spot, nothing behind it yet, same
+  story as Oak Planks/Fine String from the Fishing Rod work just above.
+- **Scrap Helm / Scrap Armor / Scrap Legs** -- 2 defense each (Highland's
+  own pieces give 1), no recovery penalty, same "new tier, no tradeoff"
+  treatment Highland got. Scrap Metal + Leather (Tanning Station's own
+  output), Helm priced a little below Armor/Legs -- same shape Highland's
+  Cloak (cheaper) vs. Chest/Legs already set. All five new items are
+  plain Craft Bench recipes, not an Armor Bench addition, matching how
+  the request described them alongside the tools.
+
+Every stat comes from the same generic tables mining.js/logging.js/
+combat.js/inventory.js already read off whatever's equipped -- none of
+those four files needed a single line changed. Verified live: Scrap
+Pickaxe measured exactly 3000ms/10%/25m/maxDepth 400, and digging past
+100m with it put Copper Ore and Tin Ore in the actual mineable pool;
+crafting and equipping the full Scrap armor set showed correctly across
+all three slots at once (Helm/Chest/Legs) in Inventory.
+
+## Ranged weapons: the Fletching Bench, Short Bow, and Archery/Melee
+
+The first real step on last turn's ranged-weapon design discussion
+(2026-09-02) -- picked #1 (a weapon-type split feeding its own skills)
+and the "two-handed is already free" observation, both now real:
+
+- **Fletching Bench** -- a new station, Basalt Block + Pine Planks to
+  build, two recipes sharing one screen and one new skill ("Fletcher"):
+  Short Bow (12 Pine Planks + 10 String) and Flint Arrows (1 Sticks + 1
+  Flint + 1 Feathers -> **3** Flint Arrows). Flint Arrows is the first
+  STATIONS entry to grant more than one unit per craft -- `outputQty`
+  (falls back to 1), same "general form, old callers keep working
+  unchanged" shape `cost`/`inputQty` already established for input
+  quantities. Every other touchpoint a station needs followed the exact
+  checklist Grind Stone/Armor Bench already set (PLACES/SCREEN_IDS/
+  BUILDINGS/STATIONS/LOCATIONS.aerendell.stations/STATION_SCREENS) --
+  zero changes needed in buildings.js/stations.js's generic machinery
+  beyond the one outputQty line.
+- **Short Bow** -- the first `ranged: true` weapon. `twoHanded: true`
+  isn't new machinery at all: inventory.js's `armBlockedBy()` already
+  greyed out the other Hand slot and blocked a shield from going there
+  for *any* two-handed weapon, the same way a two-handed melee weapon
+  already would -- Short Bow just needed the flag, nothing about
+  inventory.js changed. Verified live: equipping it into Left Hand showed
+  Right Hand as "2-Handed (Short Bow)", locked, exactly like the existing
+  mechanic already promised.
+- **Archery and Melee** -- two new skills that level off combat *kills*
+  specifically, split by whatever weapon actually landed the killing
+  blow (`weaponStats().ranged` read fresh in `endFight()`'s own win
+  branch) -- unarmed counts as Melee by default, same as every future
+  melee weapon will unless it's flagged `ranged`. The original Combat
+  skill is untouched and still gains XP on every win regardless of
+  weapon; these two are purely additive. Flint Arrows aren't consumed by
+  Attack yet -- that ammo-as-a-resource idea was pitched as a *future*
+  option in the design discussion, not part of what was actually asked
+  for this pass, so a bow fires without spending arrows for now.
+- **Shown in the arena while fighting**, per the request -- a compact
+  two-column readout (`.combat-skill-row`) sits right below Combat's own
+  full-size bar, no level-up flash on these two (keeping the arena from
+  getting busier than the old combat-log removal was trying to fix).
+  Verified live: killing a Chicken with Short Bow equipped credited
+  Archery (+20) and left Melee at 0; killing one unarmed right after
+  credited Melee (+20) and left Archery untouched at its prior value --
+  and both bars/labels updated correctly in the DOM (`Lv 0`, 50% width
+  each, matching 20/40 XP into the first level).
+
+## Arrows are real ammo now, and Archery/Melee replace Combat on the Skills page
+
+Two follow-ups to the ranged-weapons work above (2026-09-03):
+
+- **Ammo consumption** -- the "future idea" from the original design
+  discussion is real now. `WEAPONS` entries can carry an `ammo` field
+  (Short Bow's is "Flint Arrows"); `attack()` spends one straight from
+  the bag per shot, no equip step, same "check the bag directly" rule
+  Fishing's own Net/Trap already use for themselves. Out of ammo is a
+  hard block -- the Attack button disables and its own sub-text reads
+  "Out of Flint Arrows" instead of the usual damage blurb, same "name
+  what's missing" treatment Eat already gives an empty food slot. Caught
+  a real bug while verifying this live: the sub-text only had a branch
+  for *having* an `ammo` field, never one for switching *away* from a
+  weapon that has one -- unequipping the bow left "Out of Flint Arrows"
+  stuck on screen forever after, since nothing ever pointed it back at
+  the default "Weapon damage, no defense" copy. Fixed with an explicit
+  `!w.ammo` branch rather than leaving the text alone by omission.
+- **Archery and Melee replace Combat on the Skills page** -- one line in
+  skillsScreen.js's `SKILL_ROWS` list, which is what actually drives that
+  screen (nothing else there is hardcoded per-skill). `state.combatXp`
+  itself is untouched -- still gains XP on every win exactly as before,
+  it just isn't its own row on this one screen any more.
+
+Verified live: equipping the bow with zero arrows disabled Attack and
+showed "Out of Flint Arrows"; giving arrows and attacking spent exactly
+one per hit down to zero, where it correctly blocked again; unequipping
+the bow reverted the sub-text to the default copy (the bug above,
+confirmed fixed); and the Skills page's own name list read Farming/
+Logging/Foraging/Mining/**Archery/Melee**/Sowing/... with Combat's own
+row gone from that exact spot.
+
+**Worth knowing**: while checking the Skills page for this, three more
+skills already live in the game -- Grinding, Beekeeping, and Fletcher
+(all three added in earlier sessions, all three still actively earning
+real XP) -- turned out to have never been added to `SKILL_ROWS` either,
+so they're just as invisible there as Combat now deliberately is. That
+gap predates this session's own two changes above and wasn't part of
+what was asked this time, so it's left alone -- flagged here rather than
+fixed silently.
+
+### Grinding, Beekeeping, and Fletcher now show on the Skills page (2026-09-03)
+
+The gap flagged just above -- fixed. Same one-line-per-skill treatment as
+everything else on that list: three more entries in skillsScreen.js's
+`SKILL_ROWS`, reading `state.grindingXp`/`state.beekeepingXp`/
+`state.fletcherXp` (all three already existed and were already earning
+XP; they just weren't drawn anywhere). `SKILLS` in data.js already had
+name/icon entries for all three from when those systems were first
+built, so no other file needed touching -- `buildSkills()`/`drawSkills()`
+are fully generic over the row list.
+
+Verified live: the Skills page now reads Farming/Logging/Foraging/
+Mining/Archery/Melee/Sowing/Woodcutting/Stonecutting/Tanner/Fishing/
+Tailoring/**Grinding/Beekeeping/Fletcher**, each with a real level and
+XP bar (Grinding and Beekeeping both correctly show untouched Level 0,
+0/40 -- no XP has been earned on this test save). No console errors.
+
 ## Adding to it
 
 A new crop, tree, or recipe is one entry in `src/data.js`; a new zone's

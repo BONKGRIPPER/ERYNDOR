@@ -19,6 +19,7 @@
 import {
   SEASONS, SEASON_ORDER, NIGHT_START_HOUR, NIGHT_END_HOUR, NIGHT_GROWTH_MULT,
   TOWN_MARKET_CLOSED_START_HOUR, TOWN_MARKET_CLOSED_END_HOUR,
+  FISH_NIGHT_START_HOUR, FISH_NIGHT_END_HOUR,
 } from "./data.js";
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
@@ -28,12 +29,25 @@ export const YEAR_DAYS = SEASON_ORDER.length * 7;
 // The player's own device clock, 24h local time. Night spans midnight
 // (20 -> 6 by default), so this checks the wraparound rather than assuming
 // start < end.
+function hourInRange(hour, start, end) {
+  if (start > end) return hour >= start || hour < end;
+  return hour >= start && hour < end;
+}
+
 export function isNight(date) {
   const hour = (date || new Date()).getHours();
-  if (NIGHT_START_HOUR > NIGHT_END_HOUR) {
-    return hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR;
-  }
-  return hour >= NIGHT_START_HOUR && hour < NIGHT_END_HOUR;
+  return hourInRange(hour, NIGHT_START_HOUR, NIGHT_END_HOUR);
+}
+
+// A separate, narrower window from isNight() above -- 9pm-5am by the
+// user's own spec for Fishing's nightOnly catches specifically, not the
+// same 9pm-7am general night crops/combat read. Two hours narrower on the
+// morning end, on purpose: a nightOnly fish is meant to actually require
+// fishing deep in the dark, not just "any time it happens to still read as
+// night."
+export function isFishingNight(date) {
+  const hour = (date || new Date()).getHours();
+  return hourInRange(hour, FISH_NIGHT_START_HOUR, FISH_NIGHT_END_HOUR);
 }
 
 // A town-type location's market (see LOCATIONS in data.js) closes

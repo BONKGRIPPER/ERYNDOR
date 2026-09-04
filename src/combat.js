@@ -199,6 +199,13 @@ function startFight(enemyKey) {
     over: null,
     nightBoost: night,
     lastDrops: null,
+    // Attacks left with a faster recovery, and the multiplier itself --
+    // set by eat() whenever the food just eaten carries FOODS'
+    // recoveryBoostAttacks/recoveryBoostMult (Honey's own, so far).
+    // Ticked down by attack() specifically, not Defend/Eat/Flee -- "next
+    // N attacks" per the food's own description.
+    recoveryBoost: 0,
+    recoveryBoostMult: 1,
   };
   save();
   log(enemy.name + " blocks the path." + (night ? " It looks tougher in the dark." : ""), "system");
@@ -250,13 +257,26 @@ function attack() {
   const c = state.combat;
   if (!c || c.over || Date.now() < c.playerCooldownUntil) return;
   const w = weaponStats();
+  // A ranged weapon spends one of its own ammo straight from the bag per
+  // shot -- same "check the bag directly, no equip step" rule Fishing's
+  // Net/Trap already use for themselves. Out of ammo is a hard block, not
+  // a fallback to unarmed -- refreshCombat() already disables the button
+  // before this can even be reached in practice, this is the backstop.
+  if (w.ammo && (state.bag[w.ammo] || 0) < 1) return;
+  if (w.ammo) state.bag[w.ammo] -= 1;
   const enemy = ENEMIES[c.enemyKey];
   const dmg = Math.max(1, roll(w.atkMin, w.atkMax) - enemy.def);
   c.enemyHP = clamp(c.enemyHP - dmg, 0, c.enemyMaxHP);
-  log("You hit the " + enemy.name + " for " + dmg + ".", "hit-enemy");
-  c.playerCooldownUntil = Date.now() + recoveryMs();
+  const boosted = c.recoveryBoost > 0;
+  log("You hit the " + enemy.name + " for " + dmg + (boosted ? " (honey-quick)" : "") + ".", "hit-enemy");
+  c.playerCooldownUntil = Date.now() + Math.round(recoveryMs() * (boosted ? c.recoveryBoostMult : 1));
+  if (boosted) {
+    c.recoveryBoost -= 1;
+    if (c.recoveryBoost === 0) log("The honey's energy fades.", "system");
+  }
   if (c.enemyHP <= 0) endFight(true);
   save();
+  if (w.ammo) drawBag();
   refreshCombat();
   syncTimerBars();
 }
@@ -281,7 +301,17 @@ function eat() {
   state.bag[foodName] -= 1;
   const before = c.playerHP;
   c.playerHP = clamp(c.playerHP + food.heal, 0, c.playerMaxHP);
-  log("You eat " + foodName + ", +" + (c.playerHP - before) + " HP.", "heal");
+  let healLog = "You eat " + foodName + ", +" + (c.playerHP - before) + " HP.";
+  // Optional -- only Honey carries these fields so far. Overwrites any
+  // boost already running rather than stacking, same "refresh, don't
+  // add" rule a second Defend before the first resolves would follow if
+  // that were possible.
+  if (food.recoveryBoostAttacks) {
+    c.recoveryBoost = food.recoveryBoostAttacks;
+    c.recoveryBoostMult = food.recoveryBoostMult || 1;
+    healLog += " Recovery's quicker for your next " + food.recoveryBoostAttacks + " attacks.";
+  }
+  log(healLog, "heal");
   c.playerCooldownUntil = Date.now() + recoveryMs();
   save();
   drawBag();
@@ -318,6 +348,12 @@ function endFight(won) {
   let zoneLevels = 0;
   if (won) {
     zoneLevels = gainSkillXp("combatXp", COMBAT_XP);
+    // Split by whichever weapon actually landed the killing blow --
+    // weaponStats() reads live, same as attack() itself does, so this is
+    // "what's equipped right now" at the moment of the kill, not
+    // whatever was equipped when the fight started. Unarmed (no
+    // `ranged` flag, same as every melee weapon) counts as Melee.
+    zoneLevels += gainSkillXp(weaponStats().ranged ? "archeryXp" : "meleeXp", COMBAT_XP);
     state.shards += enemy.shardReward * mult;
     const drops = enemy.drops || {};
     // Rolled once, here, and stashed on state.combat -- the result
@@ -358,6 +394,19 @@ export function drawCombatXp() {
     bar.classList.add("levelup");
   }
   combatLevelBefore = p.level;
+}
+
+// Archery/Melee's own compact progress, shown in the arena while actually
+// fighting (per the request) rather than as full xp-bars like Combat's
+// own -- no level-up flash on these two, just the numbers, so the arena
+// doesn't get busier than the combat log's own removal was trying to fix.
+export function drawWeaponSkillsXp() {
+  const archery = levelProgress(state.archeryXp);
+  const melee = levelProgress(state.meleeXp);
+  el("combat-archery-level").textContent = "Archery — Lv " + archery.level;
+  el("combat-archery-fill").style.width = (Math.min(1, archery.into / archery.need) * 100).toFixed(1) + "%";
+  el("combat-melee-level").textContent = "Melee — Lv " + melee.level;
+  el("combat-melee-fill").style.width = (Math.min(1, melee.into / melee.need) * 100).toFixed(1) + "%";
 }
 
 export function refreshCombat() {
@@ -409,8 +458,21 @@ export function refreshCombat() {
       ? "Out of " + foodName
       : foodName + " x" + state.bag[foodName] + ", +" + food.heal + " HP";
 
+  // Same "name the exact ammo and how many are left" treatment Eat's own
+  // sub-text gives food -- only a `ranged` weapon (its own `ammo` field,
+  // data.js) has anything to report here. Explicit else back to the
+  // original static copy, not just "leave it alone" -- switching away
+  // from a bow (unequip, or a two-handed swap) needs this to stop
+  // reading a stale "Out of Flint Arrows" from whatever was equipped a
+  // moment ago.
+  const w = weaponStats();
+  const outOfAmmo = !!w.ammo && (state.bag[w.ammo] || 0) < 1;
+  el("combat-attack-sub").textContent = !w.ammo
+    ? "Weapon damage, no defense"
+    : outOfAmmo ? "Out of " + w.ammo : w.ammo + " x" + state.bag[w.ammo];
+
   const canAct = ready;
-  el("combat-btn-attack").disabled = !canAct;
+  el("combat-btn-attack").disabled = !canAct || outOfAmmo;
   el("combat-btn-defend").disabled = !canAct;
   el("combat-btn-eat").disabled = !canAct || !food || (state.bag[foodName] || 0) < 1;
   el("combat-btn-flee").disabled = !canAct;

@@ -38,6 +38,12 @@ export const state = {
   // crafted later must never get silently eaten on the next reload).
   equipMigrated: false,
   shards: 0,
+  // Scaffolding only -- see CURRENCIES in data.js. Nothing awards or
+  // spends these yet, but they save/load like any other number so a
+  // future feature can start using them without another state-shape pass.
+  marks: 0,
+  crowns: 0,
+  spires: 0,
   // Aerendell's market: how much stock it's currently holding of each item,
   // and when that number was last touched -- stock decays toward zero from
   // that timestamp (see marketStock() in market.js), so nothing here needs
@@ -95,6 +101,13 @@ export const state = {
   // everything else timed in this game. Felling is a straight HP fight,
   // not a timed chop -- see logging.js's chopTree()/fellTree().
   logPlots: [],
+  // One entry per Honey slot the player's bought (starts with 1, see
+  // BEEHIVE_EXPAND_COST in data.js) -- null while idle, {startedAt,
+  // readyAt} while brewing, same shape state.mineSwing/state.stations[id]
+  // already use. No auto-restart on completion (unlike Logging's trees)
+  // -- each slot needs its own fresh tap, same as a Craft pill. See
+  // src/beehive.js.
+  beehiveSlots: [],
   // The one running gather, or null while idle -- { startedAt, readyAt,
   // poolId }, same {startedAt,readyAt} deadline shape every other timer in
   // this game uses (crafting, stations, campfire). `poolId` is locked in at
@@ -123,6 +136,13 @@ export const state = {
   fishingXp: 0,
   tailoringXp: 0,
   grindingXp: 0,
+  beekeepingXp: 0,
+  fletcherXp: 0,
+  // Split off Combat's own combatXp (still gained on every win regardless
+  // of weapon) -- whichever of these a kill feeds depends on the weapon
+  // equipped at the moment of the killing blow (combat.js's endFight()).
+  archeryXp: 0,
+  meleeXp: 0,
   // One active cycle per conversion station, keyed by STATIONS id -- null
   // while idle, {startedAt,readyAt} while running. See src/stations.js.
   stations: {},
@@ -303,6 +323,9 @@ for (let i = 0; i < PLOT_COUNT; i++) {
     chopSwing: null,
   });
 }
+// Starts with exactly one Honey slot, idle -- see BEEHIVE_EXPAND_COST in
+// data.js for buying more.
+state.beehiveSlots.push(null);
 // Every slot starts filled with its matching starter tool -- there's
 // always exactly one of each in the starting bag, so they might as well
 // already be in hand rather than making the player equip them manually.
@@ -336,9 +359,10 @@ export function save() {
       startedAt: state.startedAt,
       bag: state.bag, storage: state.storage, equipment: state.equipment,
       equipMigrated: state.equipMigrated,
-      shards: state.shards, market: state.market,
+      shards: state.shards, marks: state.marks, crowns: state.crowns, spires: state.spires,
+      market: state.market,
       buildings: state.buildings, campfire: state.campfire,
-      plots: state.plots, logPlots: state.logPlots,
+      plots: state.plots, logPlots: state.logPlots, beehiveSlots: state.beehiveSlots,
       wateringCan: state.wateringCan,
       farmingXp: state.farmingXp, loggingXp: state.loggingXp,
       foragingXp: state.foragingXp, villager: state.villager,
@@ -351,6 +375,8 @@ export function save() {
       fishingXp: state.fishingXp, fishing: state.fishing,
       tailoringXp: state.tailoringXp,
       grindingXp: state.grindingXp,
+      beekeepingXp: state.beekeepingXp,
+      fletcherXp: state.fletcherXp, archeryXp: state.archeryXp, meleeXp: state.meleeXp,
       village: state.village,
       zones: state.zones,
       stations: state.stations,
@@ -398,6 +424,9 @@ export function load() {
     }
     state.equipMigrated = true;
     if (typeof data.shards === "number") state.shards = data.shards;
+    if (typeof data.marks === "number") state.marks = data.marks;
+    if (typeof data.crowns === "number") state.crowns = data.crowns;
+    if (typeof data.spires === "number") state.spires = data.spires;
     if (data.market) {
       if (data.market.stock) state.market.stock = data.market.stock;
       if (data.market.stockAt) state.market.stockAt = data.market.stockAt;
@@ -517,6 +546,11 @@ export function load() {
         });
       }
     }
+    if (Array.isArray(data.beehiveSlots) && data.beehiveSlots.length >= 1) {
+      state.beehiveSlots = data.beehiveSlots.map(function (s) {
+        return (s && typeof s.readyAt === "number") ? { startedAt: s.startedAt, readyAt: s.readyAt } : null;
+      });
+    }
     if (data.wateringCan && typeof data.wateringCan === "object") {
       state.wateringCan.charges = typeof data.wateringCan.charges === "number" ? data.wateringCan.charges : CAN_CAPACITY;
       state.wateringCan.refillAt = typeof data.wateringCan.refillAt === "number" ? data.wateringCan.refillAt : null;
@@ -528,6 +562,10 @@ export function load() {
     if (typeof data.fishingXp === "number") state.fishingXp = data.fishingXp;
     if (typeof data.tailoringXp === "number") state.tailoringXp = data.tailoringXp;
     if (typeof data.grindingXp === "number") state.grindingXp = data.grindingXp;
+    if (typeof data.beekeepingXp === "number") state.beekeepingXp = data.beekeepingXp;
+    if (typeof data.fletcherXp === "number") state.fletcherXp = data.fletcherXp;
+    if (typeof data.archeryXp === "number") state.archeryXp = data.archeryXp;
+    if (typeof data.meleeXp === "number") state.meleeXp = data.meleeXp;
     if (data.fishing && typeof data.fishing === "object") {
       state.fishing.bait = typeof data.fishing.bait === "string" ? data.fishing.bait : null;
       state.fishing.trap = (data.fishing.trap && typeof data.fishing.trap.readyAt === "number")

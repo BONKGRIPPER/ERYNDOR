@@ -27,11 +27,12 @@ import { buildFishing } from "./fishing.js";
 import { refreshCraft } from "./craft.js";
 import { refreshAllStations } from "./stations.js";
 import { drawStationCards } from "./buildings.js";
+import { buildBeehiveSlots, drawBeehive } from "./beehive.js";
 
 // Exported so main.js's tick loop can use the same list for its own
 // "still sitting on one of these" check, rather than a second copy of it
 // drifting out of sync.
-export const STATION_SCREENS = ["spinningWheel", "sawmill", "stoneCutter", "tanningStation", "armorBench", "grindStone"];
+export const STATION_SCREENS = ["spinningWheel", "sawmill", "stoneCutter", "tanningStation", "armorBench", "grindStone", "fletchingBench"];
 
 // The screen lives in the URL hash, so a reload puts you back where you were
 // and the browser's back button works without any routing code. Adding a
@@ -67,6 +68,7 @@ export function show(name) {
   if (name === "map") buildMap();
   if (name === "fishing") buildFishing();
   if (name === "craft") { refreshCraft(); drawStationCards(); }
+  if (name === "beehive") { buildBeehiveSlots(); drawBeehive(); }
   if (STATION_SCREENS.indexOf(name) >= 0) refreshAllStations();
 }
 

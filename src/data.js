@@ -29,6 +29,8 @@ export const PLACES = [
   { id: "township",  icon: "\u{1F465}", name: "Township",  note: "Villagers and their upgrades", ready: true, hub: true },
   { id: "armorBench", icon: "\u{1FA61}", name: "Armor Bench", note: "Sew cloth into armor", ready: true, hub: true },
   { id: "grindStone", icon: "\u{1F9B4}", name: "Grind Stone", note: "Grind bones into bonemeal", ready: true, hub: true },
+  { id: "beehive", icon: "\u{1F41D}", name: "Beehive", note: "Keep bees, craft honey", ready: true, hub: true },
+  { id: "fletchingBench", icon: "\u{1F3F9}", name: "Fletching Bench", note: "Craft bows and arrows", ready: true, hub: true },
   // Not a BUILDINGS entry -- there's no structure to build, just water to
   // fish. Gated by location like a built station (hub.js's
   // fishingAvailableHere()), but on LOCATIONS[...].fishing rather than
@@ -49,7 +51,7 @@ export const PLACES = [
 export const SCREEN_IDS = [
   "home", "field", "logging", "mining", "combat", "inventory", "skills", "craft", "market", "campfire",
   "spinningWheel", "sawmill", "township", "stoneCutter", "tanningStation", "map", "fishing", "armorBench",
-  "grindStone",
+  "grindStone", "beehive", "fletchingBench",
 ];
 
 // The persistent bottom dock. Home first (left side) so there's always a
@@ -78,6 +80,15 @@ export const SKILLS = {
   fishing: { name: "Fishing", icon: "\u{1F3A3}" },
   tailoring: { name: "Tailoring", icon: "\u{1FA61}" },
   grinding: { name: "Grinding", icon: "\u{1F9B4}" },
+  beekeeping: { name: "Beekeeping", icon: "\u{1F41D}" },
+  fletcher: { name: "Fletcher", icon: "\u{1FAB6}" },
+  // Both level off combat *kills* specifically (endFight()'s own win
+  // branch), split by whatever weapon actually landed the last blow --
+  // Combat itself (the original, generic skill) is untouched and still
+  // gains XP on every win regardless of weapon, same as before either of
+  // these existed.
+  archery: { name: "Archery", icon: "\u{1F3F9}" },
+  melee: { name: "Melee", icon: "\u{2694}\u{FE0F}" },
 };
 
 export const PLOT_COUNT = 3;   // was 6 -- 2026-08-28, now that plots are a scrollable pill list, not a fixed grid
@@ -119,6 +130,13 @@ export const AXES = {
   "Wooden Axe": { damage: 1 },
   "Flint Axe":  { damage: 2 },
   "Stone Axe":  { damage: 3 },
+  // Stronger than Stone Axe per the request -- also meant to be the one
+  // that can fell Birch (TREES.birch below), not just chop Pine faster.
+  // Birch itself has no plot to grow in yet (Logging is still hardcoded
+  // to Pine alone -- see logging.js's own `const TREE = TREES.pine`), so
+  // this axe is fully real and useful today against Pine, with Birch as
+  // a real spot nothing's behind yet.
+  "Scrap Axe":  { damage: 4 },
 };
 
 // ------------------------------------------------------------------- time
@@ -171,6 +189,12 @@ export const NIGHT_START_HOUR = 21;
 export const NIGHT_END_HOUR = 7;
 export const NIGHT_GROWTH_MULT = 0.5;
 
+// Fishing's own nightOnly catches (FISH_POOLS below) read this narrower
+// 9pm-5am window instead of the general isNight() above -- the user's own
+// spec, not the same one crops/combat use. See time.js's isFishingNight().
+export const FISH_NIGHT_START_HOUR = 21;
+export const FISH_NIGHT_END_HOUR = 5;
+
 // A crop needs `waters` waterings. Each one starts a timer of `stageSeconds`;
 // the plot is ripe once the last stage finishes. Harvest hands back a seed as
 // well as the crop, so the loop can keep running. Both are single-stage for
@@ -222,12 +246,25 @@ export const TREES = {
     waters: 1, stageSeconds: 180, xp: 34, health: 24,
     gives: { "Pine Logs": 3 },
   },
+  // Real data (2026-09-02), no plot to actually grow in yet -- Logging is
+  // still hardcoded to Pine alone (`const TREE = TREES.pine;` in
+  // logging.js), so nothing plants or chops a Birch today. Registered
+  // anyway, same "real spot, nothing behind it yet" treatment Oak Planks/
+  // Fine String just got -- tougher than Pine (higher health, longer
+  // grow, more XP) so Scrap Axe's own extra damage over Stone Axe means
+  // something once there's a Birch plot to swing it at.
+  birch: {
+    name: "Birch", seed: "Birch Cones", tint: "#c9c19a",
+    waters: 1, stageSeconds: 240, xp: 50, health: 40,
+    gives: { "Birch Logs": 3 },
+  },
 };
 
 export const TINTS = {
   "Red Berries Seeds": "#c23b52", "Red Berries": "#c23b52",
   "Flax Seeds": "#8fb3d9", "Flax": "#8fb3d9",
   "Pine Cones": "#4a6b3a", "Pine Logs": "#6b4a2f",
+  "Birch Cones": "#c9c19a", "Birch Logs": "#d9cba3",
   "Berries": "#c85a6e", "Flint": "#9098a3", "Sticks": "#8a6a45",
   "Flint Axe": "#c9a06b", "Flint Pickaxe": "#a98c5c",
   "Wooden Pickaxe": "#8a6a45", "Stone Pickaxe": "#7d7d76", "Stone Axe": "#7d7d76",
@@ -235,6 +272,9 @@ export const TINTS = {
   "Flint Dagger": "#a3a8ad", "Wooden Buckler": "#8a6a45",
   "Padded Vest": "#9c7a54", "Stone Plate": "#7d7d76",
   "Highland Cloak": "#5c7a5e", "Highland Chest": "#4f6b52", "Highland Legs": "#425a45",
+  "Scrap Pickaxe": "#8c8f96", "Scrap Axe": "#8c8f96",
+  "Scrap Helm": "#75787f", "Scrap Armor": "#6a6d73", "Scrap Legs": "#65686e",
+  "Short Bow": "#b98552", "Flint Arrows": "#9098a3",
   "Charcoal": "#3a3632", "Cooked Berries": "#8f3347",
   "String": "#d9cba3", "Pine Planks": "#b98552",
   "Stone": "#8b8b85", "Coal": "#2b2622", "Iron Ore": "#a56a52",
@@ -249,10 +289,47 @@ export const TINTS = {
   "Scrap Metal": "#8c8f96",
   "Stone Block": "#9a9a92", "Basalt Block": "#55555c",
   "Bonemeal": "#efe6d3",
+  "Queen Bee": "#e0a72e", "Honey": "#d9930c",
   "Fishing Rod": "#8a6a45", "Net": "#d9cba3", "Trap": "#8a6a45",
   "Worm Bait": "#a8724a", "Shiny Lure": "#d8bd6a",
+  // Five fishing pools now (2026-09-02), one set of fish each -- "river" is
+  // the pool that used to be keyed "aerendell" (same five fish, renamed
+  // key only, see FISH_POOLS below). Every pool follows the same naming
+  // convention its first entries already set: mundane real-fish-ish names
+  // for the three standard catches, a "Golden ___" name for the rare one,
+  // a "Moon___" name for the nightOnly one -- so a fish's own name already
+  // hints at its tier before a player ever checks its stats.
   "Minnow": "#9fb8c7", "River Trout": "#6f8f7a", "Catfish": "#5f5a52",
   "Golden Carp": "#e0b23c", "Moonfin Eel": "#5a6b8a",
+  "Mudscale Perch": "#8a9a6e", "Reed Sunfish": "#c9b45a", "Bog Loach": "#5c5442",
+  "Golden Koi": "#e8a23a", "Moonpond Eel": "#4f6a72",
+  "Lake Herring": "#a8b8c2", "Silverback Bass": "#7f8a92", "Deepwater Pike": "#3f5a52",
+  "Golden Sturgeon": "#d9a842", "Moonveil Trout": "#556a8a",
+  "Brook Char": "#c26a4a", "Speckled Dace": "#9fa8a2", "Stonefly Grayling": "#8a8f95",
+  "Golden Grayling": "#e0b64a", "Moonshadow Char": "#5a4a72",
+  "Saltback Herring": "#7a94a8", "Reef Snapper": "#d97a5a", "Tideskimmer Mackerel": "#4a7a8a",
+  "Golden Marlin": "#e0a832", "Moontide Eel": "#3a5a6a",
+  // Cooked versions -- same "meat needs cooking to be edible" rule
+  // Poultry/Beef/Mutton already follow (see COOKABLES/FOODS below); every
+  // raw fish above is un-equippable on its own.
+  "Cooked Minnow": "#b58a5a", "Cooked River Trout": "#a06a3f", "Cooked Catfish": "#8f6438",
+  "Cooked Golden Carp": "#d99a3a", "Cooked Moonfin Eel": "#7a5f4a",
+  "Cooked Mudscale Perch": "#a58a52", "Cooked Reed Sunfish": "#c2984a", "Cooked Bog Loach": "#8a6a42",
+  "Cooked Golden Koi": "#d9923a", "Cooked Moonpond Eel": "#6a5a4a",
+  "Cooked Lake Herring": "#b09a72", "Cooked Silverback Bass": "#9a8462", "Cooked Deepwater Pike": "#6a7a52",
+  "Cooked Golden Sturgeon": "#c99a42", "Cooked Moonveil Trout": "#6a6a7a",
+  "Cooked Brook Char": "#b06a42", "Cooked Speckled Dace": "#9a8a72", "Cooked Stonefly Grayling": "#8a7a62",
+  "Cooked Golden Grayling": "#d9a842", "Cooked Moonshadow Char": "#6a5a72",
+  "Cooked Saltback Herring": "#a08a62", "Cooked Reef Snapper": "#c2724a", "Cooked Tideskimmer Mackerel": "#5a7a72",
+  "Cooked Golden Marlin": "#d99a32", "Cooked Moontide Eel": "#5a6a6a",
+  // Fishing Rod's own upgrade -- Oak Planks (Sawmill's Pine-only recipe
+  // hasn't grown a second tree species yet) and Fine String (nothing
+  // makes this yet, per the user's own "not sure what creates fine string
+  // yet") are both real items, registered so the Rod's recipe (below) is
+  // real data even though neither ingredient has a source in the game
+  // yet -- same "real spot, nothing behind it yet" treatment Scrap Metal
+  // got before Road Goblin ever dropped it.
+  "Oak Planks": "#a07a45", "Fine String": "#e8dfc2",
 };
 
 // A second, independent gather loop -- no seeds, no growth stages, just tap
@@ -290,10 +367,16 @@ export const FORAGE_POOLS = {
   // to forage one. Red Berries Seeds absorbs the freed weight rather than
   // splitting it across all three survivors, since Sticks/Flint's own
   // 0.40/0.40 split already matched the balance pass this pool came from.
+  // Queen Bee added 2026-09-02 at a real 0.5% -- shaved straight off Red
+  // Berries Seeds (0.20 -> 0.195) so the pool still sums to exactly 1;
+  // Sticks/Flint's own 0.40/0.40 split is untouched. Chances within a
+  // pool are read in array order (see forage.js's rollDrop()), so a slice
+  // this small still has to actually fit under 1.0 to ever be reachable.
   aerendell: [
-    { item: "Red Berries Seeds", chance: 0.20 },
+    { item: "Red Berries Seeds", chance: 0.195 },
     { item: "Sticks",            chance: 0.40 },
     { item: "Flint",             chance: 0.40 },
+    { item: "Queen Bee",         chance: 0.005 },
   ],
   // No Flint here on purpose -- Forest Road is meant to read as a
   // different pocket of the world than Aerendell's own pool, not a copy
@@ -395,15 +478,33 @@ export const RECIPES = {
   flintPickaxe: { name: "Flint Pickaxe", cost: { "Flint": 10, "Sticks": 10 } },
   stonePickaxe: { name: "Stone Pickaxe", cost: { "Stone Block": 9, "Pine Planks": 9 } },
   stoneAxe:     { name: "Stone Axe",     cost: { "Stone Block": 9, "Pine Planks": 9 } },
+  // Scrap tools (2026-09-02) -- Pine Planks + Scrap Metal per the request,
+  // the first tools to use Scrap Metal (Road Goblin's own drop) as a cost
+  // rather than just referencing it in a not-yet-real PICKAXES entry.
+  scrapPickaxe: { name: "Scrap Pickaxe", cost: { "Pine Planks": 10, "Scrap Metal": 8 } },
+  scrapAxe:     { name: "Scrap Axe",     cost: { "Pine Planks": 10, "Scrap Metal": 8 } },
   flintDagger:  { name: "Flint Dagger",  cost: { "Flint": 15, "Sticks": 10 } },
   woodenBuckler:{ name: "Wooden Buckler", cost: { "Sticks": 20, "Stone": 10 } },
   paddedVest:   { name: "Padded Vest",   cost: { "Sticks": 20, "Flint": 15 } },
+  // Scrap armor set (2026-09-02) -- 2 defense each per the request, Scrap
+  // Metal + Leather (Tanning Station's own output off Animal Hide). Helm
+  // priced a little below Armor/Legs, same shape Highland's own Cloak
+  // (cheaper) vs. Chest/Legs already set.
+  scrapHelm:    { name: "Scrap Helm",    cost: { "Scrap Metal": 6, "Leather": 4 } },
+  scrapArmor:   { name: "Scrap Armor",   cost: { "Scrap Metal": 8, "Leather": 6 } },
+  scrapLegs:    { name: "Scrap Legs",    cost: { "Scrap Metal": 8, "Leather": 6 } },
   stonePlate:   { name: "Stone Plate",   cost: { "Stone": 25, "Pine Logs": 15 } },
   // Fishing's three tools -- see FISHING section near the bottom of this
   // file for what actually tells them apart. Net needs String (Spinning
   // Wheel output) rather than raw Flax, same "a real conversion chain, not
   // a shortcut" reasoning every other station-fed recipe already follows.
-  fishingRod: { name: "Fishing Rod", cost: { "Sticks": 15, "String": 5 } },
+  // Fishing Rod switched (2026-09-02) from Sticks/String to Oak Planks and
+  // Fine String -- neither has a real source in the game yet (see the
+  // "Oak Planks"/"Fine String" TINTS comment above), so this recipe is
+  // real data with nothing to craft it from until one exists, same "real
+  // spot, nothing behind it yet" story most of this game's forward-
+  // referenced content follows. Quantities are a first-pass guess.
+  fishingRod: { name: "Fishing Rod", cost: { "Oak Planks": 10, "Fine String": 8 } },
   net:        { name: "Net",         cost: { "String": 15, "Sticks": 5 } },
   trap:       { name: "Trap",        cost: { "Sticks": 20, "Flint": 5 } },
   // Bait -- Rod-only (see canFishHere()/rollFish() in fishing.js). Net and
@@ -458,10 +559,12 @@ export const EQUIPMENT = {
   "Wooden Axe": "axe",
   "Flint Axe": "axe",
   "Stone Axe": "axe",
+  "Scrap Axe": "axe",
   "Wooden Can": "can",
   "Wooden Pickaxe": "pick",
   "Flint Pickaxe": "pick",
   "Stone Pickaxe": "pick",
+  "Scrap Pickaxe": "pick",
   // The "fishing" slot has sat reserved on the Equipment layout since
   // before Fishing existed (see EQUIP_SLOTS above) -- this is that slot
   // finally getting an item. Only the Rod is equipment; Net and Trap are
@@ -472,6 +575,11 @@ export const EQUIPMENT = {
   // *either* armLeft or armRight, whichever the player opened.
   "Flint Dagger": "arm",
   "Wooden Buckler": "arm",
+  // Two-handed (WEAPONS' own "twoHanded" above) -- equipping it into
+  // either arm slot blocks the other one outright (inventory.js's
+  // armBlockedBy(), already generic over any twoHanded weapon), same as
+  // any other two-handed weapon would.
+  "Short Bow": "arm",
   "Padded Vest": "chest",
   "Stone Plate": "chest",
   // The first items to actually fill the Helm and Legs slots -- both have
@@ -481,6 +589,9 @@ export const EQUIPMENT = {
   "Highland Cloak": "helm",
   "Highland Chest": "chest",
   "Highland Legs": "legs",
+  "Scrap Helm": "helm",
+  "Scrap Armor": "chest",
+  "Scrap Legs": "legs",
   // Anything with a heal value in FOODS is also equippable here -- Combat's
   // Eat button consumes whatever's equipped in this slot, not a fixed item,
   // which is the whole reason Food is a real equip slot instead of Combat
@@ -491,6 +602,19 @@ export const EQUIPMENT = {
   "Cooked Poultry": "food",
   "Cooked Beef": "food",
   "Cooked Mutton": "food",
+  "Honey": "food",
+  // Cooked fish only -- raw fish aren't equippable/edible, same rule
+  // Poultry/Beef/Mutton already set (see FOODS below).
+  "Cooked Minnow": "food", "Cooked River Trout": "food", "Cooked Catfish": "food",
+  "Cooked Golden Carp": "food", "Cooked Moonfin Eel": "food",
+  "Cooked Mudscale Perch": "food", "Cooked Reed Sunfish": "food", "Cooked Bog Loach": "food",
+  "Cooked Golden Koi": "food", "Cooked Moonpond Eel": "food",
+  "Cooked Lake Herring": "food", "Cooked Silverback Bass": "food", "Cooked Deepwater Pike": "food",
+  "Cooked Golden Sturgeon": "food", "Cooked Moonveil Trout": "food",
+  "Cooked Brook Char": "food", "Cooked Speckled Dace": "food", "Cooked Stonefly Grayling": "food",
+  "Cooked Golden Grayling": "food", "Cooked Moonshadow Char": "food",
+  "Cooked Saltback Herring": "food", "Cooked Reef Snapper": "food", "Cooked Tideskimmer Mackerel": "food",
+  "Cooked Golden Marlin": "food", "Cooked Moontide Eel": "food",
 };
 
 // Same idea as PICKAXES: capacity lives on the equipped item, not a flat
@@ -542,12 +666,19 @@ export const PICKAXES = {
   "Wooden Pickaxe": { maxDepth: 100, ms: 6000, riskPerSwing: 0.20, depthPerSwing: 5 },
   "Flint Pickaxe":  { maxDepth: 100, ms: 5000, riskPerSwing: 0.10, depthPerSwing: 5 },
   "Stone Pickaxe":  { maxDepth: 100, ms: 4000, riskPerSwing: 0.05, depthPerSwing: 5 },
-  // Not craftable yet -- no Scrap Metal, Bronze, Iron ingot, Gold bar or
-  // Scorn material exists to make them from. `ms` just continues the same
-  // decreasing trend the first three tiers set (-1s, -1s, tapering off
-  // once it's already fast) as a placeholder, pending real balance once
-  // these actually become craftable.
-  "Scrap Metal Pickaxe": { maxDepth: 400,  ms: 3500, riskPerSwing: 0.05, depthPerSwing: 20 },
+  // Scrap Pickaxe is real and craftable now (2026-09-02, was the
+  // placeholder "Scrap Metal Pickaxe" here, renamed to match the plain
+  // "Material + Pickaxe" convention every other tier already uses) --
+  // Scrap Metal exists (Road Goblin's own drop) to make one from. maxDepth
+  // 400 puts Copper/Tin Ore (both minDepth 100, no cap of their own) in
+  // reach and just touches Iron Ore's own 400 floor. Faster than Stone
+  // Pickaxe's 4000ms per the request, not just a hair -- a full second
+  // quicker, not a token 500ms.
+  "Scrap Pickaxe": { maxDepth: 400, ms: 3000, riskPerSwing: 0.10, depthPerSwing: 25 },
+  // The rest are still placeholders -- no Bronze, Iron ingot, Gold bar or
+  // Scorn material exists to make any of them from yet. `ms` continues
+  // the same decreasing trend as before, tapering off once it's already
+  // fast.
   "Bronze Pickaxe":      { maxDepth: 1000, ms: 3000, riskPerSwing: 0.04, depthPerSwing: 25 },
   "Iron Pickaxe":        { maxDepth: 2500, ms: 2500, riskPerSwing: 0.04, depthPerSwing: 50 },
   "Gold Pickaxe":        { maxDepth: 3000, ms: 2000, riskPerSwing: 0.04, depthPerSwing: 100 },
@@ -592,6 +723,22 @@ export const COMBAT_XP = 20;
 
 export const WEAPONS = {
   "Flint Dagger": { atkMin: 4, atkMax: 8, twoHanded: false },
+  // The first bow (2026-09-02) -- `ranged: true` is the one new field:
+  // combat.js's endFight() reads it on a win to decide whether the kill
+  // feeds Archery or Melee (anything without it, unarmed included, counts
+  // as Melee by default). `twoHanded: true` isn't new machinery at all --
+  // inventory.js's armBlockedBy() already greys out the other Hand slot
+  // and blocks a shield from going there for any two-handed weapon, the
+  // exact same way it already would for one. A little stronger than Flint
+  // Dagger, first-pass.
+  // `ammo` (2026-09-03) -- combat.js's attack() spends one of this exact
+  // item straight from the bag per shot (not equipped, just owned, same
+  // "check the bag directly" rule Fishing's own Net/Trap already use for
+  // themselves), and blocks Attack outright once it's out, same "disabled
+  // until you have what the action needs" rule Eat already follows for
+  // food. Every `ranged` weapon needs one; melee weapons don't have the
+  // field at all.
+  "Short Bow": { atkMin: 5, atkMax: 9, twoHanded: true, ranged: true, ammo: "Flint Arrows" },
 };
 export const ARMORS = {
   "Padded Vest": { defense: 2, recoveryMult: 0.9 },
@@ -599,6 +746,11 @@ export const ARMORS = {
   "Highland Cloak": { defense: 1, recoveryMult: 1 },
   "Highland Chest": { defense: 1, recoveryMult: 1 },
   "Highland Legs":  { defense: 1, recoveryMult: 1 },
+  // 2 defense each per the request -- no recoveryMult penalty, same
+  // "new tier, no tradeoff" treatment Highland's own three pieces got.
+  "Scrap Helm":  { defense: 2, recoveryMult: 1 },
+  "Scrap Armor": { defense: 2, recoveryMult: 1 },
+  "Scrap Legs":  { defense: 2, recoveryMult: 1 },
 };
 export const SHIELDS = {
   "Wooden Buckler": { defense: 2, block: 0.15 },
@@ -612,6 +764,14 @@ export const SHIELDS = {
 // that to 3. Raw poultry/beef/mutton have no entry here at all -- they're
 // deliberately not equippable/edible raw, only their cooked forms are,
 // each healing 5.
+// `recoveryBoostAttacks`/`recoveryBoostMult` are optional -- Honey is the
+// first food with either (2026-09-02): eating it also sets
+// state.combat.honeyBoost to `recoveryBoostAttacks`, and combat.js's own
+// recoveryMs() multiplies by `recoveryBoostMult` for as long as that
+// counter is still above 0, ticking down once per Attack specifically
+// (not Defend/Eat/Flee -- "next 5 attacks" per the request). First-pass
+// number, not balanced -- matches VILLAGER_UPGRADE_MULT's own 0.75 for a
+// "noticeably faster, not broken" speed-up.
 export const FOODS = {
   "Berries": { heal: 1 },
   "Red Berries": { heal: 1 },
@@ -619,6 +779,22 @@ export const FOODS = {
   "Cooked Poultry": { heal: 5 },
   "Cooked Beef": { heal: 5 },
   "Cooked Mutton": { heal: 5 },
+  "Honey": { heal: 5, recoveryBoostAttacks: 5, recoveryBoostMult: 0.75 },
+  // Every pool's three standard fish heal 5 (same as Cooked Poultry/Beef/
+  // Mutton); every rare catch heals 10, every nightOnly catch heals 8 --
+  // "greater bonuses when eaten in combat" per the request, applied as a
+  // flat tier rather than a per-fish number so it stays consistent no
+  // matter which pool a rare or night fish came from.
+  "Cooked Minnow": { heal: 5 }, "Cooked River Trout": { heal: 5 }, "Cooked Catfish": { heal: 5 },
+  "Cooked Golden Carp": { heal: 10 }, "Cooked Moonfin Eel": { heal: 8 },
+  "Cooked Mudscale Perch": { heal: 5 }, "Cooked Reed Sunfish": { heal: 5 }, "Cooked Bog Loach": { heal: 5 },
+  "Cooked Golden Koi": { heal: 10 }, "Cooked Moonpond Eel": { heal: 8 },
+  "Cooked Lake Herring": { heal: 5 }, "Cooked Silverback Bass": { heal: 5 }, "Cooked Deepwater Pike": { heal: 5 },
+  "Cooked Golden Sturgeon": { heal: 10 }, "Cooked Moonveil Trout": { heal: 8 },
+  "Cooked Brook Char": { heal: 5 }, "Cooked Speckled Dace": { heal: 5 }, "Cooked Stonefly Grayling": { heal: 5 },
+  "Cooked Golden Grayling": { heal: 10 }, "Cooked Moonshadow Char": { heal: 8 },
+  "Cooked Saltback Herring": { heal: 5 }, "Cooked Reef Snapper": { heal: 5 }, "Cooked Tideskimmer Mackerel": { heal: 5 },
+  "Cooked Golden Marlin": { heal: 10 }, "Cooked Moontide Eel": { heal: 8 },
 };
 
 // Keyed rather than an array (like STATIONS/PICKAXES) since nothing about
@@ -691,6 +867,10 @@ export const CATEGORIES = {
   "Red Berries Seeds": "farming", "Red Berries": "farming",
   "Flax Seeds": "farming", "Flax": "farming",
   "Pine Cones": "logging", "Pine Logs": "logging",
+  "Birch Cones": "logging", "Birch Logs": "logging",
+  "Scrap Pickaxe": "crafting", "Scrap Axe": "crafting",
+  "Scrap Helm": "crafting", "Scrap Armor": "crafting", "Scrap Legs": "crafting",
+  "Short Bow": "fletcher", "Flint Arrows": "fletcher",
   "Berries": "foraging", "Flint": "foraging", "Sticks": "foraging",
   "Flint Axe": "crafting", "Flint Pickaxe": "crafting", "Stone Pickaxe": "crafting",
   "Charcoal": "cooking", "Cooked Berries": "cooking",
@@ -711,11 +891,54 @@ export const CATEGORIES = {
   "Wool": "combat", "Raw Mutton": "combat",
   "Leather": "tanning", "Cloth": "sowing",
   "Bonemeal": "grinding",
+  "Queen Bee": "foraging", "Honey": "beekeeping",
   "Cooked Poultry": "cooking", "Cooked Beef": "cooking", "Cooked Mutton": "cooking",
   "Fishing Rod": "crafting", "Net": "crafting", "Trap": "crafting",
   "Worm Bait": "crafting", "Shiny Lure": "crafting",
   "Minnow": "fishing", "River Trout": "fishing", "Catfish": "fishing",
   "Golden Carp": "fishing", "Moonfin Eel": "fishing",
+  "Mudscale Perch": "fishing", "Reed Sunfish": "fishing", "Bog Loach": "fishing",
+  "Golden Koi": "fishing", "Moonpond Eel": "fishing",
+  "Lake Herring": "fishing", "Silverback Bass": "fishing", "Deepwater Pike": "fishing",
+  "Golden Sturgeon": "fishing", "Moonveil Trout": "fishing",
+  "Brook Char": "fishing", "Speckled Dace": "fishing", "Stonefly Grayling": "fishing",
+  "Golden Grayling": "fishing", "Moonshadow Char": "fishing",
+  "Saltback Herring": "fishing", "Reef Snapper": "fishing", "Tideskimmer Mackerel": "fishing",
+  "Golden Marlin": "fishing", "Moontide Eel": "fishing",
+  "Cooked Minnow": "cooking", "Cooked River Trout": "cooking", "Cooked Catfish": "cooking",
+  "Cooked Golden Carp": "cooking", "Cooked Moonfin Eel": "cooking",
+  "Cooked Mudscale Perch": "cooking", "Cooked Reed Sunfish": "cooking", "Cooked Bog Loach": "cooking",
+  "Cooked Golden Koi": "cooking", "Cooked Moonpond Eel": "cooking",
+  "Cooked Lake Herring": "cooking", "Cooked Silverback Bass": "cooking", "Cooked Deepwater Pike": "cooking",
+  "Cooked Golden Sturgeon": "cooking", "Cooked Moonveil Trout": "cooking",
+  "Cooked Brook Char": "cooking", "Cooked Speckled Dace": "cooking", "Cooked Stonefly Grayling": "cooking",
+  "Cooked Golden Grayling": "cooking", "Cooked Moonshadow Char": "cooking",
+  "Cooked Saltback Herring": "cooking", "Cooked Reef Snapper": "cooking", "Cooked Tideskimmer Mackerel": "cooking",
+  "Cooked Golden Marlin": "cooking", "Cooked Moontide Eel": "cooking",
+  "Oak Planks": "milling", "Fine String": "sowing",
+};
+
+// -------------------------------------------------------------- currency
+//
+// Scaffolding only (2026-09-02) -- Shards (state.shards) are still the
+// only denomination anything in the game actually earns, prices, or
+// spends. These three sit ready for later: each one's `worth` is how many
+// of the *previous* tier one of it is worth, chaining shards -> marks ->
+// crowns -> spires the same way coins step up to bills, not four
+// independent currencies. (The request's own numbers had crowns and
+// spires both worth "100 marks" -- read here as the obvious continuation
+// of the x100 chain, spires worth 100 crowns, since two denominations
+// worth the same amount would make one of them pointless to have named at
+// all.) `state.marks`/`state.crowns`/`state.spires` exist and save/load
+// (see state.js) so a future feature can start awarding/spending them
+// without another state-shape pass -- nothing yet does, and no UI shows
+// them (hub.js's wallet note is still Shards-only), on purpose, per "they
+// don't all need to show up now."
+export const CURRENCIES = {
+  shards: { name: "Shards", field: "shards" },
+  marks:  { name: "Marks",  field: "marks",  worth: 100 },   // 1 Mark   = 100 Shards
+  crowns: { name: "Crowns", field: "crowns", worth: 100 },   // 1 Crown  = 100 Marks  (10,000 Shards)
+  spires: { name: "Spires", field: "spires", worth: 100 },   // 1 Spire  = 100 Crowns (1,000,000 Shards)
 };
 
 // Base sell value in Shards, before demand and stock are applied -- also
@@ -732,9 +955,13 @@ export const BASE_VALUE = {
   "Pine Cones": 10, "Pine Logs": 10,
   "Berries": 7, "Flint": 5, "Sticks": 5,
   "Flint Axe": 50, "Flint Pickaxe": 50, "Stone Pickaxe": 90, "Stone Axe": 90,
+  "Scrap Pickaxe": 130, "Scrap Axe": 130,
   "Wooden Pickaxe": 1, "Wooden Axe": 1, "Wooden Can": 1,
   "Flint Dagger": 45, "Wooden Buckler": 40, "Padded Vest": 55, "Stone Plate": 95,
   "Highland Cloak": 25, "Highland Chest": 25, "Highland Legs": 25,
+  "Scrap Helm": 45, "Scrap Armor": 45, "Scrap Legs": 45,
+  "Short Bow": 65, "Flint Arrows": 3,
+  "Birch Cones": 12, "Birch Logs": 14,
   "Charcoal": 8, "Cooked Berries": 7,
   "String": 6, "Pine Planks": 9,
   // Stone/Coal/Copper/Tin/Iron/Gold match the mining spreadsheet's Worth
@@ -748,6 +975,7 @@ export const BASE_VALUE = {
   "Scorn": 80, "Enchanted Shard": 100,
   "Stone Block": 20, "Basalt Block": 45,
   "Bones": 4, "Bonemeal": 16, "Feathers": 3, "Raw Poultry": 8,
+  "Queen Bee": 60, "Honey": 15,
   "Animal Hide": 12, "Raw Beef": 14, "Leather": 22,
   "Wool": 10, "Raw Mutton": 12, "Cloth": 18,
   "Cooked Poultry": 14, "Cooked Beef": 22, "Cooked Mutton": 20,
@@ -755,9 +983,32 @@ export const BASE_VALUE = {
   "Fishing Rod": 1, "Net": 1, "Trap": 1,
   "Worm Bait": 4, "Shiny Lure": 20,
   // Common < uncommon < rare < the one night-only catch, same "worth more
-  // because it's harder to get" logic ore/gem tiers already follow.
+  // because it's harder to get" logic ore/gem tiers already follow -- and
+  // now the same shape repeated across all five pools, each pool's own
+  // three standard fish sitting a little higher than the last: Pond <
+  // River < Stream < Lake < Ocean. Cooked value is roughly raw x1.7, same
+  // premium Cooked Poultry (14) already carries over Raw Poultry (8).
   "Minnow": 4, "River Trout": 10, "Catfish": 16,
   "Golden Carp": 60, "Moonfin Eel": 45,
+  "Mudscale Perch": 3, "Reed Sunfish": 6, "Bog Loach": 10,
+  "Golden Koi": 35, "Moonpond Eel": 28,
+  "Lake Herring": 6, "Silverback Bass": 14, "Deepwater Pike": 20,
+  "Golden Sturgeon": 70, "Moonveil Trout": 55,
+  "Brook Char": 4, "Speckled Dace": 9, "Stonefly Grayling": 14,
+  "Golden Grayling": 50, "Moonshadow Char": 38,
+  "Saltback Herring": 9, "Reef Snapper": 18, "Tideskimmer Mackerel": 28,
+  "Golden Marlin": 100, "Moontide Eel": 78,
+  "Cooked Minnow": 7, "Cooked River Trout": 17, "Cooked Catfish": 27,
+  "Cooked Golden Carp": 100, "Cooked Moonfin Eel": 75,
+  "Cooked Mudscale Perch": 5, "Cooked Reed Sunfish": 10, "Cooked Bog Loach": 16,
+  "Cooked Golden Koi": 58, "Cooked Moonpond Eel": 46,
+  "Cooked Lake Herring": 10, "Cooked Silverback Bass": 23, "Cooked Deepwater Pike": 33,
+  "Cooked Golden Sturgeon": 116, "Cooked Moonveil Trout": 91,
+  "Cooked Brook Char": 7, "Cooked Speckled Dace": 15, "Cooked Stonefly Grayling": 23,
+  "Cooked Golden Grayling": 83, "Cooked Moonshadow Char": 63,
+  "Cooked Saltback Herring": 15, "Cooked Reef Snapper": 30, "Cooked Tideskimmer Mackerel": 47,
+  "Cooked Golden Marlin": 166, "Cooked Moontide Eel": 129,
+  "Oak Planks": 12, "Fine String": 10,
 };
 
 export const ZONE_DEMAND = {
@@ -848,7 +1099,32 @@ export const BUILDINGS = {
     name: "Grind Stone",
     cost: { "Basalt Block": 6, "Pine Planks": 9 },
   },
+  beehive: {
+    name: "Beehive",
+    cost: { "Queen Bee": 1, "Sticks": 20 },
+  },
+  fletchingBench: {
+    name: "Fletching Bench",
+    cost: { "Basalt Block": 7, "Pine Planks": 10 },
+  },
 };
+
+// ---------------------------------------------------------------- beehive
+//
+// Doesn't go through the generic STATIONS registry above -- every other
+// entry there is a *fixed* set of named recipes, but the Beehive's whole
+// point is a *growing* number of identical Honey slots the player buys
+// one at a time (src/beehive.js, same array-of-independent-timers shape
+// state.plots/state.logPlots already use, not a single state.stations[id]
+// slot). One tap starts a slot's own BEEHIVE_HONEY_MS timer -- no material
+// cost, unlike every other station's recipe, since a beehive is meant to
+// read as passive production once it exists, not something fed each
+// batch. Buying another slot (BEEHIVE_EXPAND_COST) is flat, not doubling
+// like Farm/Logging's own plot expansion -- only one price was ever
+// given, not an escalating series. First-pass numbers throughout.
+export const BEEHIVE_HONEY_MS = 15 * 60 * 1000;
+export const BEEHIVE_EXPAND_COST = { "Queen Bee": 1, "Sticks": 10 };
+export const BEEHIVE_XP = 15;
 
 // -------------------------------------------------------------- stations
 // Single-recipe, build-once conversion stations -- the Spinning Wheel
@@ -943,6 +1219,24 @@ export const STATIONS = {
     cost: { "Bones": 3 }, output: "Bonemeal", ms: 10000, xp: 10,
     skillXp: "grindingXp", skillName: "Grinding",
   },
+  // Two recipes sharing one screen and one skill (Fletcher), same shape
+  // Stone Cutter/Armor Bench already established. Flint Arrows is the
+  // first STATIONS entry to grant more than one unit per cycle --
+  // `outputQty` (stations.js's settleStations()), same "general form,
+  // falls back to 1" shape `cost`/`inputQty` already follow.
+  shortBow: {
+    screenTitle: "Fletching Bench", screenSub: "Craft bows and arrows",
+    actionName: "Short Bow",
+    cost: { "Pine Planks": 12, "String": 10 }, output: "Short Bow", ms: 12000, xp: 12,
+    skillXp: "fletcherXp", skillName: "Fletcher",
+  },
+  flintArrows: {
+    screenTitle: "Fletching Bench", screenSub: "Craft bows and arrows",
+    actionName: "Flint Arrows",
+    cost: { "Sticks": 1, "Flint": 1, "Feathers": 1 },
+    output: "Flint Arrows", outputQty: 3, ms: 6000, xp: 6,
+    skillXp: "fletcherXp", skillName: "Fletcher",
+  },
 };
 
 // ----------------------------------------------------------------- cooking
@@ -964,6 +1258,33 @@ export const COOKABLES = {
   "Raw Poultry": { gives: "Cooked Poultry" },
   "Raw Beef": { gives: "Cooked Beef" },
   "Raw Mutton": { gives: "Cooked Mutton" },
+  // Same rule -- every raw fish across all five pools needs the Campfire
+  // before it's edible/equippable at all.
+  "Minnow": { gives: "Cooked Minnow" },
+  "River Trout": { gives: "Cooked River Trout" },
+  "Catfish": { gives: "Cooked Catfish" },
+  "Golden Carp": { gives: "Cooked Golden Carp" },
+  "Moonfin Eel": { gives: "Cooked Moonfin Eel" },
+  "Mudscale Perch": { gives: "Cooked Mudscale Perch" },
+  "Reed Sunfish": { gives: "Cooked Reed Sunfish" },
+  "Bog Loach": { gives: "Cooked Bog Loach" },
+  "Golden Koi": { gives: "Cooked Golden Koi" },
+  "Moonpond Eel": { gives: "Cooked Moonpond Eel" },
+  "Lake Herring": { gives: "Cooked Lake Herring" },
+  "Silverback Bass": { gives: "Cooked Silverback Bass" },
+  "Deepwater Pike": { gives: "Cooked Deepwater Pike" },
+  "Golden Sturgeon": { gives: "Cooked Golden Sturgeon" },
+  "Moonveil Trout": { gives: "Cooked Moonveil Trout" },
+  "Brook Char": { gives: "Cooked Brook Char" },
+  "Speckled Dace": { gives: "Cooked Speckled Dace" },
+  "Stonefly Grayling": { gives: "Cooked Stonefly Grayling" },
+  "Golden Grayling": { gives: "Cooked Golden Grayling" },
+  "Moonshadow Char": { gives: "Cooked Moonshadow Char" },
+  "Saltback Herring": { gives: "Cooked Saltback Herring" },
+  "Reef Snapper": { gives: "Cooked Reef Snapper" },
+  "Tideskimmer Mackerel": { gives: "Cooked Tideskimmer Mackerel" },
+  "Golden Marlin": { gives: "Cooked Golden Marlin" },
+  "Moontide Eel": { gives: "Cooked Moontide Eel" },
 };
 
 // ------------------------------------------------------------------ mining
@@ -1099,23 +1420,22 @@ export const MINE_ZONES = [
 export const LOCATIONS = {
   aerendell: {
     name: "Aerendell", type: "town", pos: { x: 0, y: 0 },
-    stations: ["campfire", "spinningWheel", "sawmill", "stoneCutter", "tanningStation", "township", "armorBench", "grindStone"],
-    // No fishing at the farmstead itself -- meant to belong somewhere out
-    // in the world once a real location's spreadsheet answer says where.
-    // FISH_POOLS.aerendell is left in data.js, just unreferenced by any
-    // location for now, rather than deleted -- whichever location does
-    // end up with fishing can point straight at it (or its own pool)
-    // without rebuilding the data.
+    stations: ["campfire", "spinningWheel", "sawmill", "stoneCutter", "tanningStation", "township", "armorBench", "grindStone", "beehive", "fletchingBench"],
+    // No fishing at the farmstead itself, still -- meant to belong out in
+    // the world, which as of 2026-09-02 it now does (see the other five
+    // locations here). FISH_POOLS has five pool *types* now (river/pond/
+    // lake/stream/ocean), not one per town -- whichever fits a location's
+    // own geography is what its `fishing` points at.
     forage: "aerendell", fishing: null,
   },
   forestRoad: {
     name: "Forest Road", type: "wilderness", pos: { x: 1, y: 1 }, stations: [],
-    forage: "forestRoad", fishing: null,
+    forage: "forestRoad", fishing: "stream",
   },
-  thalBarak: { name: "Thal-Barak", type: "city", pos: { x: 0, y: 2 }, stations: [], forage: null, fishing: null },
-  stilltidePass: { name: "Stilltide Pass", type: "wilderness", pos: { x: 1, y: 3 }, stations: [], forage: null, fishing: null },
+  thalBarak: { name: "Thal-Barak", type: "city", pos: { x: 0, y: 2 }, stations: [], forage: null, fishing: "river" },
+  stilltidePass: { name: "Stilltide Pass", type: "wilderness", pos: { x: 1, y: 3 }, stations: [], forage: null, fishing: "river" },
   duunVaelBridge: { name: "Duun-Vael Bridge", type: "landmark", pos: { x: 0, y: 4 }, stations: [], forage: null, fishing: null },
-  riverhold: { name: "Riverhold", type: "city", pos: { x: 1, y: 5 }, stations: [], forage: null, fishing: null },
+  riverhold: { name: "Riverhold", type: "city", pos: { x: 1, y: 5 }, stations: [], forage: null, fishing: "river" },
 };
 
 // One road per connection, not two (aerendell<->forestRoad is a single
@@ -1201,31 +1521,71 @@ export const FISH_BITE_DELAY_MIN_MS = 1500;
 export const FISH_BITE_DELAY_MAX_MS = 4500;
 export const FISH_BITE_WINDOW_MS = 750;
 
-// Reweights specific fish for the Rod roll only -- a flat multiplier on
-// that fish's own `chance`, applied before the weighted roll (see
-// rollFish() in fishing.js), not a separate guaranteed-catch mechanic.
-// Consumed one per cast, same "spent on commit" rule everything else
-// spendable in this game follows.
+// Reweights a whole *tier* for the Rod roll only (2026-09-02, was five
+// named fish by hand) -- a flat multiplier on every entry in the current
+// pool matching `tier`, applied before the weighted roll (see
+// rollFish()/fishTier() in fishing.js), not a separate guaranteed-catch
+// mechanic. Generalized once there were five pools to work across instead
+// of just Aerendell's own: Worm Bait boosting two specific named river
+// fish would've done nothing at all in a pond or an ocean. Consumed one
+// per cast, same "spent on commit" rule everything else spendable in this
+// game follows.
 export const BAITS = {
-  "Worm Bait": { boosts: { "River Trout": 2, "Catfish": 2 } },
-  "Shiny Lure": { boosts: { "Golden Carp": 5 } },
+  "Worm Bait": { tier: "standard", mult: 2 },
+  "Shiny Lure": { tier: "rare", mult: 5 },
 };
 
-// One pool per location with `fishing` set (LOCATIONS above) -- same shape
-// as FORAGE_POOLS, plus two flags a forage pool has no equivalent for:
+// One pool per location with `fishing` set (LOCATIONS above), one per
+// fishing-hole *type* now (2026-09-02) rather than one per town -- "river"
+// is the pool that used to be keyed "aerendell" (same five fish, unchanged
+// stats, key renamed only) since it already read as a proper river catch.
+// Same shape as FORAGE_POOLS, plus two flags a forage pool has no
+// equivalent for:
 //   `rare`      -- Rod-only (Net/Trap filter these out entirely).
-//   `nightOnly` -- excluded from every roll unless isNight() (src/time.js)
-//                  is true; Rod-only in practice too, since Net/Trap's own
+//   `nightOnly` -- excluded from every roll unless isFishingNight()
+//                  (src/time.js, 9pm-5am -- its own narrower window, not
+//                  the general isNight() crops/combat read) is true;
+//                  Rod-only in practice too, since Net/Trap's own
 //                  common-only filter already drops it regardless of time.
 // Weights don't need to sum to 1 -- rollFish() sums whatever's left after
 // filtering and rolls against that total, so excluding nightOnly by day
-// doesn't silently bias the remaining odds.
+// doesn't silently bias the remaining odds. Every pool repeats the same
+// 0.45/0.30/0.16/0.05/0.04 shape the original river pool set -- first
+// pass, not balanced, but at least consistent pool to pool.
 export const FISH_POOLS = {
-  aerendell: [
+  river: [
     { item: "Minnow",      chance: 0.45 },
     { item: "River Trout", chance: 0.30 },
     { item: "Catfish",     chance: 0.16 },
     { item: "Golden Carp", chance: 0.05, rare: true },
     { item: "Moonfin Eel", chance: 0.04, nightOnly: true },
+  ],
+  pond: [
+    { item: "Mudscale Perch", chance: 0.45 },
+    { item: "Reed Sunfish",   chance: 0.30 },
+    { item: "Bog Loach",      chance: 0.16 },
+    { item: "Golden Koi",     chance: 0.05, rare: true },
+    { item: "Moonpond Eel",   chance: 0.04, nightOnly: true },
+  ],
+  lake: [
+    { item: "Lake Herring",     chance: 0.45 },
+    { item: "Silverback Bass",  chance: 0.30 },
+    { item: "Deepwater Pike",   chance: 0.16 },
+    { item: "Golden Sturgeon",  chance: 0.05, rare: true },
+    { item: "Moonveil Trout",   chance: 0.04, nightOnly: true },
+  ],
+  stream: [
+    { item: "Brook Char",        chance: 0.45 },
+    { item: "Speckled Dace",     chance: 0.30 },
+    { item: "Stonefly Grayling", chance: 0.16 },
+    { item: "Golden Grayling",   chance: 0.05, rare: true },
+    { item: "Moonshadow Char",   chance: 0.04, nightOnly: true },
+  ],
+  ocean: [
+    { item: "Saltback Herring",     chance: 0.45 },
+    { item: "Reef Snapper",         chance: 0.30 },
+    { item: "Tideskimmer Mackerel", chance: 0.16 },
+    { item: "Golden Marlin",        chance: 0.05, rare: true },
+    { item: "Moontide Eel",         chance: 0.04, nightOnly: true },
   ],
 };
