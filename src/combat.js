@@ -364,8 +364,10 @@ function endFight(won) {
     const granted = {};
     Object.keys(drops).forEach(function (item) {
       const qty = rollDropQty(drops[item]) * mult;
-      gainItem(item, qty);
-      granted[item] = qty;
+      // gainItem()'s own return -- what actually made it into the bag --
+      // not the rolled `qty` itself, so a full bag never shows loot the
+      // player didn't actually receive.
+      granted[item] = gainItem(item, qty);
     });
     c.lastDrops = granted;
     log("The " + enemy.name + " is defeated.", "system");
@@ -489,7 +491,10 @@ export function refreshCombat() {
       // otherwise show a second, different roll of the same range than
       // the one that actually landed in the bag.
       const drops = c.lastDrops || {};
-      const dropText = Object.keys(drops).map(function (item) {
+      // A full bag can grant 0 of something that still rolled (bagRoomFor()
+      // truncated it, see gainItem()) -- filtered out here rather than
+      // showing a confusing "+0 Bones".
+      const dropText = Object.keys(drops).filter(function (item) { return drops[item] > 0; }).map(function (item) {
         return "+" + drops[item] + " " + item;
       }).join(", ");
       el("combat-result-sub").textContent =

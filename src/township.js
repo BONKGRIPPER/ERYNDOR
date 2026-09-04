@@ -13,11 +13,12 @@
 import {
   VILLAGER_LEVEL, VILLAGER_COST, VILLAGER_UPGRADE_COST, VILLAGER_UPGRADE_MULT,
   VILLAGE_UPKEEP_MS, VILLAGE_UPKEEP_FOOD, VILLAGE_UPKEEP_HEAT, VILLAGE_HEAT_VALUE,
-  FOODS, LOCATIONS,
+  FOODS, LOCATIONS, WORKERS, HOUSE_COST, BUILDINGS,
 } from "./data.js";
-import { state, save } from "./state.js";
+import { state, save, kickVillageUpkeepIfIdle } from "./state.js";
 import { foragingLevel, kickForageIfIdle, refreshForage } from "./forage.js";
-import { combinedOwned, spendItem } from "./costDisplay.js";
+import { workerCap, canHireWorker, hireWorker } from "./workers.js";
+import { combinedOwned, spendItem, canAfford, buildCostNodes, spendCost } from "./costDisplay.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { openSheet, closeSheet } from "./sheet.js";
@@ -72,7 +73,7 @@ function hireForagingVillager(btn) {
   // donated yet, so the very first 24h check will find the village short
   // and starved until something is.
   state.villager.homeLocation = state.currentLocation;
-  state.village.nextUpkeepAt = Date.now() + VILLAGE_UPKEEP_MS;
+  kickVillageUpkeepIfIdle();
   save();
   updateWalletNote();
   kickForageIfIdle();
@@ -144,6 +145,14 @@ function foragingVillagerCard() {
 
 // ------------------------------------------------------------- upkeep
 
+// Every currently-hired villager (the Foraging Villager plus every worker
+// in state.workers) counts toward the one shared upkeep bill -- hiring a
+// second or third villager doesn't cost more Shards to feed per villager,
+// but does mean more food/heat drawn each VILLAGE_UPKEEP_MS.
+function headcount() {
+  return (state.villager.owned ? 1 : 0) + state.workers.length;
+}
+
 // Called every tick, unconditionally (see main.js) -- same "runs in the
 // background regardless of screen" shape as settleForage()/
 // settleFishingTrap(). A successful upkeep advances nextUpkeepAt by
@@ -156,12 +165,14 @@ function foragingVillagerCard() {
 // "settle catches up however far behind it is" shape every other deadline
 // in this game already follows.
 export function settleVillageUpkeep() {
-  if (!state.villager.owned || state.village.nextUpkeepAt === null) return;
+  if (headcount() === 0 || state.village.nextUpkeepAt === null) return;
   let changed = false;
   while (Date.now() >= state.village.nextUpkeepAt) {
-    if (state.village.food >= VILLAGE_UPKEEP_FOOD && state.village.heat >= VILLAGE_UPKEEP_HEAT) {
-      state.village.food -= VILLAGE_UPKEEP_FOOD;
-      state.village.heat -= VILLAGE_UPKEEP_HEAT;
+    const foodNeeded = VILLAGE_UPKEEP_FOOD * headcount();
+    const heatNeeded = VILLAGE_UPKEEP_HEAT * headcount();
+    if (state.village.food >= foodNeeded && state.village.heat >= heatNeeded) {
+      state.village.food -= foodNeeded;
+      state.village.heat -= heatNeeded;
       state.village.nextUpkeepAt += VILLAGE_UPKEEP_MS;
       state.village.starved = false;
       changed = true;
@@ -325,10 +336,11 @@ function openHeatPicker() {
   openSheet("Donate Heat");
 }
 
-// Only shown once a villager actually exists -- there's nothing to keep
-// fed before that, and no stockpile worth looking at either.
+// Only shown once a villager actually exists (Foraging Villager or any
+// worker) -- there's nothing to keep fed before that, and no stockpile
+// worth looking at either.
 function villageUpkeepCard() {
-  if (!state.villager.owned) return null;
+  if (headcount() === 0) return null;
 
   const card = document.createElement("div");
   card.className = "township-card";
@@ -349,9 +361,12 @@ function villageUpkeepCard() {
   const remain = Math.max(0, (state.village.nextUpkeepAt || Date.now()) - Date.now());
   const hours = Math.floor(remain / (60 * 60 * 1000));
   const mins = Math.floor((remain % (60 * 60 * 1000)) / (60 * 1000));
+  const foodNeeded = VILLAGE_UPKEEP_FOOD * headcount();
+  const heatNeeded = VILLAGE_UPKEEP_HEAT * headcount();
   stock.textContent =
-    "Food " + Math.floor(state.village.food) + "/" + VILLAGE_UPKEEP_FOOD +
-    " · Heat " + Math.floor(state.village.heat) + "/" + VILLAGE_UPKEEP_HEAT +
+    "Food " + Math.floor(state.village.food) + "/" + foodNeeded +
+    " · Heat " + Math.floor(state.village.heat) + "/" + heatNeeded +
+    " (" + headcount() + " villager" + (headcount() === 1 ? "" : "s") + ")" +
     (state.village.starved ? " · needs both to resume" : " · next upkeep in " + hours + "h " + mins + "m");
   card.append(stock);
 
@@ -364,10 +379,105 @@ function villageUpkeepCard() {
   return card;
 }
 
+// -------------------------------------------------------------- workers
+
+// One card per WORKERS role -- same "Hire" action-button shape as the
+// Foraging Villager's own card, just without an upgrade tier (none of
+// these have one yet). Status reads, in priority order: already working;
+// the village's full (build a House to raise the cap); the role's own
+// station hasn't been built yet; or ready to hire.
+function workerCard(role) {
+  const w = WORKERS[role];
+  const hired = state.workers.some(function (worker) { return worker.role === role; });
+  const built = !!state.buildings[w.building];
+
+  const card = document.createElement("div");
+  card.className = "township-card";
+
+  const head = document.createElement("div");
+  head.className = "township-card-head";
+  const name = document.createElement("span");
+  name.className = "township-card-name";
+  name.textContent = w.icon + " " + w.name;
+  const status = document.createElement("span");
+  status.className = "township-card-status";
+  status.textContent = hired
+    ? "Working"
+    : !built ? "Requires " + BUILDINGS[w.building].name
+    : state.workers.length >= workerCap() ? "Village full — build a House"
+    : "Ready to hire";
+  head.append(name, status);
+  card.append(head);
+
+  const note = document.createElement("div");
+  note.className = "village-stock";
+  note.textContent = w.note;
+  card.append(note);
+
+  if (!hired) {
+    const btn = actionButton(w.icon, "Hire " + w.name, w.note, VILLAGER_COST);
+    btn.classList.toggle("unaffordable", !canHireWorker(role) || state.shards < VILLAGER_COST);
+    btn.addEventListener("click", function () {
+      if (!canHireWorker(role) || state.shards < VILLAGER_COST) { shake(btn); return; }
+      hireWorker(role);
+      updateWalletNote();
+      buildTownship();
+    });
+    card.append(btn);
+  }
+
+  return card;
+}
+
+// -------------------------------------------------------------- housing
+
+// A repeating purchase, same "flat, non-doubling" shape Beehive's own
+// honey-slot expansion already uses -- each House raises workerCap() by 1
+// (see workers.js). Shown once Township itself exists, which it always
+// does here (this whole screen is only reachable once it's built).
+function housingCard() {
+  const houses = state.housing[state.currentLocation] || 0;
+
+  const card = document.createElement("div");
+  card.className = "township-card";
+
+  const head = document.createElement("div");
+  head.className = "township-card-head";
+  const name = document.createElement("span");
+  name.className = "township-card-name";
+  name.textContent = "\u{1F3E0} Housing";
+  const status = document.createElement("span");
+  status.className = "township-card-status";
+  status.textContent = houses + " built · worker cap " + workerCap();
+  head.append(name, status);
+  card.append(head);
+
+  const affordable = canAfford(HOUSE_COST);
+  const btn = actionButton("\u{1F3E0}", "Build House", "+1 worker cap");
+  const costEl = document.createElement("span");
+  costEl.className = "villager-hire-cost";
+  costEl.replaceChildren.apply(costEl, buildCostNodes(HOUSE_COST));
+  btn.append(costEl);
+  btn.classList.toggle("unaffordable", !affordable);
+  btn.addEventListener("click", function () {
+    if (!canAfford(HOUSE_COST)) { shake(btn); return; }
+    spendCost(HOUSE_COST);
+    state.housing[state.currentLocation] = (state.housing[state.currentLocation] || 0) + 1;
+    save();
+    drawBag();
+    buildTownship();
+  });
+  card.append(btn);
+
+  return card;
+}
+
 export function buildTownship() {
   const wrap = el("township-list");
   wrap.replaceChildren();
   wrap.append(foragingVillagerCard());
+  Object.keys(WORKERS).forEach(function (role) { wrap.append(workerCard(role)); });
+  wrap.append(housingCard());
   const upkeep = villageUpkeepCard();
   if (upkeep) wrap.append(upkeep);
 }

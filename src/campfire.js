@@ -39,25 +39,42 @@ function currentCost() {
   return cost;
 }
 
-function startCook() {
+// The actual mechanics of starting one cook, with no player-facing
+// rejection feedback -- shared by the player's own startCook() (below,
+// which shakes the pill on a denied tap) and the Cook villager's own auto-
+// trigger in workers.js. Only ever fires once the player has already
+// picked both a fuel and something to cook (state.campfire.selectedFuel/
+// selectedCook) -- the villager cooks whatever's already chosen, it
+// doesn't choose for itself. Returns whether it actually started.
+export function tryAutoCook() {
   const c = state.campfire;
-  if (active()) return;
-  const pill = pillFor("campfire-cook");
-  if (!c.selectedFuel || !c.selectedCook) { shake(pill); return; }
+  if (active()) return false;
+  if (!c.selectedFuel || !c.selectedCook) return false;
   const cost = currentCost();
-  if (!canAfford(cost)) { shake(pill); return; }
+  if (!canAfford(cost)) return false;
 
   spendCost(cost);
   c.current = { fuel: c.selectedFuel, item: c.selectedCook, startedAt: Date.now(), readyAt: Date.now() + COOK_MS };
   save();
   drawBag();
 
+  const pill = pillFor("campfire-cook");
   const fill = pill.querySelector(".pill-fill");
   fill.style.transitionDuration = "0ms";
   fill.style.width = "0%";
   void fill.offsetWidth;
   setPillFill("campfire-cook", 100, COOK_MS);
   refreshCampfire();
+  return true;
+}
+
+function startCook() {
+  const c = state.campfire;
+  if (active()) return;
+  const pill = pillFor("campfire-cook");
+  if (!c.selectedFuel || !c.selectedCook) { shake(pill); return; }
+  if (!canAfford(currentCost())) { shake(pill); return; }
+  tryAutoCook();
 }
 
 // One job at a time now, so this is a plain deadline check (same shape as

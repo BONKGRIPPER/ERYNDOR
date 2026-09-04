@@ -712,6 +712,24 @@
           <span class="pill-count">0</span>
         </button>
 
+        <button class="pill" data-item="highlandSack">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 9V7a5 5 0 0 1 10 0v2" />
+              <path d="M5 9h14l-1.5 12h-11Z" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Highland Sack</span>
+            <span class="pill-sub">5 Cloth</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
         <!-- Padded Vest, Stone Plate, Fishing Rod, Net, Trap, Worm Bait
              and Shiny Lure are pulled from Aerendell's Craft Bench
              (2026-08-30) -- same "markup gone, logic untouched" removal
@@ -861,6 +879,22 @@
           <span class="pill-body">
             <span class="pill-name">Cloth</span>
             <span class="pill-sub">4 Wool</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+        <button class="pill" data-item="yarn">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 4a8 8 0 0 1 0 16 6 6 0 0 1 0-12 4 4 0 0 1 0 8 2 2 0 0 1 0-4" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Yarn</span>
+            <span class="pill-sub">3 Wool</span>
           </span>
           <span class="pill-count">0</span>
         </button>
@@ -1029,6 +1063,63 @@
           <span class="pill-body">
             <span class="pill-name">Flint Arrows</span>
             <span class="pill-sub">1 Sticks · 1 Flint · 1 Feathers</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ================================ LOOM ================================ -->
+    <div id="screen-loom" class="screen hidden">
+
+      <header class="field-head">
+        <button id="back-loom" class="back" aria-label="Back">‹</button>
+        <div>
+          <div class="field-title">Loom</div>
+          <div class="field-sub">Weave string and yarn into cloth</div>
+        </div>
+      </header>
+
+      <div class="xp">
+        <div class="xp-row">
+          <span id="loom-xp-level" class="xp-level">Weaving — Level 0</span>
+          <span id="loom-xp-count" class="xp-count">0 / 60</span>
+        </div>
+        <div class="bar xp-bar"><div id="loom-xp-fill" class="xp-fill"></div></div>
+      </div>
+
+      <div class="craft-list">
+        <button class="pill" data-item="loomCloth">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Cloth</span>
+            <span class="pill-sub">5 String</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <button class="pill" data-item="loomFabric">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 6h16M4 12h16M4 18h16" />
+              <path d="M4 6v12M12 6v12M20 6v12" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Fabric</span>
+            <span class="pill-sub">5 Yarn</span>
           </span>
           <span class="pill-count">0</span>
         </button>
@@ -1216,6 +1307,9 @@
 
       <div id="township-list" class="township-list"></div>
     </div>
+
+    <!-- =============================== TOAST =============================== -->
+    <div id="toast" class="toast"></div>
 
     <!-- ========================== SEED CHOOSER ========================== -->
     <div id="sheet" class="sheet-wrap hidden">

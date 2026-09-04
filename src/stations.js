@@ -33,7 +33,7 @@ function active(id) { return !!state.stations[id]; }
 // that cycle's own timer -- a run already in progress doesn't speed up
 // retroactively when either one levels up mid-run, only the next one
 // does. Same rule Farm/Logging's water() already follows.
-function effectiveMs(cfg) {
+export function effectiveMs(cfg) {
   const level = levelFromXp(state[cfg.skillXp]);
   const speed = 1 + level * GROWTH_PER_LEVEL;
   return (cfg.ms / speed) * itemSpeedMult(cfg.output);
@@ -56,16 +56,17 @@ export function costFor(cfg) {
   return cfg.cost || { [cfg.input]: cfg.inputQty || 1 };
 }
 
-function startStation(id) {
+// The actual mechanics of starting one cycle, with no player-facing
+// rejection feedback -- shared by the player's own startStation() (below,
+// which shakes the pill on a denied tap) and the station-villager auto-
+// trigger in workers.js (which just silently retries on a later tick, same
+// "blocked now, not lost" rule forage.js's own villager cycle follows).
+// Returns whether it actually started.
+export function tryStartStation(id) {
   const cfg = STATIONS[id];
-  if (active(id)) return;
-
-  const pill = pillFor(id);
+  if (active(id)) return false;
   const cost = costFor(cfg);
-  if (!canAfford(cost)) {
-    shake(pill);
-    return;
-  }
+  if (!canAfford(cost)) return false;
 
   spendCost(cost);
   const ms = effectiveMs(cfg);
@@ -73,12 +74,24 @@ function startStation(id) {
   save();
   drawBag();
 
+  const pill = pillFor(id);
   const fill = pill.querySelector(".pill-fill");
   fill.style.transitionDuration = "0ms";
   fill.style.width = "0%";
   void fill.offsetWidth;
   setPillFill(id, 100, ms);
   refreshStation(id);
+  return true;
+}
+
+function startStation(id) {
+  const pill = pillFor(id);
+  if (active(id)) return;
+  if (!canAfford(costFor(STATIONS[id]))) {
+    shake(pill);
+    return;
+  }
+  tryStartStation(id);
 }
 
 // Resolves every station that's finished since the last check. Returns the

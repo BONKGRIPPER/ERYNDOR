@@ -76,6 +76,18 @@ function tapSlot(i) {
   drawBeehive();
 }
 
+// The Beekeeper villager's own auto-trigger (workers.js) -- starts the
+// first idle slot it finds, same as tapping whichever Honey pill happens
+// to be empty. Returns whether it actually started anything, so a call
+// with every slot already brewing is a no-op the caller can retry later
+// rather than losing the attempt.
+export function tryAutoBeehive() {
+  const idx = state.beehiveSlots.findIndex(function (slot) { return !slot; });
+  if (idx === -1) return false;
+  tapSlot(idx);
+  return true;
+}
+
 // Called every tick (main.js), same shape as settleLogging()/settleMining()
 // -- resolves every slot whose deadline has passed, however many that is,
 // so a long away-gap still only ever grants as many batches as slots

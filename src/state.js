@@ -6,7 +6,8 @@
 
 import {
   PLOT_COUNT, RECIPES, EQUIP_SLOTS, BUILDINGS, CAN_CAPACITY, STATIONS, VILLAGER_TICK_MS, TREES,
-  LOCATIONS, ZONE_XP_SHARE, ZONE_XP_PER_LEVEL,
+  LOCATIONS, ZONE_XP_SHARE, ZONE_XP_PER_LEVEL, VILLAGE_UPKEEP_MS,
+  BAG_SLOTS, STACK_CAP_DEFAULT, ITEM_STACK_CAPS, BAG_SLOT_BONUS,
 } from "./data.js";
 
 export const SAVE_KEY = "eryndor:save";
@@ -26,6 +27,12 @@ export const state = {
   // PICKAXES, CANS in data.js) -- crafting or finding better ones is the
   // point, not a shortcut around them.
   bag: { "Wooden Pickaxe": 1, "Wooden Axe": 1, "Wooden Scythe": 1, "Wooden Can": 1 },
+  // Ephemeral, never saved/loaded on purpose -- incremented by gainItem()
+  // below every time a grant gets truncated by the bag's own slot cap.
+  // main.js's tick loop watches this for changes (not its raw value) to
+  // pop a one-shot "Inventory full" toast (src/toast.js) rather than
+  // spamming one every tick a producer keeps trying and failing.
+  bagFullFlag: 0,
   // A second bag, same shape, sitting at Aerendell rather than carried.
   // One shared crate for now -- there's only one place to put it.
   storage: {},
@@ -73,6 +80,21 @@ export const state = {
   // is; hire in Aerendell and it never auto-forages Forest Road's pool
   // just because the player happens to be standing there.
   villager: { owned: false, fastHands: false, homeLocation: null },
+  // Separate from the Foraging Villager above -- one hire per station-
+  // shaped role (see WORKERS in data.js), each entry { role, homeLocation,
+  // nextTickAt }, capped at workerCap() (src/workers.js). `homeLocation` is
+  // recorded the same way the Foraging Villager's own is (state.
+  // currentLocation at hire) but doesn't gate anything mechanically here --
+  // every role's own station is a single global instance (state.stations/
+  // campfire/beehiveSlots), not a per-zone one, so it's flavor/display only
+  // for now, not a working-location restriction.
+  workers: [],
+  // locationId -> number of Houses built there (Township's own repeating
+  // purchase, see HOUSE_COST in data.js) -- workerCap() sums every zone's
+  // count into one global cap rather than restricting a worker to their own
+  // zone's houses, since Township itself is currently only ever built in
+  // one place anyway. See workers.js's workerCap().
+  housing: {},
   // Stamped every tick while the game is actually running, so the gap
   // between this and Date.now() at the next boot is exactly how long the
   // game was closed -- no separate close/unload handler needed, the last
@@ -138,6 +160,7 @@ export const state = {
   grindingXp: 0,
   beekeepingXp: 0,
   fletcherXp: 0,
+  weavingXp: 0,
   // Split off Combat's own combatXp (still gained on every win regardless
   // of weapon) -- whichever of these a kill feeds depends on the weapon
   // equipped at the moment of the killing blow (combat.js's endFight()).
@@ -254,13 +277,80 @@ export const state = {
 // the one place that ever needs to mark an item discovered for the
 // Collection page -- every real source of a new item already funnels
 // through here, so nothing else has to remember to call this too.
+// -------------------------------------------------------------- inventory
+// See BAG_SLOTS/STACK_CAP_DEFAULT/ITEM_STACK_CAPS/BAG_SLOT_BONUS in
+// data.js. The bag stays a flat {name: qty} map -- every other file's own
+// `state.bag[name]` still reads a plain number, nothing about that shape
+// changed -- but a name's own qty is treated as occupying
+// Math.ceil(qty / stackCapFor(name)) *slots* for capacity purposes only,
+// the same total a real array of discrete stacks would add up to, without
+// this game actually needing to model individual stack objects anywhere.
+
+export function stackCapFor(name) {
+  return ITEM_STACK_CAPS[name] || STACK_CAP_DEFAULT;
+}
+
+// BAG_SLOTS plus one per BAG_SLOT_BONUS point currently owned (a crafted
+// bag upgrade, etc.) -- multiplies by how many are owned, so a second one
+// (if ever obtainable) stacks its own bonus too.
+export function bagSlotCap() {
+  let cap = BAG_SLOTS;
+  Object.keys(BAG_SLOT_BONUS).forEach(function (item) {
+    cap += (state.bag[item] || 0) * BAG_SLOT_BONUS[item];
+  });
+  return cap;
+}
+
+function slotsForQty(qty, cap) {
+  return qty > 0 ? Math.ceil(qty / cap) : 0;
+}
+
+export function bagSlotsUsed() {
+  let used = 0;
+  Object.keys(state.bag).forEach(function (name) {
+    used += slotsForQty(state.bag[name] || 0, stackCapFor(name));
+  });
+  return used;
+}
+
+// How many more of `name` can actually be added to the bag right now --
+// shared by gainItem() below and inventory.js's Storage -> Bag transfer
+// (the only other path that adds to the bag; equip/unequip moves an
+// already-owned item back into the bag and is deliberately NOT gated here,
+// same reasoning "you can't get locked out of unequipping your own armor
+// by an unrelated full bag" argues against it).
+export function bagRoomFor(name) {
+  const cap = stackCapFor(name);
+  const current = state.bag[name] || 0;
+  const currentSlots = slotsForQty(current, cap);
+  const otherSlots = bagSlotsUsed() - currentSlots;
+  const availableSlots = Math.max(0, bagSlotCap() - otherSlots);
+  return Math.max(0, availableSlots * cap - current);
+}
+
+// The one place every producer (foraging, crafting, cooking, mining,
+// farming, logging, stations, buying, both villager systems) routes a bag
+// gain through -- so the slot cap above only ever needs enforcing here,
+// not at each call site. Grants as much of `amount` as actually fits and
+// silently drops the rest (same "sunk cost" the game's own spend-on-commit
+// stations already accept -- a finished cycle's output can still be lost
+// to a full bag, same as an idle villager's own overproduction can be);
+// callers that already charged something for this specific delivery
+// (market.js's buyQty()/withdrawQty()) clamp against bagRoomFor()
+// themselves *before* spending, so a truncated grant here never means
+// money paid for nothing. Returns the amount actually granted.
 export function gainItem(name, amount) {
-  state.bag[name] = (state.bag[name] || 0) + amount;
-  state.discoveredItems[name] = true;
-  const i = state.recentItems.indexOf(name);
-  if (i !== -1) state.recentItems.splice(i, 1);
-  state.recentItems.unshift(name);
-  if (state.recentItems.length > 5) state.recentItems.length = 5;
+  const granted = Math.min(amount, bagRoomFor(name));
+  if (granted > 0) {
+    state.bag[name] = (state.bag[name] || 0) + granted;
+    state.discoveredItems[name] = true;
+    const i = state.recentItems.indexOf(name);
+    if (i !== -1) state.recentItems.splice(i, 1);
+    state.recentItems.unshift(name);
+    if (state.recentItems.length > 5) state.recentItems.length = 5;
+  }
+  if (granted < amount) state.bagFullFlag += 1;
+  return granted;
 }
 
 // Feeds ZONE_XP_SHARE of an XP gain into whatever zone the player is
@@ -351,6 +441,18 @@ EQUIP_SLOTS.forEach(function (slot) {
 Object.keys(BUILDINGS).forEach(function (id) { state.buildings[id] = false; });
 Object.keys(LOCATIONS).forEach(function (id) { state.zones[id] = { level: 1, xp: 0 }; });
 
+// Shared by both villager-hire paths (township.js's hireForagingVillager()
+// and workers.js's hireWorker()) so the very first hire of *either* kind
+// starts the one shared upkeep clock -- living here rather than in either
+// caller's own file avoids a township.js <-> workers.js import cycle. A
+// no-op once the clock's already running (hiring a second or third
+// villager doesn't reset progress toward the next upkeep).
+export function kickVillageUpkeepIfIdle() {
+  if (state.village.nextUpkeepAt === null) {
+    state.village.nextUpkeepAt = Date.now() + VILLAGE_UPKEEP_MS;
+  }
+}
+
 // Wrapped because file:// origins can refuse storage -- the game still runs,
 // it just won't remember anything.
 export function save() {
@@ -366,6 +468,7 @@ export function save() {
       wateringCan: state.wateringCan,
       farmingXp: state.farmingXp, loggingXp: state.loggingXp,
       foragingXp: state.foragingXp, villager: state.villager,
+      workers: state.workers, housing: state.housing,
       lastActiveAt: state.lastActiveAt,
       forage: state.forage, forageLevel: state.forageLevel,
       villagerNextTickAt: state.villagerNextTickAt,
@@ -377,6 +480,7 @@ export function save() {
       grindingXp: state.grindingXp,
       beekeepingXp: state.beekeepingXp,
       fletcherXp: state.fletcherXp, archeryXp: state.archeryXp, meleeXp: state.meleeXp,
+      weavingXp: state.weavingXp,
       village: state.village,
       zones: state.zones,
       stations: state.stations,
@@ -468,6 +572,16 @@ export function load() {
       state.villager.homeLocation =
         typeof data.villager.homeLocation === "string" ? data.villager.homeLocation : "aerendell";
     }
+    // Same "drop anything that doesn't have a real deadline" filter every
+    // other timer-bearing array in this save follows -- a worker with no
+    // valid nextTickAt (shouldn't happen outside a hand-edited save) just
+    // doesn't come back rather than sitting stalled forever.
+    state.workers = Array.isArray(data.workers)
+      ? data.workers.filter(function (w) {
+          return w && typeof w.role === "string" && typeof w.nextTickAt === "number";
+        })
+      : [];
+    state.housing = (data.housing && typeof data.housing === "object") ? data.housing : {};
     // The gap between this and now is what the "welcome back" popup
     // reports as away-time -- default to now (no gap) if this is somehow
     // missing, rather than a stale/undefined value producing a nonsense span.
@@ -564,6 +678,7 @@ export function load() {
     if (typeof data.grindingXp === "number") state.grindingXp = data.grindingXp;
     if (typeof data.beekeepingXp === "number") state.beekeepingXp = data.beekeepingXp;
     if (typeof data.fletcherXp === "number") state.fletcherXp = data.fletcherXp;
+    if (typeof data.weavingXp === "number") state.weavingXp = data.weavingXp;
     if (typeof data.archeryXp === "number") state.archeryXp = data.archeryXp;
     if (typeof data.meleeXp === "number") state.meleeXp = data.meleeXp;
     if (data.fishing && typeof data.fishing === "object") {

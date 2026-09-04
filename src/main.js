@@ -27,6 +27,7 @@ import { applyCraftSprites, settleCraft, refreshCraft } from "./craft.js";
 import { setPillFill, popCount } from "./pills.js";
 import { drawStationCards } from "./buildings.js";
 import { settleVillageUpkeep, buildTownship } from "./township.js";
+import { settleWorkers } from "./workers.js";
 import { settleCampfire, refreshCampfire, applyCampfireSprites } from "./campfire.js";
 import {
   settleStations, refreshStation, refreshAllStations, drawAllStationXp, drawAllItemLevels, applyStationSprites,
@@ -43,6 +44,7 @@ import {
 } from "./fishing.js";
 import { buildBeehiveSlots, settleBeehive, drawBeehive } from "./beehive.js";
 import { el } from "./dom.js";
+import { showToast } from "./toast.js";
 
 // Foraging's own settle() can resolve more than one gather in a single
 // pass -- a villager chains straight into the next cycle, so a long gap
@@ -57,6 +59,18 @@ import { el } from "./dom.js";
 // sheet up constantly during ordinary play. Anything shorter (including
 // every tick's own tiny ~200ms gap) gets the same small in-pill flash a
 // villager-less gather already shows.
+// state.bagFullFlag itself is a plain counter (state.js's gainItem()),
+// not a boolean -- watching for it to *change* rather than reading it as
+// truthy is what keeps this a one-shot toast per new overflow instead of
+// firing every single tick a still-full bag keeps rejecting a producer.
+let lastBagFullFlag = 0;
+function checkBagFull() {
+  if (state.bagFullFlag !== lastBagFullFlag) {
+    lastBagFullFlag = state.bagFullFlag;
+    showToast("Inventory full");
+  }
+}
+
 function reportForageCatchup(results, awayMs) {
   if (results.length === 0) return;
   drawBag();
@@ -141,6 +155,7 @@ function start() {
   // whether or not the Township screen (or even the game) was open to
   // watch it.
   settleVillageUpkeep();
+  settleWorkers();
 
   settleCombat();
   drawCombatXp();
@@ -163,6 +178,7 @@ function start() {
   updateHubAttention();
   updateSeasonNote();
   updateDaytimeBadge();
+  checkBagFull();
 
   showFromHash();
 
@@ -214,6 +230,7 @@ function start() {
     }
 
     settleVillageUpkeep();
+    settleWorkers();
     if (!el("screen-township").classList.contains("hidden")) buildTownship();
 
     // Digging is single-tap-and-timer now (2026-08-31, see mining.js) --
@@ -279,6 +296,7 @@ function start() {
     updateHubAttention();
     updateSeasonNote();
     updateDaytimeBadge();
+    checkBagFull();
   }, 200);
 }
 

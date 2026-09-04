@@ -130,26 +130,15 @@ function recordForageLevel() {
   return false;
 }
 
-// Starts a gather from the given pool if nothing's already running --
-// shared by the player's own tap (tapForage(), below) and the villager's
-// own catch-up loop (settleForage()). Returns whether it actually started,
-// so a caller that gets `false` back (a gather -- the player's own, or a
-// still-unresolved villager cycle from earlier in the very same catch-up
-// pass -- is already occupying the slot) knows not to treat this as done.
-//
-// `at` is when this gather is considered to have started -- Date.now() for
-// a live tap, but the villager's own catch-up loop passes each overdue
-// cycle's own scheduled due time instead, so a burst of many cycles missed
-// during a long background/closed-tab gap each resolves the instant the
-// next one starts (chained straight through, one real item per cycle,
-// same "offline catch-up is free and complete" rule mining/growth timers
-// already follow) rather than only the very first one ever completing
-// while the rest get silently skipped. Speed (forageMs()) is still read
-// fresh at that moment either way, so a level gained between cycles speeds
-// up the next one, same as it would in real time.
-function startForage(poolId, at) {
+// Starts the player's own gather from the given pool if nothing's already
+// running -- the villager's own auto-gather (settleForage()) no longer
+// goes through here at all (see that function's own 2026-09-03 comment),
+// so this is the player's live tap path only now, always starting from
+// right now. Returns whether it actually started, so tapForage() knows a
+// `false` (something's already occupying the slot) isn't done.
+function startForage(poolId) {
   if (state.forage) return false;
-  const startedAt = at === undefined ? Date.now() : at;
+  const startedAt = Date.now();
   const ms = forageMs();
   state.forage = { startedAt: startedAt, readyAt: startedAt + ms, poolId: poolId };
   const fill = pillFor("forage").querySelector(".pill-fill");
@@ -172,43 +161,61 @@ function tapForage() {
   refreshForage();
 }
 
-// Resolves a finished gather and returns the item, or null if nothing was
-// running or it hasn't finished yet. Also records one gather toward
-// foraging's own mastery (recordForageLevel()) -- every completed gather
-// counts toward it, player-tapped or villager-ticked alike, same as
-// itemLevels.js counting every unit produced regardless of which station
-// made it.
-function resolveForage() {
-  if (!state.forage || Date.now() < state.forage.readyAt) return null;
-  const item = rollDrop(state.forage.poolId);
+// The actual mechanics of one completed gather -- rolls poolId's drop
+// table, grants it, gains foraging XP, and records one gather toward
+// foraging's own mastery (recordForageLevel()). Shared by the player's own
+// resolveForage() (below, gated on state.forage) and the villager's own
+// auto-gather cycle in settleForage() (below, which never touches
+// state.forage at all -- see that function's own comment for why).
+function completeGather(poolId) {
+  const item = rollDrop(poolId);
   gainItem(item, 1);
   const zoneLevels = gainSkillXp("foragingXp", FORAGE_XP);
   if (zoneLevels) openZoneWheel(state.currentLocation, zoneLevels);
+  const leveledUp = recordForageLevel();
+  return { item: item, leveledUp: leveledUp };
+}
+
+// Resolves the player's own finished gather (state.forage) and returns the
+// item, or null if nothing was running or it hasn't finished yet.
+function resolveForage() {
+  if (!state.forage || Date.now() < state.forage.readyAt) return null;
+  const result = completeGather(state.forage.poolId);
   state.forage = null;
   // Same reset craft.js's settleCraft() does -- without it, a finished
   // gather's .pill-fill sits at its last-drawn 100% (fully colored)
   // forever, since nothing else ever points it back at 0%.
   setPillFill("forage", 0, 0);
-  const leveledUp = recordForageLevel();
-  return { item: item, leveledUp: leveledUp };
+  return result;
 }
 
 // Called every tick (main.js) -- resolves the player's own running gather
 // the instant its deadline passes, same as settleCraft(). Also where the
 // villager's own automatic ticks live: however many VILLAGER_TICK_MS
-// intervals came due since the last check, each one starts (and, since
-// startForage() backdates it to its own scheduled due time, immediately
-// resolves) its own gather, chained straight through the while loop --
+// intervals came due since the last check, each one resolves immediately
+// (completeGather() is a synchronous roll+grant, no timer of its own),
+// chained straight through the while loop. Returns every item produced,
+// in order.
+//
 // bug fixed 2026-09-01: `state.villagerNextTickAt` used to advance every
-// iteration regardless of whether startForage() actually started
-// anything, so any gap spanning more than one villager tick (the tab
-// backgrounded, or the player's own gather still occupying the slot)
-// silently fast-forwarded the schedule past every missed cycle but the
-// first, discarding the rest instead of catching them up -- exactly the
-// "villagers stop working" symptom this was reported as. Now the loop
-// stops (without advancing) the moment a cycle can't start, so a blocked
-// tick is retried on a later call rather than lost outright. Returns
-// every item produced, in order.
+// iteration regardless of whether a cycle actually started, so any gap
+// spanning more than one villager tick silently fast-forwarded the
+// schedule past every missed cycle but the first, discarding the rest
+// instead of catching them up -- the "villagers stop working" symptom
+// this was originally reported as.
+//
+// bug fixed 2026-09-03: that first fix still routed the villager's own
+// cycle through startForage(), which shares state.forage -- the exact
+// same slot the player's own manual tap uses. Whenever the player had a
+// personal gather actively running (which, played normally, is most of
+// the time), `if (state.forage) return false` blocked every single
+// villager tick due during that window, and since nothing advanced
+// villagerNextTickAt while blocked, the villager produced nothing at all
+// until the player's own gather happened to finish -- explaining exactly
+// the *inconsistent* idle production this was reported as (not "never
+// works," but "works only in the gaps between the player's own taps").
+// The villager's cycle now calls completeGather() directly and never
+// touches state.forage, so the two can no longer collide.
 export function settleForage() {
   const results = [];
   let changed = false;
@@ -221,10 +228,10 @@ export function settleForage() {
     const poolId = villagerPoolId();
     if (poolId) {
       while (Date.now() >= state.villagerNextTickAt) {
-        if (!startForage(poolId, state.villagerNextTickAt)) break;
         changed = true;
-        const done = resolveForage();
-        if (done) { results.push(done.item); leveledUp = leveledUp || done.leveledUp; }
+        const done = completeGather(poolId);
+        results.push(done.item);
+        leveledUp = leveledUp || done.leveledUp;
         state.villagerNextTickAt += villagerTickMs();
       }
     }

@@ -13,11 +13,12 @@
 // in the bag grid or in its slot, never drawn twice.
 
 import { TINTS, EQUIP_SLOTS, EQUIPMENT, WEAPONS } from "./data.js";
-import { state, save } from "./state.js";
+import { state, save, bagSlotCap, bagSlotsUsed, bagRoomFor } from "./state.js";
 import { useSprite, slug } from "./sprites.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { openSheet, closeSheet } from "./sheet.js";
+import { showToast } from "./toast.js";
 
 let view = "equipment";   // "equipment" | "bag" | "storage"
 
@@ -217,7 +218,9 @@ export function buildInventory() {
   hint.classList.remove("hidden");
   grid.classList.remove("hidden");
 
-  hint.textContent = view === "bag" ? "Tap an item to store it." : "Tap an item to carry it.";
+  hint.textContent = view === "bag"
+    ? "Tap an item to store it. " + bagSlotsUsed() + "/" + bagSlotCap() + " slots used."
+    : "Tap an item to carry it.";
   grid.replaceChildren();
 
   const container = bagFor(view);
@@ -274,8 +277,16 @@ export function buildInventory() {
 // Bag/Storage grid, so `view` is always one of those two here.
 function openTransferPicker(name) {
   const from = bagFor(view);
-  const max = itemGet(from, name);
-  if (max < 1) return;
+  const toBag = view === "storage";   // moving Storage -> Bag is the only direction that can actually fill up
+  // Same bag-room clamp gainItem() itself enforces -- Storage has no cap
+  // of its own, so without this a full bag could be "topped up" past its
+  // own limit just by moving the exact same items in from Storage instead
+  // of gaining them fresh.
+  const max = toBag ? Math.min(itemGet(from, name), bagRoomFor(name)) : itemGet(from, name);
+  if (max < 1) {
+    if (toBag && itemGet(from, name) > 0) showToast("Inventory full");
+    return;
+  }
 
   const to = view === "bag" ? state.storage : state.bag;
   const destLabel = view === "bag" ? "Storage" : "Bag";

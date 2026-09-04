@@ -1848,3 +1848,34 @@ body {
   color: var(--green);
   text-align: center;
 }
+
+/* ================================= toast ================================= */
+/* One shared banner, above every screen and even the zone wheel (z-index
+   40) -- a full-bag notice needs to land no matter what's on screen when
+   it fires, including mid zone-level-up. Hidden via opacity/translate, not
+   [hidden], so the 2.2s auto-hide (src/toast.js) can transition out rather
+   than just vanishing. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  z-index: 50;
+  transform: translate(-50%, 12px);
+  opacity: 0;
+  pointer-events: none;
+  max-width: calc(100% - 32px);
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.toast.shown {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}

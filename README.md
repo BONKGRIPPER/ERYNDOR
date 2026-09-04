@@ -3047,6 +3047,214 @@ Tailoring/**Grinding/Beekeeping/Fletcher**, each with a real level and
 XP bar (Grinding and Beekeeping both correctly show untouched Level 0,
 0/40 -- no XP has been earned on this test save). No console errors.
 
+### Fixed: the villager going quiet while the player was still playing (2026-09-03)
+
+The original report was "villagers aren't working consistently while the
+player is idle." The 2026-09-01 fix (see forage.js) had already solved
+the *closed-tab* case -- a long gap no longer discarded missed cycles.
+What was left: the villager's own auto-gather still routed through
+`startForage()`, and `startForage()` shares `state.forage` with the
+player's own manual tap (`if (state.forage) return false`). So any time
+the player had their *own* gather actively running -- which, played
+normally, is most of a session -- every villager tick due during that
+window was silently blocked, and since nothing advanced
+`villagerNextTickAt` while blocked, the villager produced nothing until
+the player's own gather happened to finish. Not "never works" --
+"works only in the gaps between the player's own taps," which is exactly
+the *inconsistent* symptom this was reported as, and easy to trigger
+just by playtesting normally (tapping Forage yourself while otherwise
+leaving the game running).
+
+Fixed by splitting the actual gather mechanics (roll the drop, grant it,
+gain XP, record mastery) into a new `completeGather()`, called directly
+by the villager's catch-up loop -- no `state.forage`, no shared slot,
+nothing to collide with. The player's own `resolveForage()` now just
+calls the same `completeGather()` and clears `state.forage` itself.
+`startForage()` narrowed to the player's live-tap path only (the
+villager never called it for the flash/fill it triggers, and that fill
+never painted anyway -- start and resolve happened in the same
+synchronous villager-tick call, before the browser ever got a frame to
+draw it).
+
+Verified live: forced a real personal gather into `state.forage` with a
+2-minute deadline, then forced one overdue villager cycle -- the bag and
+foraging XP updated within the next tick while the player's own gather
+was still mid-flight and untouched. Forced a 5-cycle backlog the same
+way (still mid-flight the whole time) -- all 5 caught up in one pass,
+XP and bag counts landing exactly where 5 gathers should, and
+`villagerNextTickAt` rescheduled correctly past now. No console errors.
+
+### Township cost cut, and eight new worker villagers (2026-09-04)
+
+Township now costs 10 Stone/10 Sticks instead of Basalt Block/Pine Planks
+-- straight off Mining/Foraging, no conversion chain, so it (and every
+worker villager gated behind it) unlocks much earlier.
+
+A second villager system alongside the Foraging Villager: one hireable
+worker per station -- Cook (Campfire), Spinster (Spinning Wheel -- String
+specifically, not Cloth), Mason (Stone Cutter -- Stone Block, not Basalt
+Block), Millworker (Sawmill -- Pine Planks), Miller (Grind Stone --
+Bonemeal), Beekeeper (Beehive -- starts whichever Honey slot is free),
+Fletcher (Fletching Bench -- Flint Arrows, not Short Bow), Tanner (Tanning
+Station -- Leather). Each needs its own station built first, costs the
+same 250 Shards the Foraging Villager already costs (no separate price was
+given), and is capped at 3 total to start (`BASE_WORKER_CAP`) -- one
+worker per role, since two of the same role would just collide on the
+same single-slot station anyway.
+
+A worker's own attempt interval is 5x whatever their role's craft actually
+takes at the player's current skill level, per the request ("if an item
+takes 30 seconds to craft, the villager should auto click the pill every
+2.5 minutes") -- read fresh every attempt, so leveling up mid-run speeds
+up the next attempt too. Blocked attempts (the station's busy, or the
+input material's run out) don't get lost -- same "retry later, don't
+discard" rule the Foraging Villager's own catch-up loop follows, applied
+here for the first time to a case where the block is *real* (the player's
+own hand-tap on the very same physical station), not just a shared-state
+bug like forage's own fix earlier today.
+
+All villagers -- Foraging plus every worker -- now draw from one shared
+Village Upkeep pool, scaled by headcount (`VILLAGE_UPKEEP_FOOD/HEAT x
+villagers currently hired`), gated the same `state.village.starved` flag
+already used. Hiring *either* kind of villager starts the shared upkeep
+clock if it isn't already running (`kickVillageUpkeepIfIdle()` in
+state.js, factored out so township.js and the new workers.js don't need
+to import each other).
+
+New: Housing, also at Township -- a repeating purchase (6 Birch Planks/12
+Bronze Nails, same "flat, non-doubling" shape Beehive's own slot expansion
+uses), each one raising the worker cap by 1. Bronze Nails doesn't exist
+yet (the user's own placeholder -- "a material added later in the bronze
+age"), same "real spot, nothing behind it yet" treatment Oak Planks/Fine
+String already got. Simplification, flagged here rather than silently
+assumed: the cap is global (every House anywhere adds to one shared
+number), not per-zone, since Township currently only ever exists in one
+place anyway -- "more villagers in that zone" and "more villagers,
+period" are the same thing until a second Township exists.
+
+Verified live: hired a Spinster with a real Flax stock -- upkeep clock
+started on hire (confirmed a real bug here first: the initial pass forgot
+to start it at all, worker villagers would never have drawn upkeep or
+gone hungry). Forced the player's own Spinning Wheel cycle to occupy the
+station for 2 minutes with 3 villager cycles backlogged -- all 3 stayed
+blocked and un-lost the whole time (Flax untouched); clearing the
+player's cycle let exactly one villager cycle start immediately, correctly
+retrying the rest on later ticks rather than trying to force multiple
+cycles through one physical station at once. Built a House, watched the
+worker cap go 3 → 4 and the right materials spend; hired Spinster/Mason/
+Millworker/Miller to fill the new cap exactly; a fifth hire attempt (with
+enough Shards) correctly did nothing. No console errors throughout.
+
+### A real inventory cap: 25 bag slots, 99 per stack (2026-09-04)
+
+The bag was unlimited before this -- any qty of any item, forever. Now
+capped Minecraft-style: `BAG_SLOTS` (25) distinct stacks, each stack
+capped at that item's own `stackCapFor()` (data.js's `ITEM_STACK_CAPS`,
+99 by default, per-item overrides ready for later balancing) before it has
+to start a second stack. The bag itself is still the same flat
+`{name: qty}` map every other file already reads -- nothing about that
+shape changed, so no other call site needed touching -- a name's own qty
+is just treated as `Math.ceil(qty / cap)` *slots* for capacity purposes
+only (state.js's `bagSlotsUsed()`/`bagRoomFor()`), the same total a real
+array of discrete stacks would add up to.
+
+Enforced at exactly one choke point: `gainItem()` (state.js), which this
+game's own architecture already made the single place every producer
+routes through -- farming, logging, foraging, mining, fishing, cooking,
+every conversion station, market buy/withdraw, combat loot, and both
+villager systems all got the cap for free from that one spot, no other
+file needed changing to *gain* it. This is also, per the user's own
+request, what actually stops an idle villager from silently over-
+producing while the player's away -- a full bag just blocks the next
+grant, same as it blocks the player's own.
+
+One real gap found and closed while implementing this: gainItem() isn't
+the *only* way an item enters the bag -- Inventory's own Storage -> Bag
+transfer (inventory.js) moves items with a direct `itemAdd()`, bypassing
+gainItem() entirely. Storage has no cap of its own, so left alone this
+would have been a complete bypass of the whole system -- stockpile
+anything uncapped in Storage, then dump it into the bag past 25 slots any
+time. Capped that direction specifically against `bagRoomFor()`; left
+Storage itself uncapped (out of scope -- "limit the player to 25 slots in
+their bag" was about the bag) and left equip/unequip's own bag-return
+uncapped on purpose (you shouldn't get soft-locked out of unequipping your
+own armor because of an unrelated full bag elsewhere).
+
+A second real risk, caught by tracing every gainItem() caller rather than
+just the obvious ones: market.js's `buyQty()`/`withdrawQty()` both used to
+deduct Shards (or draw down the bank) *before* calling gainItem() -- if a
+full bag had silently truncated the grant, the player would have paid for
+items that never arrived. Both now clamp their own qty against
+`bagRoomFor()` *before* spending anything, and the quantity sliders
+themselves (`openQtyPicker`/`openBankPicker`) show that same clamped max
+up front rather than offering a number the bag can't actually deliver.
+Every *unpaid* producer (harvests, finished crafts, combat loot, both
+villager systems) is allowed to simply truncate at gainItem() with no
+refund concept needed -- nothing was separately paid for that specific
+delivery, same "sunk cost" risk this game's own spend-on-commit crafting
+already accepts.
+
+New: a shared `#toast` banner (src/toast.js) for the "Inventory full"
+notice -- state.js's own `gainItem()` stays DOM-free (a truncated grant
+just increments an ephemeral, unsaved `state.bagFullFlag` counter); main.js's
+tick loop watches that counter *change* (not its raw value) and pops the
+toast once per new overflow, not once per tick a still-full bag keeps
+rejecting something. The Inventory screen's Bag tab also now shows
+`<used>/<cap> slots used` alongside its existing hint text.
+
+Also added a forward-compatible hook with no visible effect yet:
+`BAG_SLOT_BONUS` in data.js -- an item that raises the bag's own slot cap
+while owned, read by `bagSlotCap()`. Empty today; the Highland Sack (Craft
+Bench, +3 slots, added in the very next pass) is its first real entry.
+
+Verified live: filled the bag to exactly 25 distinct slots by hand, then
+let hired worker villagers (Spinster/Mason/Millworker/Miller, from the
+earlier Township batch this same session) keep trying to produce String/
+Stone Block/Pine Planks/Bonemeal in the background -- all four correctly
+stayed at 0 in the bag the entire time, `Object.keys(bag).length` never
+moved off 25, and the toast fired once per new blocked grant
+(`bagFullFlag` climbed to 17 over the course of testing). No console
+errors. Test save reset afterward.
+
+### The Loom, Weaving, Yarn/Fabric, the Weaver villager, and Highland Sack (2026-09-04)
+
+A new station, Loom -- costs the same as the Spinning Wheel (6 Scrap
+Metal/15 Pine Planks) per the request, literally, not just the same
+shape. Two recipes on its own screen: 5 String -> 1 Cloth, 5 Yarn -> 1
+Fabric (Fabric is a brand-new item). Both grant a brand-new skill,
+Weaving (`state.weavingXp`), added to the Skills page's `SKILL_ROWS` same
+as everything else there. Cloth now has two independent sources -- the
+Spinning Wheel's existing Wool recipe, and the Loom's new String one --
+nothing about the STATIONS registry required an output be unique to one
+recipe, so they just coexist.
+
+Yarn is a third recipe added to the *existing* Spinning Wheel screen
+(cost: 3 Wool), same "second/third recipe sharing a station" shape String/
+Cloth already established there. Wool already drops off Highland Sheep
+(combat loot, already real) -- unlike this file's usual forward
+references, Yarn had a real source from the moment it was added.
+
+Weaver joins the worker-villager roster from earlier today's Township
+batch -- auto-triggers `loomCloth` specifically (String -> Cloth), not
+`loomFabric`, per the request's own wording ("a villager that auto crafts
+cloth"). Gated behind the Loom being built, same as every other worker.
+
+Highland Sack -- Craft Bench, 5 Cloth, +3 bag slots while owned. This is
+the first real use of `BAG_SLOT_BONUS` (added as an empty hook in this
+same session's inventory-cap batch) -- `bagSlotCap()` already summed it
+in, so raising the cap needed zero changes outside data.js.
+
+Verified live: Loom screen renders both recipes with live cost text; Yarn
+pill added to the Spinning Wheel screen alongside String/Cloth; hired a
+Weaver (gated correctly behind Loom being built) and forced its tick --
+String dropped 50 -> 45 (the loomCloth recipe's own 5-String cost) and a
+real station cycle started, exactly the same mechanism already proven for
+every other worker villager. Weaving shows on the Skills page at Level 0,
+0/40 on a fresh save. Crafted a Highland Sack from a forced-ready Craft
+Bench cycle and confirmed it lands in the bag as a real, capped-and-
+gained item (same gainItem() path everything else uses). No console
+errors throughout. Test save reset afterward.
+
 ## Adding to it
 
 A new crop, tree, or recipe is one entry in `src/data.js`; a new zone's

@@ -30,7 +30,7 @@ import {
   CATEGORIES, BASE_VALUE, BUYABLE, ZONE_DEMAND, MARKET_FLOOR, MARKET_K,
   MARKET_HALF_LIFE_MS, TINTS, LOCATIONS,
 } from "./data.js";
-import { state, save, gainItem } from "./state.js";
+import { state, save, gainItem, bagRoomFor } from "./state.js";
 import { useSprite, slug } from "./sprites.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
@@ -173,9 +173,13 @@ function depositQty(name, qty) {
 
 // Withdrawing goes straight to the bag, same as any other gainItem() --
 // there's no "which city withdrew it" to track, it's one shared bank.
+// Clamped against bagRoomFor() *before* touching the bank -- unlike a free
+// producer's own gainItem() truncating quietly, this one already has a
+// specific qty coming out of the bank for it, so it has to match what
+// actually lands in the bag or items would just vanish into a full bag.
 function withdrawQty(name, qty) {
   const owned = bankQty(name);
-  qty = Math.min(qty, owned);
+  qty = Math.min(qty, owned, bagRoomFor(name));
   if (qty <= 0) return;
 
   state.bank[name] -= qty;
@@ -215,9 +219,12 @@ function sellQty(name, qty) {
   buildMarket();
 }
 
+// Same clamp-before-spending rule withdrawQty() above follows -- Shards
+// are deducted for exactly what fits in the bag, never for a quantity a
+// full bag would silently drop.
 function buyQty(name, qty) {
   const affordable = maxAffordable(name, state.shards);
-  qty = Math.min(qty, affordable);
+  qty = Math.min(qty, affordable, bagRoomFor(name));
   if (qty <= 0) return;
 
   const quote = quoteBuy(name, qty);
@@ -459,7 +466,10 @@ export function buildMarket() {
 // ---------------------------------------------------------- quantity sheet
 
 function openQtyPicker(name, mode) {
-  const max = mode === "sell" ? combinedOwned(name) : maxAffordable(name, state.shards);
+  // Buying is also capped by however much room is actually left in the
+  // bag -- same clamp buyQty() itself enforces, surfaced here too so the
+  // slider's own max isn't a promise the bag can't keep.
+  const max = mode === "sell" ? combinedOwned(name) : Math.min(maxAffordable(name, state.shards), bagRoomFor(name));
   if (max < 1) return;
 
   const body = el("sheet-body");
@@ -520,7 +530,9 @@ function openQtyPicker(name, mode) {
 // since there's no pricing math running through the "sell"/"buy" branches
 // for this to actually share.
 function openBankPicker(name, mode) {
-  const max = mode === "deposit" ? combinedOwned(name) : bankQty(name);
+  // Same bag-room clamp openQtyPicker's own buy branch uses -- withdrawing
+  // is also a bag gain, just from the bank instead of the market.
+  const max = mode === "deposit" ? combinedOwned(name) : Math.min(bankQty(name), bagRoomFor(name));
   if (max < 1) return;
 
   const body = el("sheet-body");

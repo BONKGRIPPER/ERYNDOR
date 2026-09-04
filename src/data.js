@@ -2,6 +2,29 @@
 // Everything a designer would want to change lives up here. Pure data --
 // nothing in this file touches the DOM or reads game state.
 
+// -------------------------------------------------------------- inventory
+// A slot-and-stack cap (2026-09-04), same shape Minecraft's own inventory
+// uses -- BAG_SLOTS distinct stacks, each stack capped at an item's own
+// stackCapFor() (state.js), overflowing into a second stack rather than a
+// single number cap. Enforced at gainItem() (state.js), the one choke
+// point every producer in this game already routes through -- farming,
+// logging, foraging, mining, fishing, cooking, every conversion station,
+// market buy/withdraw, combat loot, and both villager systems all get the
+// cap for free from that one spot. This is also what stops an idle
+// villager from silently overproducing while the player's away, per the
+// user's own request.
+export const BAG_SLOTS = 25;
+export const STACK_CAP_DEFAULT = 99;
+// Per-item overrides -- empty for now. "Each item should have the ability
+// to change the limit... so I can balance later": add an entry here, e.g.
+// { "Enchanted Shard": 10 }, and stackCapFor() (state.js) picks it up with
+// no other code changes.
+export const ITEM_STACK_CAPS = {};
+// Items that raise the bag's own slot cap while owned -- e.g. a crafted
+// bag upgrade. Highland Sack (Craft Bench, RECIPES below) is the first
+// real entry: crafting one grants +3 bag slots for as long as it's kept.
+export const BAG_SLOT_BONUS = { "Highland Sack": 3 };
+
 // The hub. Add a destination by adding a line here.
 // `hub` controls whether a place shows as a card on the home screen. Inventory,
 // Skills and Map live in the dock now instead (see DOCK_IDS below) -- they
@@ -31,6 +54,7 @@ export const PLACES = [
   { id: "grindStone", icon: "\u{1F9B4}", name: "Grind Stone", note: "Grind bones into bonemeal", ready: true, hub: true },
   { id: "beehive", icon: "\u{1F41D}", name: "Beehive", note: "Keep bees, craft honey", ready: true, hub: true },
   { id: "fletchingBench", icon: "\u{1F3F9}", name: "Fletching Bench", note: "Craft bows and arrows", ready: true, hub: true },
+  { id: "loom", icon: "\u{1FAA1}", name: "Loom", note: "Weave string and yarn into cloth", ready: true, hub: true },
   // Not a BUILDINGS entry -- there's no structure to build, just water to
   // fish. Gated by location like a built station (hub.js's
   // fishingAvailableHere()), but on LOCATIONS[...].fishing rather than
@@ -51,7 +75,7 @@ export const PLACES = [
 export const SCREEN_IDS = [
   "home", "field", "logging", "mining", "combat", "inventory", "skills", "craft", "market", "campfire",
   "spinningWheel", "sawmill", "township", "stoneCutter", "tanningStation", "map", "fishing", "armorBench",
-  "grindStone", "beehive", "fletchingBench",
+  "grindStone", "beehive", "fletchingBench", "loom",
 ];
 
 // The persistent bottom dock. Home first (left side) so there's always a
@@ -82,6 +106,7 @@ export const SKILLS = {
   grinding: { name: "Grinding", icon: "\u{1F9B4}" },
   beekeeping: { name: "Beekeeping", icon: "\u{1F41D}" },
   fletcher: { name: "Fletcher", icon: "\u{1FAB6}" },
+  weaving: { name: "Weaving", icon: "\u{1FAA1}" },
   // Both level off combat *kills* specifically (endFight()'s own win
   // branch), split by whatever weapon actually landed the last blow --
   // Combat itself (the original, generic skill) is untouched and still
@@ -285,6 +310,13 @@ export const TINTS = {
   "Bones": "#d8cfc0", "Feathers": "#eae0c8", "Raw Poultry": "#d9a3a0",
   "Animal Hide": "#8a6242", "Raw Beef": "#a8434a", "Leather": "#7a5233",
   "Wool": "#e8e2d4", "Raw Mutton": "#c25a5f", "Cloth": "#cfc7ae",
+  // The Loom's own two ingredients/outputs (2026-09-04) -- Yarn is spun
+  // from Wool at the Spinning Wheel (a third recipe there, alongside
+  // String and Cloth), then either Yarn or String itself is woven into
+  // Cloth/Fabric at the new Loom. Both real, sourced items -- unlike Oak
+  // Planks/Fine String/Birch Planks/Bronze Nails elsewhere in this file,
+  // nothing about either is a forward reference.
+  "Yarn": "#ded0a8", "Fabric": "#8f7f5c",
   "Cooked Poultry": "#b97b4a", "Cooked Beef": "#7a2e2e", "Cooked Mutton": "#8a4536",
   "Scrap Metal": "#8c8f96",
   "Stone Block": "#9a9a92", "Basalt Block": "#55555c",
@@ -330,6 +362,15 @@ export const TINTS = {
   // yet -- same "real spot, nothing behind it yet" treatment Scrap Metal
   // got before Road Goblin ever dropped it.
   "Oak Planks": "#a07a45", "Fine String": "#e8dfc2",
+  // Housing's own recipe (Township's new House card, see BUILDINGS-shaped
+  // HOUSE_COST below) -- Birch Planks has the same "real spot, nothing
+  // behind it yet" story as Oak Planks above (Birch trees exist in TREES
+  // but Logging has no plot for them yet, so nothing produces Birch Logs
+  // to mill in the first place). Bronze Nails is the user's own explicit
+  // placeholder -- "a material added later in the bronze age" -- so a
+  // House is real, priced data now even though half its cost has no
+  // source anywhere in the game yet.
+  "Birch Planks": "#c99a6a", "Bronze Nails": "#b8823f",
 };
 
 // A second, independent gather loop -- no seeds, no growth stages, just tap
@@ -416,20 +457,55 @@ export const VILLAGER_TICK_MS = 30000;   // was 2500 (swing-based) -- 2026-08-31
 export const VILLAGER_UPGRADE_COST = 400;
 export const VILLAGER_UPGRADE_MULT = 0.75;
 
+// ------------------------------------------------------------ worker villagers
+//
+// A second, separate villager system (2026-09-04) alongside the Foraging
+// Villager above -- one hire per station-shaped role rather than one
+// upgradeable slot. See WORKERS below (after STATIONS, so it can point at
+// station ids directly) and src/workers.js for the actual hire/tick logic;
+// the Township screen (src/township.js) renders one hire card per role.
+//
+// Hiring costs the same VILLAGER_COST Shards as the Foraging Villager --
+// no separate price was given, so this reuses the one existing precedent
+// rather than inventing a second number.
+//
+// `state.workers` starts empty and can hold up to workerCap() entries
+// (src/workers.js) -- BASE_WORKER_CAP to start, +1 per House built at
+// Township (see HOUSE_COST below). A worker's own tick interval is
+// WORKER_TICK_MULT times whatever their role's own craft actually takes
+// at the player's current skill level (a 30s craft means a 2.5-minute
+// villager attempt, per the request) -- read fresh each attempt, same
+// "speed read at the moment a cycle starts" rule Foraging's own
+// villagerTickMs() already follows, so leveling up mid-run speeds up the
+// villager's next attempt too, not just the player's own taps.
+export const BASE_WORKER_CAP = 3;
+export const WORKER_TICK_MULT = 5;
+
+// A House -- built at Township, any number of times, same "flat repeating
+// purchase" shape Beehive's own honey-slot expansion already uses -- each
+// one raises workerCap() by 1. Bronze Nails doesn't exist yet (the user's
+// own placeholder, "a material added later in the bronze age"), so this is
+// real, priced data with one ingredient nothing currently produces -- same
+// "real spot, nothing behind it yet" treatment Oak Planks/Fine String
+// already got for the Fishing Rod.
+export const HOUSE_COST = { "Birch Planks": 6, "Bronze Nails": 12 };
+
 // -------------------------------------------------------------- upkeep
 //
 // A hired villager doesn't work for free -- every VILLAGE_UPKEEP_MS (24h),
 // the village draws VILLAGE_UPKEEP_FOOD food units and VILLAGE_UPKEEP_HEAT
-// heat units from whatever the player has donated (state.village.food/
-// heat, src/township.js's donate flow). Food units come straight off
-// FOODS' own `heal` value (1 HP healed = 1 food unit -- the same number,
-// not a second one to keep in sync); heat units come off
-// VILLAGE_HEAT_VALUE below. Falling short on either at the 24h mark
-// doesn't refund or partially apply -- the villager simply stops
-// auto-working (src/forage.js checks state.village.starved) until enough
-// of both is donated to clear the very upkeep that was missed, same
-// "resolves the instant it's true, not retroactively" rule every other
-// deadline in this game follows.
+// heat units *per villager currently hired* (Foraging Villager plus every
+// worker in state.workers -- src/township.js's settleVillageUpkeep() is
+// what actually multiplies by headcount) from whatever the player has
+// donated (state.village.food/heat, src/township.js's donate flow). Food
+// units come straight off FOODS' own `heal` value (1 HP healed = 1 food
+// unit -- the same number, not a second one to keep in sync); heat units
+// come off VILLAGE_HEAT_VALUE below. Falling short on either at the 24h
+// mark doesn't refund or partially apply -- every villager simply stops
+// auto-working (src/forage.js and src/workers.js both check
+// state.village.starved) until enough of both is donated to clear the very
+// upkeep that was missed, same "resolves the instant it's true, not
+// retroactively" rule every other deadline in this game follows.
 export const VILLAGE_UPKEEP_MS = 24 * 60 * 60 * 1000;
 export const VILLAGE_UPKEEP_FOOD = 30;
 export const VILLAGE_UPKEEP_HEAT = 15;
@@ -512,6 +588,10 @@ export const RECIPES = {
   // is what makes the skill-based tool worth the extra attention.
   wormBait:   { name: "Worm Bait",   cost: { "Sticks": 5 } },
   shinyLure:  { name: "Shiny Lure",  cost: { "Flint": 10, "String": 5 } },
+  // Adds +3 bag slots while owned -- not consumed, not equipped, just
+  // carried (see BAG_SLOT_BONUS above and state.js's bagSlotCap()). The
+  // first real BAG_SLOT_BONUS entry.
+  highlandSack: { name: "Highland Sack", cost: { "Cloth": 5 } },
 };
 
 // ------------------------------------------------------------------ equip
@@ -889,6 +969,7 @@ export const CATEGORIES = {
   "Bones": "combat", "Feathers": "combat", "Raw Poultry": "combat", "Scrap Metal": "combat",
   "Animal Hide": "combat", "Raw Beef": "combat",
   "Wool": "combat", "Raw Mutton": "combat",
+  "Yarn": "sowing", "Fabric": "weaving",
   "Leather": "tanning", "Cloth": "sowing",
   "Bonemeal": "grinding",
   "Queen Bee": "foraging", "Honey": "beekeeping",
@@ -916,6 +997,7 @@ export const CATEGORIES = {
   "Cooked Saltback Herring": "cooking", "Cooked Reef Snapper": "cooking", "Cooked Tideskimmer Mackerel": "cooking",
   "Cooked Golden Marlin": "cooking", "Cooked Moontide Eel": "cooking",
   "Oak Planks": "milling", "Fine String": "sowing",
+  "Birch Planks": "milling", "Bronze Nails": "mining",
 };
 
 // -------------------------------------------------------------- currency
@@ -978,6 +1060,7 @@ export const BASE_VALUE = {
   "Queen Bee": 60, "Honey": 15,
   "Animal Hide": 12, "Raw Beef": 14, "Leather": 22,
   "Wool": 10, "Raw Mutton": 12, "Cloth": 18,
+  "Yarn": 14, "Fabric": 26,
   "Cooked Poultry": 14, "Cooked Beef": 22, "Cooked Mutton": 20,
   "Scrap Metal": 20,
   "Fishing Rod": 1, "Net": 1, "Trap": 1,
@@ -1009,6 +1092,7 @@ export const BASE_VALUE = {
   "Cooked Saltback Herring": 15, "Cooked Reef Snapper": 30, "Cooked Tideskimmer Mackerel": 47,
   "Cooked Golden Marlin": 166, "Cooked Moontide Eel": 129,
   "Oak Planks": 12, "Fine String": 10,
+  "Birch Planks": 14, "Bronze Nails": 8,
 };
 
 export const ZONE_DEMAND = {
@@ -1084,9 +1168,13 @@ export const BUILDINGS = {
     name: "Tanning Station",
     cost: { "Sticks": 15, "Animal Hide": 5 },
   },
+  // Dropped from Basalt Block/Pine Planks to raw Stone/Sticks (2026-09-04)
+  // -- both straight off Mining/Foraging, no conversion chain required, so
+  // Township (and every worker villager gated behind it) unlocks much
+  // earlier than the other processed-material stations around it.
   township: {
     name: "Township",
-    cost: { "Basalt Block": 5, "Pine Planks": 12 },
+    cost: { "Stone": 10, "Sticks": 10 },
   },
   armorBench: {
     name: "Armor Bench",
@@ -1106,6 +1194,12 @@ export const BUILDINGS = {
   fletchingBench: {
     name: "Fletching Bench",
     cost: { "Basalt Block": 7, "Pine Planks": 10 },
+  },
+  // "Same as the Spinning Wheel" per the request -- same Scrap Metal/Pine
+  // Planks cost, literally, not just the same shape.
+  loom: {
+    name: "Loom",
+    cost: { "Scrap Metal": 6, "Pine Planks": 15 },
   },
 };
 
@@ -1153,6 +1247,17 @@ export const STATIONS = {
     screenTitle: "Spinning Wheel", screenSub: "Turn flax into string",
     actionName: "Cloth",
     cost: { "Wool": 4 }, output: "Cloth", ms: 10000, xp: 12,
+    skillXp: "sowingXp", skillName: "Sowing",
+  },
+  // Yarn's own recipe -- a third Spinning Wheel recipe, same "second/third
+  // recipe sharing a station" shape String/Cloth already established.
+  // Wool already drops off Highland Sheep (see ENEMIES below), so unlike
+  // some of this file's other "real spot, nothing behind it yet" entries,
+  // Yarn has a real source from the moment it exists.
+  yarn: {
+    screenTitle: "Spinning Wheel", screenSub: "Turn flax into string",
+    actionName: "Yarn",
+    cost: { "Wool": 3 }, output: "Yarn", ms: 9000, xp: 11,
     skillXp: "sowingXp", skillName: "Sowing",
   },
   sawmill: {
@@ -1236,6 +1341,84 @@ export const STATIONS = {
     cost: { "Sticks": 1, "Flint": 1, "Feathers": 1 },
     output: "Flint Arrows", outputQty: 3, ms: 6000, xp: 6,
     skillXp: "fletcherXp", skillName: "Fletcher",
+  },
+  // Two recipes, one screen, one skill (Weaving) -- same shape Stone
+  // Cutter/Armor Bench/Fletching Bench already established. Cloth already
+  // has a second, unrelated source (clothSpinner above, Wool at the
+  // Spinning Wheel) -- nothing about the STATIONS registry requires an
+  // output be unique to one recipe, so both just coexist.
+  loomCloth: {
+    screenTitle: "Loom", screenSub: "Weave string and yarn into cloth",
+    actionName: "Cloth",
+    cost: { "String": 5 }, output: "Cloth", ms: 11000, xp: 12,
+    skillXp: "weavingXp", skillName: "Weaving",
+  },
+  loomFabric: {
+    screenTitle: "Loom", screenSub: "Weave string and yarn into cloth",
+    actionName: "Fabric",
+    cost: { "Yarn": 5 }, output: "Fabric", ms: 13000, xp: 15,
+    skillXp: "weavingXp", skillName: "Weaving",
+  },
+};
+
+// --------------------------------------------------------- worker villagers
+// One hireable worker per station-shaped role (see BASE_WORKER_CAP/
+// WORKER_TICK_MULT above and src/workers.js for the hire/tick mechanics).
+// `building` is the BUILDINGS id that has to be built before this role is
+// even hireable -- the worker's whole job is standing at a station that has
+// to physically exist first. `stationId` names a STATIONS entry the worker
+// auto-triggers exactly like a player's own tap on that pill; Cook and
+// Beekeeper aren't STATIONS entries at all (Campfire and Beehive are both
+// bespoke systems, see campfire.js/beehive.js), so they're handled as their
+// own two special cases in workers.js instead of through `stationId`.
+export const WORKERS = {
+  cook: {
+    name: "Cook", icon: "\u{1F468}\u{200D}\u{1F373}",
+    building: "campfire",
+    note: "Cooks whatever fuel and food you've already picked at the Campfire",
+  },
+  spinster: {
+    name: "Spinster", icon: "\u{1F9F6}",
+    building: "spinningWheel", stationId: "spinningWheel",
+    note: "Spins Flax into String",
+  },
+  mason: {
+    name: "Mason", icon: "\u{1FAA8}",
+    building: "stoneCutter", stationId: "stoneCutter",
+    note: "Cuts Stone into Stone Block",
+  },
+  millworker: {
+    name: "Millworker", icon: "\u{1FA9A}",
+    building: "sawmill", stationId: "sawmill",
+    note: "Saws Pine Logs into Pine Planks",
+  },
+  miller: {
+    name: "Miller", icon: "\u{1F9B4}",
+    building: "grindStone", stationId: "grindStone",
+    note: "Grinds Bones into Bonemeal",
+  },
+  beekeeper: {
+    name: "Beekeeper", icon: "\u{1F41D}",
+    building: "beehive",
+    note: "Starts a new batch of Honey the moment a slot's free",
+  },
+  fletcher: {
+    name: "Fletcher", icon: "\u{1FAB6}",
+    building: "fletchingBench", stationId: "flintArrows",
+    note: "Crafts Flint Arrows",
+  },
+  tanner: {
+    name: "Tanner", icon: "\u{1F97E}",
+    building: "tanningStation", stationId: "tanningStation",
+    note: "Tans Animal Hide into Leather",
+  },
+  // Auto-crafts Cloth specifically (loomCloth), not Fabric (loomFabric) --
+  // "a villager that auto crafts cloth called Weaver" was explicit about
+  // which of the Loom's two recipes this one works.
+  weaver: {
+    name: "Weaver", icon: "\u{1FAA1}",
+    building: "loom", stationId: "loomCloth",
+    note: "Weaves String into Cloth",
   },
 };
 
@@ -1420,7 +1603,7 @@ export const MINE_ZONES = [
 export const LOCATIONS = {
   aerendell: {
     name: "Aerendell", type: "town", pos: { x: 0, y: 0 },
-    stations: ["campfire", "spinningWheel", "sawmill", "stoneCutter", "tanningStation", "township", "armorBench", "grindStone", "beehive", "fletchingBench"],
+    stations: ["campfire", "spinningWheel", "sawmill", "stoneCutter", "tanningStation", "township", "armorBench", "grindStone", "beehive", "fletchingBench", "loom"],
     // No fishing at the farmstead itself, still -- meant to belong out in
     // the world, which as of 2026-09-02 it now does (see the other five
     // locations here). FISH_POOLS has five pool *types* now (river/pond/
