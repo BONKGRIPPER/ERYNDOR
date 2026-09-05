@@ -459,6 +459,12 @@
       </div>
 
       <div id="inv-hint" class="hint">Tap an item to store it.</div>
+      <!-- Bag/Storage only (inventory.js's setView() hides this on
+           Equipment) -- moves everything at once except equipped items
+           (never in this list to begin with) and anything in FOODS, kept
+           back on purpose so a quick food supply stays wherever it
+           actually needs to be for Combat's own Eat action. -->
+      <button id="inv-move-all-btn" class="inv-move-all-btn hidden">Move All</button>
       <div id="inv-grid" class="inv-grid"></div>
 
       <div class="inv-toggle">
@@ -487,7 +493,10 @@
       <div id="skills-page">
         <div id="skills-list" class="skills-list"></div>
 
-        <button id="reset-save-btn" class="reset-save-btn">Reset Save</button>
+        <div class="skills-footer-actions">
+          <button id="dev-room-btn" class="dev-room-btn">🛠 Dev Room</button>
+          <button id="reset-save-btn" class="reset-save-btn">Reset Save</button>
+        </div>
       </div>
 
       <div id="collection-page" class="hidden">
@@ -1349,11 +1358,18 @@
         <button id="back-township" class="back" aria-label="Back">‹</button>
         <div>
           <div class="field-title">Township</div>
-          <div class="field-sub">Villagers and their upgrades</div>
+          <div class="field-sub">Assign villagers to professions</div>
         </div>
       </header>
 
+      <div id="township-slots" class="township-slots"></div>
       <div id="township-list" class="township-list"></div>
+
+      <div class="inv-toggle">
+        <button id="township-view-upkeep" class="inv-view-btn active">Village Upkeep</button>
+        <button id="township-view-housing" class="inv-view-btn">Housing</button>
+      </div>
+      <div id="township-tab" class="township-list"></div>
     </div>
 
     <!-- =============================== TOAST =============================== -->

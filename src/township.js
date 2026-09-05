@@ -1,24 +1,32 @@
 // ================================================================ township
 //
-// Where every auto-clicking villager and their upgrades live -- a build-
-// gated station (see BUILDINGS in data.js), not a default screen, so
-// hiring/upgrading only becomes possible once the player's actually spent
-// Stone and Logs on it. One villager exists so far: Foraging's, moved here
-// from what used to be an inline hire button on the forage bar itself (see
-// forage.js's kickForageIfIdle()). Rendered generically enough
-// (buildTownship() rebuilds the whole card list from scratch) that a
-// second villager -- Mining's, Logging's, whatever's next -- is a new card
-// function, not a restructure.
+// Where every villager and their slots live -- a build-gated station (see
+// BUILDINGS in data.js), not a default screen, so assigning villagers only
+// becomes possible once the player's actually spent Stone and Logs on it.
+// Reworked (2026-09-04, second pass): the old Foraging Villager (its own
+// standalone state.villager) is now just another WORKERS role ("forager"),
+// so every villager -- Forager included -- renders as the exact same
+// .worker-pill, one per WORKERS key, with no separate hire flow of its
+// own any more. Hiring/leveling-for-Shards is gone entirely: a role is
+// either unlocked (its building built, and its own skill level past
+// WORKERS[role].unlockLevel if it has one) or it isn't, and an unlocked
+// role can be freely assigned to any open slot and unassigned again later.
+// Housing and Village Upkeep have their own tab toggle below the roster
+// (same .inv-toggle/.inv-view-btn pattern Inventory's Equipment/Bag/
+// Storage already uses), defaulting to Village Upkeep.
 
 import {
-  VILLAGER_LEVEL, VILLAGER_COST, VILLAGER_UPGRADE_COST, VILLAGER_UPGRADE_MULT,
   VILLAGE_UPKEEP_MS, VILLAGE_UPKEEP_FOOD, VILLAGE_UPKEEP_HEAT, VILLAGE_HEAT_VALUE,
-  FOODS, LOCATIONS, WORKERS, HOUSE_COST, BUILDINGS,
+  FOODS, WORKERS, HOUSE_COST, HOUSE_WORKER_SLOTS, BUILDINGS, TINTS,
 } from "./data.js";
 import { state, save, kickVillageUpkeepIfIdle } from "./state.js";
-import { foragingLevel, kickForageIfIdle, refreshForage } from "./forage.js";
-import { workerCap, canHireWorker, hireWorker } from "./workers.js";
+import { refreshForage } from "./forage.js";
+import {
+  workerCap, assignedCount, freeSlots, getWorker, roleUnlocked, roleSkill, roleSkillLevel,
+  canAssignWorker, assignWorker, unassignWorker, maxLevelFor, unlockedTierCount, masterOutputFor,
+} from "./workers.js";
 import { combinedOwned, spendItem, canAfford, buildCostNodes, spendCost } from "./costDisplay.js";
+import { useSprite, slug } from "./sprites.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { openSheet, closeSheet } from "./sheet.js";
@@ -32,8 +40,8 @@ function shake(node) {
 
 // A shared row shape ("big highlighted action") the whole game already
 // reuses for Mining's Surface & Bank and Combat's Fight prompt -- built by
-// hand here (not from a static index.html block) since Township's cards
-// are entirely data-driven, one per villager.
+// hand here (not from a static index.html block) for Housing's own Build
+// action, the one Township action left that isn't a villager pill.
 function actionButton(icon, name, sub, cost) {
   const btn = document.createElement("button");
   btn.className = "villager-hire";
@@ -62,95 +70,14 @@ function actionButton(icon, name, sub, cost) {
   return btn;
 }
 
-function hireForagingVillager(btn) {
-  if (state.villager.owned || foragingLevel() < VILLAGER_LEVEL) { shake(btn); return; }
-  if (state.shards < VILLAGER_COST) { shake(btn); return; }
-  state.shards -= VILLAGER_COST;
-  state.villager.owned = true;
-  // Set once, here -- this is the location the villager works forever
-  // after, regardless of where the player wanders off to (see forage.js's
-  // villagerPoolId()). The upkeep clock starts now too; nothing's been
-  // donated yet, so the very first 24h check will find the village short
-  // and starved until something is.
-  state.villager.homeLocation = state.currentLocation;
-  kickVillageUpkeepIfIdle();
-  save();
-  updateWalletNote();
-  kickForageIfIdle();
-  refreshForage();
-  buildTownship();
-}
-
-function upgradeForagingVillager(btn) {
-  if (!state.villager.owned || state.villager.fastHands) return;
-  if (state.shards < VILLAGER_UPGRADE_COST) { shake(btn); return; }
-  state.shards -= VILLAGER_UPGRADE_COST;
-  state.villager.fastHands = true;
-  save();
-  updateWalletNote();
-  buildTownship();
-}
-
-const FASTER_PCT = Math.round((1 - VILLAGER_UPGRADE_MULT) * 100);
-
-function foragingVillagerCard() {
-  const eligible = foragingLevel() >= VILLAGER_LEVEL;
-  const owned = state.villager.owned;
-
-  const card = document.createElement("div");
-  card.className = "township-card";
-
-  const head = document.createElement("div");
-  head.className = "township-card-head";
-  const name = document.createElement("span");
-  name.className = "township-card-name";
-  name.textContent = "Foraging Villager";
-  const status = document.createElement("span");
-  status.className = "township-card-status";
-  status.textContent = owned
-    ? (state.village.starved ? "Out of supplies" : "Working " + ((LOCATIONS[state.villager.homeLocation] || {}).name || ""))
-    : eligible ? "Ready to hire" : "Foraging Lv " + VILLAGER_LEVEL + " required";
-  head.append(name, status);
-  card.append(head);
-
-  if (!owned) {
-    const btn = actionButton(
-      "\u{1F9D1}\u{200D}\u{1F33E}", "Hire",
-      "Forages on your own, even while you're away", VILLAGER_COST
-    );
-    btn.classList.toggle("unaffordable", !eligible || state.shards < VILLAGER_COST);
-    btn.addEventListener("click", function () { hireForagingVillager(btn); });
-    card.append(btn);
-    return card;
-  }
-
-  if (state.villager.fastHands) {
-    const done = actionButton(
-      "✨", "Efficient Villager (owned)",
-      FASTER_PCT + "% faster foraging"
-    );
-    done.classList.add("unaffordable");
-    card.append(done);
-  } else {
-    const btn = actionButton(
-      "✨", "Efficient Villager",
-      FASTER_PCT + "% faster foraging", VILLAGER_UPGRADE_COST
-    );
-    btn.classList.toggle("unaffordable", state.shards < VILLAGER_UPGRADE_COST);
-    btn.addEventListener("click", function () { upgradeForagingVillager(btn); });
-    card.append(btn);
-  }
-  return card;
-}
-
 // ------------------------------------------------------------- upkeep
 
-// Every currently-hired villager (the Foraging Villager plus every worker
-// in state.workers) counts toward the one shared upkeep bill -- hiring a
+// Every currently-assigned villager (Forager included, now just another
+// WORKERS role) counts toward the one shared upkeep bill -- assigning a
 // second or third villager doesn't cost more Shards to feed per villager,
 // but does mean more food/heat drawn each VILLAGE_UPKEEP_MS.
 function headcount() {
-  return (state.villager.owned ? 1 : 0) + state.workers.length;
+  return state.workers.length;
 }
 
 // Called every tick, unconditionally (see main.js) -- same "runs in the
@@ -336,11 +263,15 @@ function openHeatPicker() {
   openSheet("Donate Heat");
 }
 
-// Only shown once a villager actually exists (Foraging Villager or any
-// worker) -- there's nothing to keep fed before that, and no stockpile
-// worth looking at either.
+// Only shown once a villager actually exists -- there's nothing to keep
+// fed before that, and no stockpile worth looking at either.
 function villageUpkeepCard() {
-  if (headcount() === 0) return null;
+  if (headcount() === 0) {
+    const empty = document.createElement("div");
+    empty.className = "inv-empty";
+    empty.textContent = "Assign a villager below to start Village Upkeep.";
+    return empty;
+  }
 
   const card = document.createElement("div");
   card.className = "township-card";
@@ -379,62 +310,13 @@ function villageUpkeepCard() {
   return card;
 }
 
-// -------------------------------------------------------------- workers
-
-// One card per WORKERS role -- same "Hire" action-button shape as the
-// Foraging Villager's own card, just without an upgrade tier (none of
-// these have one yet). Status reads, in priority order: already working;
-// the village's full (build a House to raise the cap); the role's own
-// station hasn't been built yet; or ready to hire.
-function workerCard(role) {
-  const w = WORKERS[role];
-  const hired = state.workers.some(function (worker) { return worker.role === role; });
-  const built = !!state.buildings[w.building];
-
-  const card = document.createElement("div");
-  card.className = "township-card";
-
-  const head = document.createElement("div");
-  head.className = "township-card-head";
-  const name = document.createElement("span");
-  name.className = "township-card-name";
-  name.textContent = w.icon + " " + w.name;
-  const status = document.createElement("span");
-  status.className = "township-card-status";
-  status.textContent = hired
-    ? "Working"
-    : !built ? "Requires " + BUILDINGS[w.building].name
-    : state.workers.length >= workerCap() ? "Village full — build a House"
-    : "Ready to hire";
-  head.append(name, status);
-  card.append(head);
-
-  const note = document.createElement("div");
-  note.className = "village-stock";
-  note.textContent = w.note;
-  card.append(note);
-
-  if (!hired) {
-    const btn = actionButton(w.icon, "Hire " + w.name, w.note, VILLAGER_COST);
-    btn.classList.toggle("unaffordable", !canHireWorker(role) || state.shards < VILLAGER_COST);
-    btn.addEventListener("click", function () {
-      if (!canHireWorker(role) || state.shards < VILLAGER_COST) { shake(btn); return; }
-      hireWorker(role);
-      updateWalletNote();
-      buildTownship();
-    });
-    card.append(btn);
-  }
-
-  return card;
-}
-
 // -------------------------------------------------------------- housing
 
 // A repeating purchase, same "flat, non-doubling" shape Beehive's own
-// honey-slot expansion already uses -- each House raises workerCap() by 1
-// (see workers.js). Shown once Township itself exists, which it always
-// does here (this whole screen is only reachable once it's built).
+// honey-slot expansion already uses -- each House raises workerCap() by
+// HOUSE_WORKER_SLOTS (see workers.js). Shown once Township itself exists,
+// which it always does here (this whole screen is only reachable once
+// it's built).
 function housingCard() {
   const houses = state.housing[state.currentLocation] || 0;
 
@@ -448,12 +330,12 @@ function housingCard() {
   name.textContent = "\u{1F3E0} Housing";
   const status = document.createElement("span");
   status.className = "township-card-status";
-  status.textContent = houses + " built · worker cap " + workerCap();
+  status.textContent = houses + " built · " + workerCap() + " villager slots";
   head.append(name, status);
   card.append(head);
 
   const affordable = canAfford(HOUSE_COST);
-  const btn = actionButton("\u{1F3E0}", "Build House", "+1 worker cap");
+  const btn = actionButton("\u{1F3E0}", "Build House", "+" + HOUSE_WORKER_SLOTS + " villager slots");
   const costEl = document.createElement("span");
   costEl.className = "villager-hire-cost";
   costEl.replaceChildren.apply(costEl, buildCostNodes(HOUSE_COST));
@@ -472,14 +354,144 @@ function housingCard() {
   return card;
 }
 
+// -------------------------------------------------------------- workers
+
+// One real .pill per WORKERS role, Forager included (2026-09-04, second
+// pass -- previously its own bespoke .township-card). Three states:
+//   - locked: the role's own building isn't built yet, or (Forager only,
+//     so far) its skill hasn't reached WORKERS[role].unlockLevel -- the
+//     pill shows *only* "Requires (Skill) Level (x)" when it's a skill
+//     gate specifically, per the request ("don't show any information on
+//     the pill except..."), or the building's own name otherwise.
+//   - unassigned but unlocked: tap to assign into any free slot.
+//   - assigned: icon becomes the role's own current "master resource" (or
+//     the role's own emoji for a bespoke role with no output, e.g.
+//     Forager/Cook), the level bar shows unlockedTierCount()/maxLevelFor()
+//     (already "MAX" for a single-tier role the instant it's assigned,
+//     same "already at max level" the request calls for on the Forager
+//     specifically), and tapping unassigns it.
+function workerCard(role) {
+  const w = WORKERS[role];
+  const worker = getWorker(role);
+  const assigned = !!worker;
+  const built = !w.building || !!state.buildings[w.building];
+  const unlocked = roleUnlocked(role);
+  const maxLevel = maxLevelFor(role);
+  const tierCount = unlockedTierCount(role);
+
+  const pill = document.createElement("button");
+  pill.className = "pill worker-pill";
+
+  if (assigned) {
+    const levelFill = document.createElement("div");
+    levelFill.className = "pill-level-fill";
+    levelFill.style.width = (tierCount / maxLevel * 100).toFixed(1) + "%";
+    const levelBadge = document.createElement("span");
+    levelBadge.className = "pill-level-badge";
+    levelBadge.textContent = String(tierCount);
+    pill.append(levelFill, levelBadge);
+  }
+
+  const icon = document.createElement("span");
+  icon.className = "pill-icon";
+  const img = document.createElement("img");
+  img.className = "sprite-img";
+  img.alt = "";
+  img.draggable = false;
+  const fallback = document.createElement("span");
+  fallback.className = "sprite-fallback";
+  icon.append(img, fallback);
+
+  const masterOutput = assigned ? masterOutputFor(role) : null;
+  if (masterOutput) {
+    fallback.style.background = TINTS[masterOutput] || "#9a8f7d";
+    useSprite(icon, "items/" + slug(masterOutput));
+  } else {
+    fallback.textContent = w.icon;
+  }
+
+  const body = document.createElement("span");
+  body.className = "pill-body";
+  const name = document.createElement("span");
+  name.className = "pill-name";
+  name.textContent = w.name;
+  const sub = document.createElement("span");
+  sub.className = "pill-sub";
+
+  const price = document.createElement("span");
+  price.className = "villager-hire-cost worker-pill-price worker-pill-maxed";
+
+  if (!unlocked) {
+    // Per the request: show *only* the skill-gate text, nothing else, for
+    // a role that needs a skill level it hasn't reached yet. A role
+    // that's simply missing its building (no unlockLevel involved, or its
+    // level is already met but the building isn't built) still shows the
+    // normal "Requires <Building>" sub instead -- there's no skill to
+    // name in that case.
+    const skill = roleSkill(role);
+    if (w.unlockLevel && skill && roleSkillLevel(role) < w.unlockLevel) {
+      sub.textContent = "Requires " + skill.skillName + " Level " + w.unlockLevel;
+    } else {
+      sub.textContent = "Requires " + BUILDINGS[w.building].name;
+    }
+    price.textContent = "";
+    pill.classList.add("unaffordable", "worker-pill-locked");
+    pill.addEventListener("click", function () { shake(pill); });
+  } else if (!assigned) {
+    sub.textContent = freeSlots() > 0 ? w.note : "No free villager slots — build a House";
+    price.textContent = freeSlots() > 0 ? "Assign" : "Full";
+    pill.classList.toggle("unaffordable", freeSlots() <= 0);
+    pill.addEventListener("click", function () {
+      if (!canAssignWorker(role)) { shake(pill); return; }
+      assignWorker(role);
+      updateWalletNote();
+      refreshForage();
+      buildTownship();
+    });
+  } else {
+    sub.textContent = "Working — " + (masterOutput || w.note);
+    price.textContent = "Unassign";
+    pill.addEventListener("click", function () {
+      unassignWorker(role);
+      refreshForage();
+      buildTownship();
+    });
+  }
+
+  body.append(name, sub);
+  pill.append(icon, body, price);
+  return pill;
+}
+
+// -------------------------------------------------------------------- tabs
+
+let activeTab = "upkeep";   // default per the request
+
+function setTownshipTab(tab) {
+  activeTab = tab;
+  el("township-view-upkeep").classList.toggle("active", tab === "upkeep");
+  el("township-view-housing").classList.toggle("active", tab === "housing");
+  drawTownshipTab();
+}
+
+function drawTownshipTab() {
+  const wrap = el("township-tab");
+  wrap.replaceChildren();
+  wrap.append(activeTab === "housing" ? housingCard() : villageUpkeepCard());
+}
+
+el("township-view-upkeep").addEventListener("click", function () { setTownshipTab("upkeep"); });
+el("township-view-housing").addEventListener("click", function () { setTownshipTab("housing"); });
+
 export function buildTownship() {
+  const slots = el("township-slots");
+  slots.textContent = assignedCount() + " / " + workerCap() + " villager slots assigned";
+
   const wrap = el("township-list");
   wrap.replaceChildren();
-  wrap.append(foragingVillagerCard());
   Object.keys(WORKERS).forEach(function (role) { wrap.append(workerCard(role)); });
-  wrap.append(housingCard());
-  const upkeep = villageUpkeepCard();
-  if (upkeep) wrap.append(upkeep);
+
+  drawTownshipTab();
 }
 
 el("back-township").addEventListener("click", function () { show("home"); });

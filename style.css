@@ -768,20 +768,15 @@ body {
 .bar.xp-bar.small { height: 3px; margin: 4px 0 0; }
 
 /* ============================== skills screen ============================ */
-/* Two columns once there's room for them (a wide window/tablet), one
-   column on an actual phone-width viewport -- auto-fit/minmax means this
-   never needs a manual breakpoint, it just reflows with whatever width
-   #app/.screen actually has. Redesigned (2026-09-04) to read closer to a
-   game-y "stat card" grid: a bigger bordered icon slot, and a segmented
-   (tick-marked) XP bar instead of one smooth fill. */
+/* One column, by request -- an earlier pass tried a responsive two-column
+   grid, reverted back to the simple single-column list every other
+   .craft-list-shaped screen in this game already uses. Still redesigned
+   (2026-09-04) to read closer to a game-y "stat card" look: a bigger
+   bordered icon slot, and a segmented (tick-marked) XP bar instead of one
+   smooth fill. */
 .skills-list {
-  display: grid;
-  /* 200px, not a rounder 240 -- #app/.screen caps out at 480px even on a
-     wide window (this game's whole canvas is phone-shaped by design), so
-     240px-minimum columns would never actually fit two side by side there.
-     200px clears two within that same 480px cap while still collapsing to
-     one on a genuinely narrow phone. */
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 10px;
 }
 .skill-row {
@@ -881,9 +876,13 @@ body {
    The actual confirmation is a second step (see .reset-warning/
    .reset-confirm-btn below, in the shared sheet) -- this alone never
    touches the save. */
-.reset-save-btn {
-  width: 100%;
+.skills-footer-actions {
+  display: flex;
+  gap: 10px;
   margin-top: 18px;
+}
+.reset-save-btn {
+  flex: 1;
   padding: 12px;
   background: transparent;
   border: 1px solid var(--warn);
@@ -894,6 +893,23 @@ body {
   cursor: pointer;
 }
 .reset-save-btn:active { background: rgba(224, 104, 79, 0.12); }
+
+/* Gold, not the reset button's own --warn red -- this one isn't
+   destructive by itself (every action inside still just saves+reloads,
+   nothing fires the moment this button itself is tapped), so it should
+   read as "tools," not "careful." */
+.dev-room-btn {
+  flex: 1;
+  padding: 12px;
+  background: transparent;
+  border: 1px solid var(--gold);
+  border-radius: 12px;
+  color: var(--gold);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dev-room-btn:active { background: rgba(216, 189, 106, 0.12); }
 
 /* ------------------------------------------------------------- collection
    Animal-Crossing-style completionist log (journal.js's buildCollection())
@@ -1201,8 +1217,33 @@ body {
   border-radius: 999px;
   padding: 4px 10px;
 }
+
+/* Township's own worker roster (2026-09-04 redesign, reworked again same
+   day) -- a real .pill per role (Forager included, now just another
+   WORKERS entry), same icon/body/level-bar shape every Craft/Station pill
+   already uses, with .villager-hire-cost reused as-is for the right-hand
+   label ("Assign", "Unassign", "Full", or blank while locked -- there's no
+   more Shard price to show, assigning is free). Sits in its own flex
+   column of cards, one .worker-pill per line, rather than crammed
+   alongside other township-card content. */
+.worker-pill { margin-bottom: 8px; }
+/* Every worker-pill label reuses .villager-hire-cost's own gold styling
+   rather than its Shard-price look -- .worker-pill-maxed just suppresses
+   the " Shards" suffix .villager-hire-cost::after normally adds, applied
+   unconditionally here since none of these labels are ever a currency
+   amount any more. */
+.worker-pill-price.worker-pill-maxed::after { content: ""; }
+.worker-pill-price.worker-pill-maxed { color: var(--gold); }
 .villager-hire.unaffordable { opacity: 0.55; }
 .villager-hire.shake { animation: nope 0.32s ease; }
+
+/* The "X / Y villager slots assigned" line at the top of Township, above
+   the roster -- plain text, not a card, same idea as .field-sub. */
+.township-slots {
+  font-size: 12.5px;
+  color: var(--dim);
+  margin-bottom: 10px;
+}
 
 /* Shown on Combat's idle screen only while isNight() is true (see
    combat.js's refreshCombat()) -- warns the player what they're walking
@@ -1482,6 +1523,25 @@ body {
    (there's no single tint that means "nothing") and dimmer text so it
    doesn't read as just another item to equip. */
 .unequip-row .seed-name { color: var(--dim); }
+
+/* Bag/Storage only -- moves everything at once to the other container
+   except FOODS (see inventory.js's moveAll()). Same outline-button
+   language as .dev-room-btn -- not destructive (nothing here can't just
+   be moved right back), so it doesn't need --warn's "careful" framing. */
+.inv-move-all-btn {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 9px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 640;
+  cursor: pointer;
+}
+.inv-move-all-btn:active { background: var(--panel-2); }
 
 .inv-toggle {
   display: flex;

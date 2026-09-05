@@ -12,7 +12,7 @@
 // on a filled slot means: there's exactly one of that item, and it's either
 // in the bag grid or in its slot, never drawn twice.
 
-import { TINTS, EQUIP_SLOTS, EQUIPMENT, WEAPONS, STORAGE_SLOTS } from "./data.js";
+import { TINTS, EQUIP_SLOTS, EQUIPMENT, WEAPONS, STORAGE_SLOTS, FOODS } from "./data.js";
 import {
   state, save, bagSlotCap, bagSlotsUsed, bagRoomFor, storageSlotsUsed, storageRoomFor,
   stackCapFor, slotsForQty,
@@ -238,16 +238,20 @@ export function buildInventory() {
   const equipPage = el("equip-page");
   const hint = el("inv-hint");
   const grid = el("inv-grid");
+  const moveAllBtn = el("inv-move-all-btn");
 
   if (view === "equipment") {
     equipPage.classList.remove("hidden");
     hint.classList.add("hidden");
     grid.classList.add("hidden");
+    moveAllBtn.classList.add("hidden");
     return;
   }
   equipPage.classList.add("hidden");
   hint.classList.remove("hidden");
   grid.classList.remove("hidden");
+  moveAllBtn.classList.remove("hidden");
+  moveAllBtn.textContent = "Move All to " + (view === "bag" ? "Storage" : "Bag");
 
   const cap = slotCapFor(view);
   const used = slotsUsedFor(view);
@@ -379,6 +383,44 @@ function openTransferPicker(name) {
   openSheet("Move " + name);
 }
 
+// Moves everything in the current view's container to the other one, in
+// a single tap -- except FOODS (kept back on purpose, per the request, so
+// a food supply doesn't get swept off to Storage/Bag right when Combat's
+// own Eat action needs it close at hand) and equipped items (never in
+// `from` to begin with -- equip() already physically moves an item out of
+// the bag the instant it's worn, so there's nothing here to exclude by
+// hand). Same per-item destination-room clamp the single-item picker
+// already enforces, just applied across every stack at once instead of
+// one at a time -- whatever doesn't fit stays put and the player's told,
+// rather than silently vanishing or blocking the rest of the move.
+function moveAll() {
+  const from = bagFor(view);
+  const toBag = view === "storage";
+  const to = toBag ? state.bag : state.storage;
+  const roomFor = toBag ? bagRoomFor : storageRoomFor;
+
+  let movedAny = false;
+  let blockedAny = false;
+  Object.keys(from).forEach(function (name) {
+    if (FOODS[name]) return;
+    const owned = itemGet(from, name);
+    if (owned <= 0) return;
+    const qty = Math.min(owned, roomFor(name));
+    if (qty > 0) {
+      itemAdd(from, name, -qty);
+      itemAdd(to, name, qty);
+      movedAny = true;
+    }
+    if (qty < owned) blockedAny = true;
+  });
+
+  if (movedAny) {
+    save();
+    buildInventory();
+  }
+  if (blockedAny) showToast((toBag ? "Bag" : "Storage") + " full — moved what fit");
+}
+
 function setView(next) {
   view = next;
   el("inv-view-equipment").classList.toggle("active", view === "equipment");
@@ -390,5 +432,7 @@ function setView(next) {
 el("inv-view-equipment").addEventListener("click", function () { setView("equipment"); });
 el("inv-view-bag").addEventListener("click", function () { setView("bag"); });
 el("inv-view-storage").addEventListener("click", function () { setView("storage"); });
+
+el("inv-move-all-btn").addEventListener("click", moveAll);
 
 el("back-inventory").addEventListener("click", function () { show("home"); });

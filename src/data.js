@@ -445,23 +445,15 @@ export const FORAGE_POOLS = {
 export const FORAGE_XP = 8;
 export const FORAGE_MAX_LEVEL = 100;
 
-// Unlocked at VILLAGER_LEVEL: a one-time Shards purchase (state.villager,
-// see state.js) that automatically taps the Forage pill itself, once every
+// Unlocked at VILLAGER_LEVEL: the Forager profession (WORKERS.forager
+// below, assigned for free from the Township screen -- src/township.js/
+// workers.js) that automatically taps the Forage pill itself, once every
 // VILLAGER_TICK_MS -- literally the same click a player's own tap would be,
 // just on a timer. A no-op if a gather is already running (started by the
 // player or a previous villager tick), same as tapping any other already-
-// running pill. Cost is a first-pass number, not balanced. Hiring and
-// upgrading both happen from the Township screen (src/township.js) now,
-// not an inline button on the forage bar.
+// running pill.
 export const VILLAGER_LEVEL = 3;   // was 10 -- 2026-08-28
-export const VILLAGER_COST = 250;
 export const VILLAGER_TICK_MS = 30000;   // was 2500 (swing-based) -- 2026-08-31
-// The first villager upgrade -- a flat multiplier on VILLAGER_TICK_MS,
-// applied fresh to every tick (not baked in once), once bought
-// (state.villager.fastHands). Only one tier exists so far; Township is
-// built to show a list, not one fixed slot, so more can slot in later.
-export const VILLAGER_UPGRADE_COST = 400;
-export const VILLAGER_UPGRADE_MULT = 0.75;
 
 // ------------------------------------------------------------ worker villagers
 //
@@ -471,30 +463,59 @@ export const VILLAGER_UPGRADE_MULT = 0.75;
 // station ids directly) and src/workers.js for the actual hire/tick logic;
 // the Township screen (src/township.js) renders one hire card per role.
 //
-// Hiring costs the same VILLAGER_COST Shards as the Foraging Villager --
-// no separate price was given, so this reuses the one existing precedent
-// rather than inventing a second number.
+// Reworked (2026-09-04, second pass): hiring no longer costs Shards at
+// all. Every villager slot at a location comes from Houses built there
+// (HOUSE_WORKER_SLOTS each -- see workerCap() in workers.js); assigning an
+// unlocked profession to a free slot is free, and a slot can be freely
+// unassigned and reassigned to a different profession later. A profession
+// is "unlocked" once its building is built and (for the few that need one,
+// e.g. the Forager below) the associated skill reaches WORKERS[role].
+// unlockLevel -- there's no more per-worker Shard-paid leveling; which
+// stationIds tier an assigned worker can attempt is now gated purely by
+// that skill's own level (see WORKER_TIER_LEVELS below and workers.js's
+// unlockedStationIds()).
 //
 // `state.workers` starts empty and can hold up to workerCap() entries
-// (src/workers.js) -- BASE_WORKER_CAP to start, +1 per House built at
-// Township (see HOUSE_COST below). A worker's own tick interval is
-// WORKER_TICK_MULT times whatever their role's own craft actually takes
-// at the player's current skill level (a 30s craft means a 2.5-minute
-// villager attempt, per the request) -- read fresh each attempt, same
-// "speed read at the moment a cycle starts" rule Foraging's own
-// villagerTickMs() already follows, so leveling up mid-run speeds up the
-// villager's next attempt too, not just the player's own taps.
-export const BASE_WORKER_CAP = 3;
+// (src/workers.js) -- housing-derived, see HOUSE_WORKER_SLOTS below. A
+// worker's own tick interval is WORKER_TICK_MULT times whatever their
+// role's own craft actually takes at the player's current skill level (a
+// 30s craft means a 2.5-minute villager attempt, per the original
+// request) -- read fresh each attempt, same "speed read at the moment a
+// cycle starts" rule Foraging's own villagerTickMs() already follows, so
+// leveling up mid-run speeds up the villager's next attempt too, not just
+// the player's own taps.
 export const WORKER_TICK_MULT = 5;
+// Skill level required to unlock each successive stationIds tier for a
+// tiered role (index 0 -- the first tier -- is always free the moment a
+// worker's assigned to that role). No number was given for these beyond
+// the original "5x slower" hire-time example, so this is a first-pass
+// default: tier 1 at level 10, tier 2 at level 25 -- the longest
+// stationIds list in WORKERS is 3 entries, so this only ever needs 3
+// slots. See workers.js's unlockedStationIds().
+export const WORKER_TIER_LEVELS = [0, 10, 25];
+// A worker's own idle-processing speed bonus, compounding per level of
+// whatever skill their current station trains (2026-09-04, per the
+// request) -- 1.01 = +1% faster per level, stacking multiplicatively, so
+// a level-100 skill (MAX_SKILL_LEVEL, skills.js) is roughly 2.7x the
+// base villager speed. Distinct from GROWTH_PER_LEVEL (skills.js), which
+// is the *player's own* linear per-level speedup on a manual tap --
+// "idle speed" in the request specifically meant the villager's own
+// automatic attempts, not shared with the player's. See workers.js's own
+// workerSpeedMult().
+export const WORKER_LEVEL_SPEED_MULT = 1.01;
 
 // A House -- built at Township, any number of times, same "flat repeating
 // purchase" shape Beehive's own honey-slot expansion already uses -- each
-// one raises workerCap() by 1. Bronze Nails doesn't exist yet (the user's
-// own placeholder, "a material added later in the bronze age"), so this is
-// real, priced data with one ingredient nothing currently produces -- same
-// "real spot, nothing behind it yet" treatment Oak Planks/Fine String
-// already got for the Fishing Rod.
+// one raises workerCap() by HOUSE_WORKER_SLOTS (villager slots are now
+// entirely house-derived, no separate base cap on top -- see workerCap()
+// in workers.js). The player starts with one House already built, so the
+// starting cap is exactly HOUSE_WORKER_SLOTS. Bronze Nails doesn't exist
+// yet (the user's own placeholder, "a material added later in the bronze
+// age"), so this is real, priced data with one ingredient nothing
+// currently produces -- same "real spot, nothing behind it yet" treatment
+// Oak Planks/Fine String already got for the Fishing Rod.
 export const HOUSE_COST = { "Birch Planks": 6, "Bronze Nails": 12 };
+export const HOUSE_WORKER_SLOTS = 3;
 
 // -------------------------------------------------------------- upkeep
 //
@@ -880,8 +901,7 @@ export const SHIELDS = {
 // recoveryMs() multiplies by `recoveryBoostMult` for as long as that
 // counter is still above 0, ticking down once per Attack specifically
 // (not Defend/Eat/Flee -- "next 5 attacks" per the request). First-pass
-// number, not balanced -- matches VILLAGER_UPGRADE_MULT's own 0.75 for a
-// "noticeably faster, not broken" speed-up.
+// number, not balanced -- a "noticeably faster, not broken" speed-up.
 export const FOODS = {
   "Berries": { heal: 1 },
   "Red Berries": { heal: 1 },
@@ -1402,16 +1422,43 @@ export const STATIONS = {
 };
 
 // --------------------------------------------------------- worker villagers
-// One hireable worker per station-shaped role (see BASE_WORKER_CAP/
-// WORKER_TICK_MULT above and src/workers.js for the hire/tick mechanics).
-// `building` is the BUILDINGS id that has to be built before this role is
-// even hireable -- the worker's whole job is standing at a station that has
-// to physically exist first. `stationId` names a STATIONS entry the worker
-// auto-triggers exactly like a player's own tap on that pill; Cook and
-// Beekeeper aren't STATIONS entries at all (Campfire and Beehive are both
-// bespoke systems, see campfire.js/beehive.js), so they're handled as their
-// own two special cases in workers.js instead of through `stationId`.
+// One assignable worker per profession-shaped role (see WORKER_TICK_MULT
+// above and src/workers.js for the assign/tick mechanics). `building` is
+// the BUILDINGS id that has to be built before this role is even
+// assignable -- the worker's whole job is standing at a station that has
+// to physically exist first (null for the Forager, who needs no building
+// at all). `stationIds` names an ordered list of every STATIONS recipe
+// this role can eventually run, tier 0 being what it works the moment
+// it's assigned -- which tiers beyond that are currently unlocked is read
+// straight off the role's own skill level (WORKER_TIER_LEVELS above, see
+// workers.js's unlockedStationIds()), not anything paid per-worker. Cook
+// and Beekeeper have no `stationIds` at all -- both are bespoke systems
+// (Campfire, Beehive) rather than a fixed STATIONS recipe list, so
+// neither has tiers to unlock; see workers.js's own maxLevelFor() for how
+// a missing `stationIds` reads as a flat max level of 1 (always "MAX" the
+// moment it's assigned).
+//
+// `unlockLevel` (optional) gates the whole role behind a skill level
+// before it can be assigned at all, regardless of whether its building
+// exists -- checked against the skill named by `skillXp`/`skillName` for
+// a bespoke role (only the Forager has one so far, per the request:
+// "currently the only villager to unlock is the forager"), or the first
+// stationIds entry's own STATIONS skill for a tiered role. See
+// workers.js's roleUnlocked()/roleSkill().
 export const WORKERS = {
+  // Merged in (2026-09-04, second pass) from the old standalone Foraging
+  // Villager (state.villager) -- now just another assignable profession,
+  // competing for the same house-derived slots as everyone else, single-
+  // tier (no stationIds -- there's nothing to level into) and so already
+  // "max level" the instant it's assigned, per the request. Its own
+  // auto-gather cycle still lives in forage.js (settleForage()), not the
+  // generic attemptRole() below -- see that file's own comments.
+  forager: {
+    name: "Forager", icon: "\u{1F9D1}\u{200D}\u{1F33E}",
+    building: null,
+    skillXp: "foragingXp", skillName: "Foraging", unlockLevel: VILLAGER_LEVEL,
+    note: "Forages on your own, even while you're away",
+  },
   cook: {
     name: "Cook", icon: "\u{1F468}\u{200D}\u{1F373}",
     building: "campfire",
@@ -1419,22 +1466,22 @@ export const WORKERS = {
   },
   spinster: {
     name: "Spinster", icon: "\u{1F9F6}",
-    building: "spinningWheel", stationId: "spinningWheel",
+    building: "spinningWheel", stationIds: ["spinningWheel", "clothSpinner", "yarn"],
     note: "Spins Flax into String",
   },
   mason: {
     name: "Mason", icon: "\u{1FAA8}",
-    building: "stoneCutter", stationId: "stoneCutter",
+    building: "stoneCutter", stationIds: ["stoneCutter", "basaltCutter"],
     note: "Cuts Stone into Stone Block",
   },
   millworker: {
     name: "Millworker", icon: "\u{1FA9A}",
-    building: "sawmill", stationId: "sawmill",
+    building: "sawmill", stationIds: ["sawmill", "birchPlanks"],
     note: "Saws Pine Logs into Pine Planks",
   },
   miller: {
     name: "Miller", icon: "\u{1F9B4}",
-    building: "grindStone", stationId: "grindStone",
+    building: "grindStone", stationIds: ["grindStone"],
     note: "Grinds Bones into Bonemeal",
   },
   beekeeper: {
@@ -1442,22 +1489,25 @@ export const WORKERS = {
     building: "beehive",
     note: "Starts a new batch of Honey the moment a slot's free",
   },
+  // Base tier is Flint Arrows, not Short Bow -- "a villager that auto
+  // crafts... Flint Arrows" was the original, explicit request; Short Bow
+  // is the level-2 unlock.
   fletcher: {
     name: "Fletcher", icon: "\u{1FAB6}",
-    building: "fletchingBench", stationId: "flintArrows",
+    building: "fletchingBench", stationIds: ["flintArrows", "shortBow"],
     note: "Crafts Flint Arrows",
   },
   tanner: {
     name: "Tanner", icon: "\u{1F97E}",
-    building: "tanningStation", stationId: "tanningStation",
+    building: "tanningStation", stationIds: ["tanningStation"],
     note: "Tans Animal Hide into Leather",
   },
-  // Auto-crafts Cloth specifically (loomCloth), not Fabric (loomFabric) --
-  // "a villager that auto crafts cloth called Weaver" was explicit about
-  // which of the Loom's two recipes this one works.
+  // Base tier is Cloth (loomCloth) -- "a villager that auto crafts cloth
+  // called Weaver" was explicit about which of the Loom's two recipes
+  // this one starts on; Fabric (loomFabric) is the level-2 unlock.
   weaver: {
     name: "Weaver", icon: "\u{1FAA1}",
-    building: "loom", stationId: "loomCloth",
+    building: "loom", stationIds: ["loomCloth", "loomFabric"],
     note: "Weaves String into Cloth",
   },
 };

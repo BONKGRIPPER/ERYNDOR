@@ -1,103 +1,214 @@
 // ================================================================= workers
 //
-// The second villager system (2026-09-04), alongside the Foraging
-// Villager's own single-slot hire in forage.js/township.js -- one hire per
-// station-shaped role (WORKERS in data.js: Cook, Spinster, Mason,
-// Millworker, Miller, Beekeeper, Fletcher, Tanner), each independently
-// hired and independently ticking, up to workerCap() at once. Hire/cap
-// bookkeeping lives here; the actual per-tick trigger for each role either
-// calls into stations.js's generic tryStartStation() (every role that has
-// a `stationId`) or one of the two bespoke systems' own auto-trigger
-// (campfire.js's tryAutoCook(), beehive.js's tryAutoBeehive()) -- workers.js
-// itself never touches state.stations/campfire/beehiveSlots directly, same
-// separation of concerns every other "who actually owns this state" split
-// in this game already follows.
+// The villager-labor system (2026-09-04, reworked a second time same day)
+// -- one assignable worker per profession-shaped role (WORKERS in data.js:
+// Forager, Cook, Spinster, Mason, Millworker, Miller, Beekeeper, Fletcher,
+// Tanner, Weaver), each independently assigned and independently ticking,
+// up to workerCap() at once. Assign/cap bookkeeping lives here; the actual
+// per-tick trigger for each role either calls into stations.js's generic
+// tryStartStation() (every role with a `stationIds` list) or one of the
+// two bespoke systems' own auto-trigger (campfire.js's tryAutoCook(),
+// beehive.js's tryAutoBeehive()) -- workers.js itself never touches
+// state.stations/campfire/beehiveSlots directly, same separation of
+// concerns every other "who actually owns this state" split in this game
+// already follows. The Forager is a third bespoke case, but its own tick
+// loop lives in forage.js (settleForage()), not here -- see this file's
+// settleWorkers() for why it's explicitly skipped below.
 //
-// The Township screen (src/township.js) owns the hire/House UI; this file
-// is mechanics only, same split as forage.js (mechanics) vs. township.js
-// (the Foraging Villager's own hire card) already established.
+// Reworked (2026-09-04, second pass): there's no more Shard cost to
+// assign a worker, and no more per-worker paid leveling. A location's
+// villager slots come entirely from Houses built there (HOUSE_WORKER_SLOTS
+// each, see workerCap() below); assigning an unlocked profession to a free
+// slot is free, and a slot can be unassigned and reassigned to a different
+// profession at any time. Which stationIds tier an assigned worker can
+// currently attempt is read straight off the relevant skill's own level
+// (WORKER_TIER_LEVELS in data.js) -- see unlockedStationIds() below.
+//
+// The Township screen (src/township.js) owns the assign/unassign/House
+// UI; this file is mechanics only, same split as forage.js (mechanics)
+// vs. township.js (the old Foraging Villager's own hire card) already
+// established.
 
 import {
-  WORKERS, STATIONS, WORKER_TICK_MULT, BASE_WORKER_CAP, COOK_MS, BEEHIVE_HONEY_MS, VILLAGER_COST,
+  WORKERS, STATIONS, WORKER_TICK_MULT, WORKER_LEVEL_SPEED_MULT, WORKER_TIER_LEVELS,
+  HOUSE_WORKER_SLOTS, COOK_MS, BEEHIVE_HONEY_MS, VILLAGER_TICK_MS,
 } from "./data.js";
 import { state, save, kickVillageUpkeepIfIdle } from "./state.js";
-import { effectiveMs, tryStartStation } from "./stations.js";
+import { effectiveMs, tryStartStation, costFor } from "./stations.js";
 import { tryAutoCook } from "./campfire.js";
 import { tryAutoBeehive } from "./beehive.js";
+import { levelFromXp } from "./skills.js";
+import { canAfford } from "./costDisplay.js";
 
-// How long one cycle of this role's own work actually takes right now, at
-// the player's current skill level -- read fresh every call (not cached),
-// same "speed matters at the moment a cycle starts" rule effectiveMs()
-// itself already follows. Cook and Beekeeper have no skill-scaled speed of
-// their own (Cooking grants no skill XP at all; Beekeeping's own XP doesn't
-// speed up the Beehive), so both are flat constants here, same as they are
-// everywhere else in this game.
-function roleDurationMs(role) {
+// The skill a role's tier-unlocking/speed bonus/unlock-level reads from --
+// a tiered role reads it off its own first stationIds entry's own STATIONS
+// skill (every tier of a given role trains the same skill); a bespoke role
+// (Forager) names its own skillXp/skillName directly on WORKERS. Cook has
+// neither -- nothing gates or speeds it beyond its building existing.
+// Exported for township.js's own "Requires (Skill) Level (x)" display.
+export function roleSkill(role) {
   const w = WORKERS[role];
-  if (w.stationId) return effectiveMs(STATIONS[w.stationId]);
-  if (role === "cook") return COOK_MS;
-  if (role === "beekeeper") return BEEHIVE_HONEY_MS;
-  return 0;
+  if (w.stationIds) return STATIONS[w.stationIds[0]];
+  if (w.skillXp) return w;
+  return null;
 }
 
-// The villager's own attempt interval -- WORKER_TICK_MULT (5x) whatever
-// the role's own craft currently takes, per the request ("if an item takes
-// 30 seconds to craft, the villager should auto click the pill every 2.5
-// minutes").
-function workerTickMs(role) {
-  return roleDurationMs(role) * WORKER_TICK_MULT;
+export function roleSkillLevel(role) {
+  const skill = roleSkill(role);
+  return skill ? levelFromXp(state[skill.skillXp]) : 0;
 }
 
-// One attempt at this role's own action -- delegates to whichever system
-// actually owns that station, and never shakes/rejects visibly since
-// nothing's watching a villager's own silent attempt. Returns whether it
-// actually started something.
-function attemptRole(role) {
+// stationIds.length for a tiered role, or a flat 1 for every bespoke role
+// (Forager/Cook/Beekeeper) -- none of those have tiers to progress
+// through. Exported for township.js's own level-bar display.
+export function maxLevelFor(role) {
   const w = WORKERS[role];
-  if (w.stationId) return tryStartStation(w.stationId);
-  if (role === "cook") return tryAutoCook();
-  if (role === "beekeeper") return tryAutoBeehive();
-  return false;
+  return w.stationIds ? w.stationIds.length : 1;
 }
 
-// BASE_WORKER_CAP plus one for every House built anywhere -- see
-// state.housing's own comment in state.js for why this sums across every
-// zone into one global cap rather than restricting a worker to their own
-// hire zone's houses.
+// How many of a tiered role's stationIds tiers the role's own skill level
+// currently clears against WORKER_TIER_LEVELS (tier 0 always counts --
+// nothing to unlock there). 1 (a flat "already maxed") for a bespoke role
+// (Forager/Cook/Beekeeper), which has no tiers to begin with -- same
+// number maxLevelFor() itself returns for one, so a bespoke role's own
+// level bar always reads full. Exported for township.js's own level-bar
+// display.
+export function unlockedTierCount(role) {
+  const w = WORKERS[role];
+  if (!w.stationIds) return 1;
+  const level = roleSkillLevel(role);
+  let count = 0;
+  for (let i = 0; i < w.stationIds.length; i++) {
+    if (level >= (WORKER_TIER_LEVELS[i] || 0)) count = i + 1;
+  }
+  return count;
+}
+
+// Every stationId a tiered role can currently attempt. Empty for a
+// bespoke role (Forager/Cook/Beekeeper), which don't route through this
+// at all -- see attemptRole() below.
+function unlockedStationIds(role) {
+  const w = WORKERS[role];
+  if (!w.stationIds) return [];
+  return w.stationIds.slice(0, unlockedTierCount(role));
+}
+
+// The villager's own idle-processing speed bonus -- compounds
+// WORKER_LEVEL_SPEED_MULT (1.01) once per level of whatever skill this
+// specific station trains, read fresh every attempt same as
+// effectiveMs() itself already is, so leveling that skill mid-run speeds
+// up the very next attempt, not just future assignments. Distinct from
+// (and stacks with) effectiveMs()'s own player-facing GROWTH_PER_LEVEL
+// curve -- this is purely the villager's own extra edge, per the request.
+function workerSpeedMult(cfg) {
+  const level = levelFromXp(state[cfg.skillXp]);
+  return Math.pow(WORKER_LEVEL_SPEED_MULT, level);
+}
+
+// One attempt at this worker's own action, trying every unlocked tier in
+// order until one actually starts (or none can) -- never shakes/rejects
+// visibly since nothing's watching a villager's own silent attempt.
+// Returns the real ms the started cycle will take to auto-attack-style
+// pace the *next* attempt off of (WORKER_TICK_MULT x this, applied by the
+// caller), or null if nothing could start at all this pass.
+function attemptRole(w) {
+  const cfg = WORKERS[w.role];
+  if (cfg.stationIds) {
+    const tiers = unlockedStationIds(w.role);
+    for (let i = 0; i < tiers.length; i++) {
+      const stationCfg = STATIONS[tiers[i]];
+      if (tryStartStation(tiers[i])) return effectiveMs(stationCfg) / workerSpeedMult(stationCfg);
+    }
+    return null;
+  }
+  if (w.role === "cook") return tryAutoCook() ? COOK_MS : null;
+  if (w.role === "beekeeper") return tryAutoBeehive() ? BEEHIVE_HONEY_MS : null;
+  return null;
+}
+
+// Every House built anywhere, times HOUSE_WORKER_SLOTS -- see
+// HOUSE_WORKER_SLOTS's own comment in data.js for why villager slots are
+// now entirely house-derived, no separate base cap layered underneath.
+// Sums across every zone into one global cap rather than restricting a
+// worker to their own assign zone's houses, same reasoning state.housing's
+// own comment in state.js already gives.
 export function workerCap() {
   const houses = Object.keys(state.housing).reduce(function (sum, loc) {
     return sum + (state.housing[loc] || 0);
   }, 0);
-  return BASE_WORKER_CAP + houses;
+  return houses * HOUSE_WORKER_SLOTS;
 }
 
-function isHired(role) {
-  return state.workers.some(function (w) { return w.role === role; });
+export function getWorker(role) {
+  return state.workers.find(function (w) { return w.role === role; });
 }
 
-// A role is hireable once its station's building is actually built, it
-// isn't already hired (one worker per role -- a second one would just
-// collide on the exact same single-slot station, same reasoning the
-// Foraging Villager has always been a single boolean rather than a list),
-// and there's a free slot under workerCap().
-export function canHireWorker(role) {
+export function isAssigned(role) { return !!getWorker(role); }
+
+export function assignedCount() { return state.workers.length; }
+
+export function freeSlots() { return Math.max(0, workerCap() - assignedCount()); }
+
+// A role is unlocked once its building is built (or it needs none, like
+// the Forager) and, if it names an `unlockLevel`, that skill has actually
+// reached it -- currently only the Forager has one ("the only villager to
+// unlock is the forager", per the request). Doesn't check slot
+// availability or whether it's already assigned -- see canAssignWorker()
+// for the full gate.
+export function roleUnlocked(role) {
   const w = WORKERS[role];
-  return !!(w && state.buildings[w.building] && !isHired(role) && state.workers.length < workerCap());
+  if (w.building && !state.buildings[w.building]) return false;
+  if (!w.unlockLevel) return true;
+  return roleSkillLevel(role) >= w.unlockLevel;
 }
 
-// Same VILLAGER_COST Shards as the Foraging Villager's own hire -- no
-// separate price was given for these, so this reuses the one existing
-// precedent rather than inventing a second number.
-export function hireWorker(role) {
-  if (!canHireWorker(role)) return false;
-  if (state.shards < VILLAGER_COST) return false;
-  state.shards -= VILLAGER_COST;
+export function canAssignWorker(role) {
+  const w = WORKERS[role];
+  return !!(w && roleUnlocked(role) && !isAssigned(role) && freeSlots() > 0);
+}
+
+// A first-pass estimate for scheduling the very next attempt, before one
+// has actually run yet -- tier 0's own effectiveMs()/workerSpeedMult()
+// for a tiered role, the bespoke role's own flat interval otherwise, same
+// numbers attemptRole() itself would use (or, for the Forager, the same
+// base villagerTickMs() forage.js applies before any speed bonus -- its
+// own settleForage() loop rereads that fresh on every real tick anyway).
+function estimateTickMs(role) {
+  const cfg = WORKERS[role];
+  if (cfg.stationIds) {
+    const stationCfg = STATIONS[unlockedStationIds(role)[0]];
+    return (effectiveMs(stationCfg) / workerSpeedMult(stationCfg)) * WORKER_TICK_MULT;
+  }
+  if (role === "cook") return COOK_MS * WORKER_TICK_MULT;
+  if (role === "beekeeper") return BEEHIVE_HONEY_MS * WORKER_TICK_MULT;
+  if (role === "forager") return VILLAGER_TICK_MS;
+  return 0;
+}
+
+// Free -- no Shards, no unlock cost beyond roleUnlocked()'s own gate.
+// Starts working immediately, home-anchored to wherever the player
+// currently is (see WORKERS' own comment in data.js on why that's
+// flavor/display only for a station-based role, but is the Forager's
+// actual working zone).
+export function assignWorker(role) {
+  if (!canAssignWorker(role)) return false;
   state.workers.push({
     role: role,
     homeLocation: state.currentLocation,
-    nextTickAt: Date.now() + workerTickMs(role),
+    nextTickAt: Date.now() + estimateTickMs(role),
   });
   kickVillageUpkeepIfIdle();
+  save();
+  return true;
+}
+
+// Returns the slot to the unassigned pool -- the role can be picked back
+// up later (by this or a different worker), starting fresh (a new
+// nextTickAt from scratch, not resuming wherever the old one left off).
+export function unassignWorker(role) {
+  const idx = state.workers.findIndex(function (w) { return w.role === role; });
+  if (idx === -1) return false;
+  state.workers.splice(idx, 1);
   save();
   return true;
 }
@@ -108,17 +219,53 @@ export function hireWorker(role) {
 // advances nextTickAt on success, so a blocked attempt (station busy, out
 // of input material) is retried on a later call rather than silently
 // skipped, same "blocked now, not lost" rule that fix established. Gated
-// on the shared village upkeep, same as the Foraging Villager.
+// on the shared village upkeep, same as the Forager. The Forager itself is
+// explicitly skipped here -- its own tick loop (and away-popup handling)
+// lives entirely in forage.js's settleForage(), which is called
+// separately from main.js; ticking it a second time here would double its
+// production.
 export function settleWorkers() {
   if (state.village.starved) return false;
   let changed = false;
   state.workers.forEach(function (w) {
+    if (w.role === "forager") return;
     while (Date.now() >= w.nextTickAt) {
-      if (!attemptRole(w.role)) break;
+      const ms = attemptRole(w);
+      if (ms === null) break;
       changed = true;
-      w.nextTickAt += workerTickMs(w.role);
+      w.nextTickAt += ms * WORKER_TICK_MULT;
     }
   });
   if (changed) save();
   return changed;
+}
+
+// -------------------------------------------------------- display helpers
+//
+// township.js's own worker card needs to show which specific item a
+// worker is *currently* able to produce at its best tier (the "master
+// resource" per the request) without duplicating the tier-unlock logic
+// above.
+
+// The output item name of a role's own highest currently-unlocked tier --
+// what township.js shows as the card's own icon. Null for a role with no
+// station output to speak of (Forager/Cook/Beekeeper, or a tiered role
+// whose skill hasn't even reached tier 0 yet -- shouldn't happen since
+// tier 0 needs no level at all, but keeps this honest rather than
+// assuming).
+export function masterOutputFor(role) {
+  const cfg = WORKERS[role];
+  if (!cfg.stationIds) return null;
+  const tiers = unlockedStationIds(role);
+  const topId = tiers[tiers.length - 1];
+  return topId ? STATIONS[topId].output : null;
+}
+
+// Whether this worker currently has the inputs on hand for *any* of its
+// unlocked tiers -- purely informational (township.js's own status text),
+// not a gate on anything.
+export function anyTierAffordable(role) {
+  const cfg = WORKERS[role];
+  if (!cfg.stationIds) return true;
+  return unlockedStationIds(role).some(function (id) { return canAfford(costFor(STATIONS[id])); });
 }

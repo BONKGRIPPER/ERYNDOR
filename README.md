@@ -3568,6 +3568,306 @@ count/segmented-bar layout, and the earlier text-collision bug (checked
 by scrolling through the full list including "Woodcutting"/
 "Stonecutting") is gone. No console errors.
 
+### Skills page follow-up: SVG icons tried and reverted, back to one column (2026-09-04)
+
+Two changes from the redesign above got walked back the same session, by
+request:
+
+- A `skillIcons.js` module briefly existed with a hand-drawn inline-SVG
+  line-icon per skill (reusing existing item/station icon paths --
+  Flint Axe's own path for Logging, Short Bow's for Archery, Beehive's
+  own `HIVE_SVG` for Beekeeping, etc. -- plus a couple of new ones for
+  skills with no existing icon to borrow, like a mortar-and-pestle for
+  Grinding). Undone in full: the file is deleted, `skillsScreen.js`'s
+  icon-building code is back to the plain `meta.icon` emoji text it
+  always was, and `.skill-icon .sprite-fallback`'s stroke/fill CSS
+  (added only for those SVGs) is gone too. The sprite pipeline itself is
+  completely unaffected either way -- a real `assets/sprites/skills/
+  <id>.png` still takes over automatically the moment one exists,
+  regardless of what the fallback currently renders.
+- The two-column grid (`repeat(auto-fit, minmax(200px, 1fr))`) is back to
+  a single column (`display: flex; flex-direction: column`), by request.
+  The rest of the same-day redesign -- the bordered icon slot, the
+  segmented tick-marked XP bar -- is untouched; only the column count
+  reverted. The `.skill-name` ellipsis fix (from fitting two columns)
+  stays in place -- harmless now that names have their full row-width
+  back, and still a real safety net if a future skill ever gets an even
+  longer name.
+
+Verified live: Skills page renders as a single column again, all 16 rows
+present with their original emoji icons ("🏹" Archery, "⚔️" Melee,
+etc.), "Woodcutting"/"Stonecutting" both showing in full with no
+truncation needed at full row width, segmented bars and bordered icon
+slots both still in place. No console errors, and no leftover references
+to the deleted `skillIcons.js` anywhere in `src/`.
+
+### First real sprite art: Pine Logs, Foraging, Archery, Sowing (2026-09-04)
+
+The user generated real pixel-art icons in a separate tool and shared
+them in chat; found the actual source PNGs (with alpha transparency
+already baked in) on disk at
+`~/.codex/generated_images/<session>/exec-*.png` by matching content
+against what was pasted, then copied them straight into this game's own
+sprite folders under their expected names -- no code changes anywhere,
+since every one of these paths was already wired up generically:
+
+- `assets/sprites/items/pine-logs.png` -- Pine Logs, picked up by
+  `TINTS`' own generic `items/<slug>` loop (`sprites.js`'s
+  `allSpriteKeys()`).
+- `assets/sprites/forage/basket.png` -- the one persistent Forage bar
+  icon shown on every screen (a fixed key, not per-item).
+- `assets/sprites/skills/foraging.png` -- same basket art, reused for
+  the Skills page's own Foraging row (`SKILLS`' generic `skills/<id>`
+  loop already covers this).
+- `assets/sprites/skills/archery.png`, `assets/sprites/skills/
+  sowing.png` -- same loop, two more skill rows.
+
+`assets/sprites/skills/` didn't exist as a folder yet -- created it,
+same convention every other sprite category already follows.
+
+Four more generated images exist in that same source folder, not yet
+assigned anywhere since it wasn't obvious which skill each was meant for
+(an axe crossed with wheat, a pickaxe with gems, a crossed sword and
+shield, and an arrow crossed with a spool of thread) -- ready to drop in
+the moment the user says which row each one is for.
+
+Verified live: the persistent Forage bar, the Inventory Bag grid's Pine
+Logs card, and the Skills page's Foraging/Archery/Sowing rows all show
+the real art now instead of the emoji/vector fallback, with no console
+errors. Test save reset afterward.
+
+### A Dev Room for playtesting, next to Reset Save (2026-09-04)
+
+A new `src/devRoom.js`, opened from a gold-outlined "Dev Room" button
+that now sits right next to Reset Save on the Journal's Skills page --
+resources, unlocked stations, maxed skills, and time skips, for
+bootstrapping a save worth testing without grinding through the normal
+pace by hand. "Return to the vanilla game afterwards" (the request's own
+words) is just Reset Save, already sitting right there -- nothing here
+needed its own undo, since a normal playthrough was never going to touch
+these buttons anyway.
+
+Every action follows the same shape: mutate `state` directly, `save()`,
+then `location.reload()`. The reload is deliberate -- this game already
+draws everything from `state` fresh on boot, so reloading is the one
+guaranteed-correct way for every screen's own redraw logic (two dozen
+`drawX()`/`buildX()`/`refreshX()` functions spread across as many files)
+to pick up a change made here, without this file importing and calling
+each one by hand.
+
+**Advance Time** (1 hour / 8 hours / 1 day / 7 days) is the one genuinely
+clever piece -- rather than touching `Date.now()` itself (which would
+mean intercepting it everywhere, a much larger and riskier change), it
+shifts every known deadline field in the save *backward* by the chosen
+amount: `state.startedAt`, every plot/logPlot/beehive slot's `readyAt`,
+crafting and station cycles, the mining swing and cooldown, combat's
+three clocks, travel, the fishing trap, village upkeep, every worker's
+`nextTickAt`, the watering can's refill, even market stock decay. This
+works because every timer in this game was already built "deadline, not
+countdown" specifically so a real gap of any length resolves correctly
+on its own -- shifting timestamps back is simulating exactly that gap,
+for free, through settle logic that was already trusted. A new timer
+added later needs one matching line in `devRoom.js`'s own
+`advanceTime()`, the same "one more entry" cost `sprites.js`'s
+`allSpriteKeys()` already asks for elsewhere.
+
+Also: Give 10,000 Shards, Give Starter Materials (a generous pile of the
+most common raw materials, through the normal `gainItem()` so the bag's
+own slot cap still applies), Discover All Items (fills in the Collection
+page), Max All Skills (50,000 XP each), Build All Stations (every
+`BUILDINGS` entry at once, for free), and Fill Village Upkeep (tops off
+Food/Heat so villagers stop starving mid-test).
+
+Verified live: Give 10,000 Shards took `state.shards` 0 -> 10000 across a
+real reload. Build All Stations flipped all 11 `BUILDINGS` entries to
+`true` in one click. Advance Time proved itself against two real
+running timers, not just a visual check -- a Flint Axe craft started
+with a 5-hour deadline correctly completed (bag gained the axe,
+`state.crafting.flintAxe` cleared to `null`) after Advance 8 Hours; a
+24-hour village upkeep window correctly resolved and rescheduled itself
+after Advance 1 Day, with `starved` staying `false` since food/heat were
+already topped off. No console errors. Test save reset afterward.
+
+### "Move All" for Bag and Storage, skipping foods (2026-09-04)
+
+A "Move All to Storage"/"Move All to Bag" button now sits at the top of
+Inventory's Bag and Storage grids (hidden on Equipment) -- moves every
+stack in the current view to the other container in one tap, per the
+request skipping anything in `FOODS` (so a food supply doesn't get swept
+away right when Combat's own Eat action needs it close at hand) and
+never touching equipped items (which were never in this list to begin
+with -- `equip()` already physically moves an item out of the bag the
+instant it's worn, so there was nothing extra to exclude by hand).
+
+Respects the destination's own slot cap exactly like the single-item
+transfer picker already does (`bagRoomFor()`/`storageRoomFor()`) --
+applied per stack across the whole move rather than one at a time.
+Whatever doesn't fit stays right where it was, and the same "Bag full"/
+"Storage full" toast the single-item picker already shows fires once for
+the whole batch, naming which side ran out of room.
+
+Verified live: moved a bag holding Stone/Sticks/Cooked Berries/three
+starter tools to Storage -- everything moved except Cooked Berries
+(a real `FOODS` entry), which correctly stayed in the bag. Filled the
+bag to 24/25 slots, then tried moving 5 distinct stacks in from Storage --
+exactly 1 fit (bag hit 25/25), the other 4 stayed in Storage, and the
+toast read "Bag full — moved what fit". No console errors. Test save
+reset afterward.
+
+### Worker villagers can level up now, and a skill level-100 cap (2026-09-04)
+
+Two changes from a hand-drawn sketch of the intended pill layout, plus a
+request to cap every skill.
+
+**A hard level-100 ceiling on every skill** (`MAX_SKILL_LEVEL`,
+`skills.js`) -- was uncapped before this. `levelFromXp()` itself now
+stops counting past level 100 regardless of XP earned beyond it, so
+every downstream reader (the Skills page, workers.js's own speed bonus
+below) gets the cap for free from the one shared function, the same way
+Foraging's own separate `FORAGE_MAX_LEVEL` cap already worked -- the
+Skills page's "maxed" display path is now shared by both rather than
+Foraging being a special case.
+
+**Worker villagers now level up.** `WORKERS` in data.js replaced each
+role's single `stationId` with an ordered `stationIds` list -- every
+recipe that role can eventually run, tier 0 being what it works from the
+moment it's hired (Millworker: Pine Planks, then Birch Planks; Spinster:
+String, then Cloth, then Yarn; Fletcher: Flint Arrows, then Short Bow;
+Weaver: Cloth, then Fabric; Mason: Stone Block, then Basalt Block). Max
+level is just `stationIds.length` -- "tied to how many items can be
+automatically harvested in each crafting station," literally, so a
+one-recipe station (Grind Stone, Tanning Station) means that worker is
+already at max level the instant it's hired, nothing left to pay for.
+Paying `WORKER_UPGRADE_COST` (500 Shards, flat, no separate number was
+given beyond the request's own example) raises `state.workers[].level`
+by one and unlocks the next tier. `workers.js`'s `attemptRole()` always
+tries every currently-unlocked tier in order on each attempt, so a
+level-2 Millworker keeps preferring Pine Planks and only falls through to
+Birch Planks when it can't (out of Pine Logs) -- both real, both
+"5x slower than manual," never blocked by each other since they're
+different `state.stations` slots.
+
+The Township pill itself is a full redesign, matching a sketch the user
+provided: each worker is now a real `.pill` (the exact same
+icon/body/level-bar shape every Craft/Station pill already uses,
+`.villager-hire-cost` reused as-is for the right-hand price) instead of
+the old card-plus-button. Hired, the icon becomes the worker's own
+current "master resource" -- the output of its highest unlocked tier,
+via the same sprite pipeline every item icon already uses -- and the
+bottom edge shows a real level-progress bar (`level / maxLevelFor(role)`,
+`.pill-level-fill`/`.pill-level-badge`, unchanged CSS). The right side
+shows the hire price before hiring, the upgrade price after, or "MAX"
+once there's nothing left to unlock.
+
+Also added, per the same sketch's own note ("speed determined by...
+skill level"): a villager-only compounding speed bonus,
+`WORKER_LEVEL_SPEED_MULT` (1.01, data.js) to the power of whatever level
+the station's own skill is at -- +1%/level, stacking multiplicatively, so
+a level-100 skill is roughly 2.7x the base villager speed. This is
+*separate* from (and stacks with) the player-facing `GROWTH_PER_LEVEL`
+curve `effectiveMs()` already applies to everyone's taps -- "idle speed"
+in the request specifically meant the villager's own automatic attempts,
+not something shared with the player's own manual crafting.
+
+Verified live: hired a Millworker (level 1, "Working — Pine Planks",
+bottom bar at half-width, price showing 500 for the upgrade); upgraded it
+to level 2 -- icon/sub switched to "Birch Planks" (the new highest
+tier), bar filled, price changed to "MAX". Forced a real attempt with
+Pine Logs stocked -- it started a real Pine Planks cycle (preferring
+tier 0); removed all Pine Logs and forced another attempt -- it
+correctly fell through to a real Birch Planks cycle instead. Hired a
+Miller (Grind Stone, one recipe) and confirmed it showed "MAX" the
+instant it was hired, no upgrade possible. Maxed Woodcutting's own XP to
+999,999,999 and confirmed the Skills page read "Level 100 (MAX)" instead
+of climbing forever. Maxed the same skill for a hired Millworker and
+confirmed its own next-attempt interval dropped to roughly 1/11th the
+unboosted pace (~4.5s vs. 50s), matching the level-100 GROWTH_PER_LEVEL
+and 1.01^100 bonuses multiplying together exactly as designed. No
+console errors throughout. Test save reset afterward.
+
+### The Forager joins the roster, and hiring becomes free house-derived slot assignment (2026-09-04)
+
+A second pass at the worker-villager system, same day: the old Foraging
+Villager (its own standalone `state.villager`, with a separate hire/
+fastHands-upgrade flow in `forage.js`/`township.js`) is now just another
+`WORKERS` entry ("forager", `data.js`), rendered as the exact same
+`.worker-pill` every other role uses and renamed "Forager" on-screen. It
+has no `stationIds` (nothing to progress through), so it reads as
+already "MAX" the instant it's assigned, per the request. Its own
+auto-gather cycle still lives in `forage.js`'s `settleForage()` (not the
+generic `settleWorkers()`, which now explicitly skips a "forager" role
+entry to avoid double-ticking it) -- its `homeLocation`/`nextTickAt` now
+live on the worker object itself instead of separate `state.villager`/
+`state.villagerNextTickAt` fields, and its own idle speed comes from the
+same `WORKER_LEVEL_SPEED_MULT` compounding bonus every other profession
+gets (keyed to Foraging's own level) rather than a separately-purchased
+"fastHands" upgrade, which is gone. An old save's existing Foraging
+Villager hire is migrated into a real "forager" `state.workers` entry on
+load rather than silently lost.
+
+Bigger change: hiring/leveling for Shards is gone entirely, per the
+request ("no more Shard cost to hire into a profession... remove the
+leveling of each profession"). A location's villager slots are now
+purely house-derived -- `HOUSE_WORKER_SLOTS` (3) per House built,
+`workerCap()` no longer has a separate flat base underneath -- and the
+player now starts with one House already built (`state.housing =
+{ aerendell: 1 }`), so a new save's starting cap is unchanged (3) even
+though the source of it is now entirely Houses rather than a mix of a
+flat base and Houses. An old save with zero Houses (built before this
+change) is floored to 1 on load so its existing workers don't lose their
+slots. Assigning an unlocked role to a free slot (`workers.js`'s
+`assignWorker()`) is free; assigning it back out (`unassignWorker()`)
+returns the slot to the pool, reassignable to any other unlocked role.
+The Township screen shows "`assignedCount()` / `workerCap()` villager
+slots assigned" at the top of the roster.
+
+The per-worker `level`/`WORKER_UPGRADE_COST` Shard-paid leveling is gone
+too -- which `stationIds` tier a role can currently attempt is now read
+straight off the relevant skill's own level (a new `WORKER_TIER_LEVELS`
+table in `data.js`, first-pass thresholds of level 10/25 for a second/
+third tier -- no specific numbers were given beyond the original "5x
+slower" example), via `workers.js`'s `unlockedTierCount()`/
+`unlockedStationIds()`. The Township pill's own level bar still shows
+tier progress (`unlockedTierCount()`/`maxLevelFor()`), just driven by the
+skill now instead of a stored per-worker field.
+
+Also per the request: a role gated behind a skill level (so far only the
+Forager, Foraging Level 3, `WORKERS.forager.unlockLevel`) shows *only*
+"Requires (Skill) Level (x)" on its pill while locked -- no note, no
+building name, nothing else -- via `workers.js`'s new `roleUnlocked()`/
+`roleSkill()`. A role gated only by an unbuilt building (every other
+role, so far) still shows the ordinary "Requires (Building)" sub-text,
+since there's no skill to name in that case.
+
+Housing and Village Upkeep also moved into their own tab toggle below
+the roster (`#township-view-upkeep`/`#township-view-housing`, same
+`.inv-toggle`/`.inv-view-btn` pattern Inventory's Equipment/Bag/Storage
+already uses), defaulting to Village Upkeep per the request -- the
+villager roster itself isn't part of the tab switch, only these two
+secondary cards are.
+
+Verified live: with a fresh save (3 starting slots from the one starting
+House), every unbuilt-building role showed only "Requires <Building>",
+and the Forager showed only "Requires Foraging Level 3" -- built the
+Sawmill/Campfire/Beehive and confirmed Cook/Millworker/Beekeeper flipped
+to a normal "Assign" pill. Assigned a Cook for free (no Shard cost, no
+prompt), confirmed the slot counter read "1 / 3", then unassigned it and
+watched the counter drop back to "0 / 3" and the role return to
+"Assign". Assigned a Millworker, raised Woodcutting to level 10, and
+confirmed its tier count and master-resource icon advanced from Pine
+Planks to Birch Planks with no payment involved. Raised Foraging to
+level 3, confirmed the Forager pill unlocked, assigned it, forced its
+`nextTickAt` into the past, and confirmed `settleForage()` produced a
+real item and rescheduled correctly, while a subsequent `settleWorkers()`
+call left its schedule untouched (no double-ticking). Confirmed the
+Forage bar's own sub-text read "Villager taps every 29.118s" at Foraging
+Level 3 -- exactly `30000 / 1.01^3`, matching the shared speed formula.
+Switched to the Housing tab and confirmed "1 built · 3 villager slots"
+and a "Build House · +3 villager slots" prompt. Reloaded the page from a
+cold boot and confirmed both the assigned workers and the housing count
+survived the save/load round-trip unchanged. No console errors
+throughout. Test save reset afterward.
+
 ## Adding to it
 
 A new crop, tree, or recipe is one entry in `src/data.js`; a new zone's

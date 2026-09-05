@@ -27,7 +27,7 @@ import { applyCraftSprites, settleCraft, refreshCraft } from "./craft.js";
 import { setPillFill, popCount } from "./pills.js";
 import { drawStationCards } from "./buildings.js";
 import { settleVillageUpkeep, buildTownship } from "./township.js";
-import { settleWorkers } from "./workers.js";
+import { settleWorkers, isAssigned } from "./workers.js";
 import { settleCampfire, refreshCampfire, applyCampfireSprites } from "./campfire.js";
 import {
   settleStations, refreshStation, refreshAllStations, drawAllStationXp, drawAllItemLevels, applyStationSprites,
@@ -45,6 +45,7 @@ import {
 import { buildBeehiveSlots, settleBeehive, drawBeehive } from "./beehive.js";
 import { el } from "./dom.js";
 import { showToast } from "./toast.js";
+import "./devRoom.js";
 
 // Foraging's own settle() can resolve more than one gather in a single
 // pass -- a villager chains straight into the next cycle, so a long gap
@@ -74,7 +75,7 @@ function checkBagFull() {
 function reportForageCatchup(results, awayMs) {
   if (results.length === 0) return;
   drawBag();
-  if (state.villager.owned && awayMs > AWAY_POPUP_MS) showAwayPopup(results, awayMs);
+  if (isAssigned("forager") && awayMs > AWAY_POPUP_MS) showAwayPopup(results, awayMs);
   else showForageResult(results[results.length - 1]);
 }
 

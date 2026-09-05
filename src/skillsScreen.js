@@ -21,7 +21,7 @@
 
 import { FORAGE_MAX_LEVEL, SKILLS } from "./data.js";
 import { state, save, SAVE_KEY } from "./state.js";
-import { levelProgress, levelFromXp } from "./skills.js";
+import { levelProgress, levelFromXp, MAX_SKILL_LEVEL } from "./skills.js";
 import { useSprite } from "./sprites.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
@@ -109,11 +109,17 @@ export function drawSkills() {
     const row = rows[i];
     if (!row) return;
     const xp = skill.xpOf();
-    const maxed = skill.maxLevel !== undefined && levelFromXp(xp) >= skill.maxLevel;
+    // Foraging keeps its own lower cap (FORAGE_MAX_LEVEL); every other
+    // skill now hits the same global MAX_SKILL_LEVEL ceiling (skills.js) --
+    // both read through the same "maxed" display path here rather than
+    // this screen needing two separate branches for what's really the
+    // same situation at two different numbers.
+    const cap = skill.maxLevel !== undefined ? skill.maxLevel : MAX_SKILL_LEVEL;
+    const maxed = levelFromXp(xp) >= cap;
 
     row.classList.toggle("maxed", maxed);
     row.querySelector(".skill-level").textContent = maxed
-      ? "Level " + skill.maxLevel + " (MAX)"
+      ? "Level " + cap + " (MAX)"
       : "Level " + levelProgress(xp).level;
 
     const fill = row.querySelector(".xp-fill");

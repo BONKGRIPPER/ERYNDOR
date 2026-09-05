@@ -18,28 +18,33 @@
 // mid-gather still pays out from wherever it began -- same "recipe locked
 // at start" rule craft.js's startCraft() follows.
 //
-// At VILLAGER_LEVEL, Shards can buy a villager (state.villager.owned, from
-// the Township screen -- see township.js) who taps this same pill on their
-// own, once every VILLAGER_TICK_MS, whether the player is looking at this
-// screen, a different one, or the game is closed entirely -- settleForage()
-// below resolves however many gathers came due since the last check,
-// chaining through as many complete cycles as a long away-gap crosses, in
-// one pass. The villager always gathers from their own home location's
-// pool (state.villager.homeLocation, set once at hire) regardless of where
-// the player currently is; if the player is already mid-gather when a
-// villager tick lands, the tick is a no-op, same as any other double-tap.
-// `fastHands` (also bought from Township) is a flat multiplier on
-// VILLAGER_TICK_MS, read fresh on every villager tick rather than baked in
-// once, so it speeds up ticks already scheduled too.
+// At VILLAGER_LEVEL, the Forager profession unlocks (Township screen --
+// see township.js/workers.js's roleUnlocked()); once assigned to a free
+// slot there, it taps this same pill on its own, once every
+// VILLAGER_TICK_MS, whether the player is looking at this screen, a
+// different one, or the game is closed entirely -- settleForage() below
+// resolves however many gathers came due since the last check, chaining
+// through as many complete cycles as a long away-gap crosses, in one pass.
+// The villager always gathers from their own home location's pool (the
+// assigned worker's own `homeLocation`, set once at assignment) regardless
+// of where the player currently is; if the player is already mid-gather
+// when a villager tick lands, the tick is a no-op, same as any other
+// double-tap. Reworked (2026-09-04, second pass): the Forager is now just
+// another WORKERS entry (state.workers, workers.js) rather than its own
+// standalone state.villager -- its own idle speed instead comes for free
+// from Foraging's own skill level (WORKER_LEVEL_SPEED_MULT, same
+// compounding bonus every other profession gets), not a separately paid
+// "fastHands" upgrade.
 
 import {
   FORAGE_POOLS, FORAGE_MS, FORAGE_XP, FORAGE_MAX_LEVEL,
   FORAGE_LEVEL_THRESHOLDS, FORAGE_LEVEL_SPEED_MULT,
-  VILLAGER_TICK_MS, VILLAGER_UPGRADE_MULT, LOCATIONS,
+  VILLAGER_TICK_MS, WORKER_LEVEL_SPEED_MULT, LOCATIONS,
 } from "./data.js";
 import { state, save, gainItem, gainSkillXp } from "./state.js";
 import { openZoneWheel } from "./zoneWheel.js";
 import { levelFromXp } from "./skills.js";
+import { getWorker } from "./workers.js";
 import { pillFor, setPillFill } from "./pills.js";
 import { useSprite } from "./sprites.js";
 import { el } from "./dom.js";
@@ -59,14 +64,15 @@ function canForageHere() {
   return !!currentPoolId();
 }
 
-// The hired villager forages at wherever they were actually hired
-// (state.villager.homeLocation, set once in township.js's hire flow) --
-// not the player's current one. Hire in Aerendell, wander off to Forest
+// The assigned Forager works wherever they were actually assigned (the
+// worker's own homeLocation, set once in workers.js's assignWorker()) --
+// not the player's current one. Assign in Aerendell, wander off to Forest
 // Road, and the villager keeps working Aerendell's pool the whole time;
-// they didn't come along on the trip. null (no villager hired yet, or a
+// they didn't come along on the trip. null (no Forager assigned yet, or a
 // pool that's since been removed) means no pool to forage from at all.
 function villagerPoolId() {
-  const loc = LOCATIONS[state.villager.homeLocation];
+  const w = getWorker("forager");
+  const loc = w && LOCATIONS[w.homeLocation];
   return loc ? loc.forage : null;
 }
 
@@ -85,12 +91,14 @@ export function foragingLevel() {
   return Math.min(FORAGE_MAX_LEVEL, levelFromXp(state.foragingXp));
 }
 
-// The villager's own tick interval -- fastHands (bought from Township)
-// shortens it by a flat multiplier, read fresh every time this is called
-// rather than locked in once, so buying the upgrade mid-run speeds up the
-// very next tick, not just future ones.
+// The villager's own tick interval -- compounds WORKER_LEVEL_SPEED_MULT
+// once per level of Foraging (the same idle-speed bonus every other
+// profession gets, see WORKER_LEVEL_SPEED_MULT's own comment in data.js),
+// read fresh every time this is called rather than locked in once, so
+// leveling Foraging mid-run speeds up the very next tick, not just future
+// ones.
 function villagerTickMs() {
-  return state.villager.fastHands ? Math.round(VILLAGER_TICK_MS * VILLAGER_UPGRADE_MULT) : VILLAGER_TICK_MS;
+  return Math.round(VILLAGER_TICK_MS / Math.pow(WORKER_LEVEL_SPEED_MULT, foragingLevel()));
 }
 
 // Foraging's own action mastery -- see FORAGE_LEVEL_THRESHOLDS in data.js.
@@ -224,15 +232,16 @@ export function settleForage() {
   const finished = resolveForage();
   if (finished) { results.push(finished.item); changed = true; leveledUp = leveledUp || finished.leveledUp; }
 
-  if (state.villager.owned && state.villagerNextTickAt !== null && !state.village.starved) {
+  const worker = getWorker("forager");
+  if (worker && !state.village.starved) {
     const poolId = villagerPoolId();
     if (poolId) {
-      while (Date.now() >= state.villagerNextTickAt) {
+      while (Date.now() >= worker.nextTickAt) {
         changed = true;
         const done = completeGather(poolId);
         results.push(done.item);
         leveledUp = leveledUp || done.leveledUp;
-        state.villagerNextTickAt += villagerTickMs();
+        worker.nextTickAt += villagerTickMs();
       }
     }
   }
@@ -340,14 +349,15 @@ export function refreshForage(flash) {
     pill.querySelector(".pill-name").textContent = "Forage";
     return;
   }
+  const worker = getWorker("forager");
   let sub;
   if (state.forage) {
     sub = "Foraging…";
-  } else if (state.villager.owned) {
+  } else if (worker) {
     if (state.village.starved) {
       sub = "Villager's out of supplies — donate at Township";
-    } else if (state.villager.homeLocation !== state.currentLocation) {
-      sub = "Villager's working " + (LOCATIONS[state.villager.homeLocation] || {}).name;
+    } else if (worker.homeLocation !== state.currentLocation) {
+      sub = "Villager's working " + (LOCATIONS[worker.homeLocation] || {}).name;
     } else {
       sub = "Villager taps every " + (villagerTickMs() / 1000) + "s — tap to forage";
     }
@@ -355,7 +365,7 @@ export function refreshForage(flash) {
     sub = "Tap to forage";
   }
   pill.querySelector(".pill-sub").textContent = sub;
-  pill.querySelector(".pill-name").textContent = state.villager.owned ? "Forage \u{1F9D1}\u{200D}\u{1F33E}" : "Forage";
+  pill.querySelector(".pill-name").textContent = worker ? "Forage \u{1F9D1}\u{200D}\u{1F33E}" : "Forage";
 }
 
 // Draws the fill instantly, no transition -- for the very first paint after
@@ -370,15 +380,6 @@ export function drawForageProgress() {
   }
 }
 
-// Called by township.js right after a successful hire -- schedules the
-// villager's first tick immediately instead of waiting for the player to
-// tap the pill themselves. A no-op if a schedule already exists (e.g. this
-// somehow got called twice), so it never skips a tick forward.
-export function kickForageIfIdle() {
-  if (state.villagerNextTickAt === null) {
-    state.villagerNextTickAt = Date.now() + villagerTickMs();
-  }
-}
 
 pillFor("forage").addEventListener("click", tapForage);
 

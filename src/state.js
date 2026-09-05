@@ -78,32 +78,28 @@ export const state = {
   farmingXp: 0,
   loggingXp: 0,
   foragingXp: 0,
-  // Bought once at VILLAGER_LEVEL, from the Township screen -- see
-  // township.js. Owning one schedules villagerNextTickAt below and keeps it
-  // rescheduling itself forever, tapping the forage swing on its own.
-  // `fastHands` is the one villager upgrade that exists so far (also bought
-  // from Township) -- see forage.js's villagerTickMs() for where it
-  // actually applies. `homeLocation` is set once, at hire (state.
-  // currentLocation at that moment) -- the villager works that location's
-  // forage pool forever after, regardless of where the player currently
-  // is; hire in Aerendell and it never auto-forages Forest Road's pool
-  // just because the player happens to be standing there.
-  villager: { owned: false, fastHands: false, homeLocation: null },
-  // Separate from the Foraging Villager above -- one hire per station-
-  // shaped role (see WORKERS in data.js), each entry { role, homeLocation,
-  // nextTickAt }, capped at workerCap() (src/workers.js). `homeLocation` is
-  // recorded the same way the Foraging Villager's own is (state.
-  // currentLocation at hire) but doesn't gate anything mechanically here --
-  // every role's own station is a single global instance (state.stations/
-  // campfire/beehiveSlots), not a per-zone one, so it's flavor/display only
-  // for now, not a working-location restriction.
+  // One assignable worker per profession (see WORKERS in data.js), each
+  // entry { role, homeLocation, nextTickAt }, capped at workerCap()
+  // (src/workers.js) -- entirely house-derived now (HOUSE_WORKER_SLOTS
+  // per House, see `housing` below), no more Shard cost to assign one.
+  // "forager" is one of these roles too (2026-09-04, second pass -- used
+  // to be its own standalone state.villager) -- its own tick loop still
+  // lives in forage.js (settleForage()), not workers.js's generic one.
+  // `homeLocation` is recorded at assignment (state.currentLocation at
+  // that moment); it's the Forager's actual working zone, but flavor/
+  // display only for every other role -- their own station is a single
+  // global instance (state.stations/campfire/beehiveSlots), not a
+  // per-zone one.
   workers: [],
   // locationId -> number of Houses built there (Township's own repeating
   // purchase, see HOUSE_COST in data.js) -- workerCap() sums every zone's
   // count into one global cap rather than restricting a worker to their own
   // zone's houses, since Township itself is currently only ever built in
-  // one place anyway. See workers.js's workerCap().
-  housing: {},
+  // one place anyway. Starts with one House already built at Aerendell (see
+  // workers.js's workerCap()), so a brand new save starts with
+  // HOUSE_WORKER_SLOTS villager slots available, same starting cap the old
+  // flat BASE_WORKER_CAP used to give, just house-sourced now.
+  housing: { aerendell: 1 },
   // Stamped every tick while the game is actually running, so the gap
   // between this and Date.now() at the next boot is exactly how long the
   // game was closed -- no separate close/unload handler needed, the last
@@ -151,13 +147,6 @@ export const state = {
   // (resets to 0 the instant that level lands), same shape as
   // state.itemLevels' own {level, crafts} entries.
   forageLevel: { level: 0, clicks: 0 },
-  // Absolute deadline for the villager's next automatic tap -- null
-  // whenever no villager is working yet (not hired, or hired but its first
-  // tick was never scheduled). Same deadline-not-countdown rule as every
-  // other timer, so a long stretch away catches up by counting how many
-  // ticks fit in the elapsed time rather than needing a background loop.
-  // See src/forage.js's settleForage().
-  villagerNextTickAt: null,
   // Same shape as foraging, one slot per recipe.
   crafting: { flintAxe: null, flintPickaxe: null, stonePickaxe: null },
   sowingXp: 0,
@@ -502,11 +491,10 @@ export function save() {
       plots: state.plots, logPlots: state.logPlots, beehiveSlots: state.beehiveSlots,
       wateringCan: state.wateringCan,
       farmingXp: state.farmingXp, loggingXp: state.loggingXp,
-      foragingXp: state.foragingXp, villager: state.villager,
+      foragingXp: state.foragingXp,
       workers: state.workers, housing: state.housing,
       lastActiveAt: state.lastActiveAt,
       forage: state.forage, forageLevel: state.forageLevel,
-      villagerNextTickAt: state.villagerNextTickAt,
       crafting: state.crafting,
       sowingXp: state.sowingXp, millingXp: state.millingXp,
       stonecuttingXp: state.stonecuttingXp, tanningXp: state.tanningXp,
@@ -604,26 +592,40 @@ export function load() {
     if (typeof data.farmingXp === "number") state.farmingXp = data.farmingXp;
     if (typeof data.loggingXp === "number") state.loggingXp = data.loggingXp;
     if (typeof data.foragingXp === "number") state.foragingXp = data.foragingXp;
-    if (data.villager && typeof data.villager === "object") {
-      state.villager.owned = data.villager.owned === true;
-      state.villager.fastHands = data.villager.fastHands === true;
-      // A save from before villagers were zone-specific has no
-      // homeLocation at all -- backfilled to Aerendell, the only place
-      // Township has ever existed, rather than leaving it null and
-      // silently forcing an existing villager to stop working everywhere.
-      state.villager.homeLocation =
-        typeof data.villager.homeLocation === "string" ? data.villager.homeLocation : "aerendell";
-    }
     // Same "drop anything that doesn't have a real deadline" filter every
     // other timer-bearing array in this save follows -- a worker with no
     // valid nextTickAt (shouldn't happen outside a hand-edited save) just
-    // doesn't come back rather than sitting stalled forever.
+    // doesn't come back rather than sitting stalled forever. A save from
+    // before per-worker leveling was removed (2026-09-04, second pass) may
+    // still have a `level` field on each entry -- harmless, just no longer
+    // read by anything, left as-is rather than stripped.
     state.workers = Array.isArray(data.workers)
       ? data.workers.filter(function (w) {
           return w && typeof w.role === "string" && typeof w.nextTickAt === "number";
         })
       : [];
+    // A save from before the Forager was merged into `workers` (2026-09-04,
+    // second pass) has its own standalone `data.villager.owned` instead --
+    // converted here into a real "forager" worker entry so an existing
+    // hire doesn't just vanish, using whatever tick/home-location data the
+    // old shape had (see the old villagerNextTickAt/villager.homeLocation
+    // fields this once read from).
+    if (data.villager && data.villager.owned === true &&
+        !state.workers.some(function (w) { return w.role === "forager"; })) {
+      state.workers.push({
+        role: "forager",
+        homeLocation: typeof data.villager.homeLocation === "string" ? data.villager.homeLocation : "aerendell",
+        nextTickAt: typeof data.villagerNextTickAt === "number" ? data.villagerNextTickAt : Date.now() + VILLAGER_TICK_MS,
+      });
+    }
     state.housing = (data.housing && typeof data.housing === "object") ? data.housing : {};
+    // Villager slots are entirely house-derived now (2026-09-04, second
+    // pass) -- a save from before that change may have 0 houses (it relied
+    // on the old flat BASE_WORKER_CAP instead), which would otherwise zero
+    // out every existing worker's slot the moment this loads. Floored at 1
+    // House (HOUSE_WORKER_SLOTS worth of cap), the same starting amount a
+    // brand new save gets, so an existing save never regresses.
+    if (!(state.housing.aerendell >= 1)) state.housing.aerendell = 1;
     // The gap between this and now is what the "welcome back" popup
     // reports as away-time -- default to now (no gap) if this is somehow
     // missing, rather than a stale/undefined value producing a nonsense span.
@@ -639,20 +641,6 @@ export function load() {
     // given item has no `itemLevels` entry for it.
     if (data.forageLevel && typeof data.forageLevel.level === "number") {
       state.forageLevel = { level: data.forageLevel.level, clicks: data.forageLevel.clicks || 0 };
-    }
-    if (typeof data.villagerNextTickAt === "number") {
-      state.villagerNextTickAt = data.villagerNextTickAt;
-    } else if (state.villager.owned) {
-      // A villager owned on this save but with no tick ever scheduled --
-      // either a fresh migration from before this pass's tap rework (old
-      // saves stored a `foraging` deadline instead), or a hire that got
-      // interrupted before kickForageIfIdle() ran. Give it a normal first
-      // interval rather than leaving it stalled forever; fastHands (if
-      // already bought) applies starting with the *next* tick after this
-      // one, same as any other tick.
-      state.villagerNextTickAt = Date.now() + VILLAGER_TICK_MS;
-    } else {
-      state.villagerNextTickAt = null;
     }
     if (data.crafting) {
       Object.keys(RECIPES).forEach(function (item) {

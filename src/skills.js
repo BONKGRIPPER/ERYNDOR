@@ -10,14 +10,22 @@
 export const WATER_XP = 2;
 export const GROWTH_PER_LEVEL = 0.03;   // +3% growth speed per Farming level
 
-// Runescape-style long tail: cheap early levels, steeper later. Uncapped --
-// there's no content yet that needs a ceiling.
+// A hard ceiling on every skill (2026-09-04, per the request) -- was
+// uncapped before this ("there's no content yet that needs a ceiling").
+// Foraging had its own separate FORAGE_MAX_LEVEL cap already; this is the
+// same idea generalized to every skill at once, right at the shared
+// level-from-xp conversion so nothing downstream (workers.js's own
+// per-level speed bonus, every skill row's own display) has to know
+// about the cap separately.
+export const MAX_SKILL_LEVEL = 100;
+
+// Runescape-style long tail: cheap early levels, steeper later.
 export function xpToNext(level) { return Math.floor(40 * Math.pow(level + 1, 1.7)); }
 
 export function levelFromXp(xp) {
   let level = 0;
   let spent = 0;
-  while (spent + xpToNext(level) <= xp) {
+  while (level < MAX_SKILL_LEVEL && spent + xpToNext(level) <= xp) {
     spent += xpToNext(level);
     level += 1;
   }
@@ -26,9 +34,12 @@ export function levelFromXp(xp) {
 
 // { level, into, need } -- xp earned into the current level, and how much
 // the level needs in total. `into / need` is the bar's fill fraction.
+// `need` is 0 once level 100 is reached -- there's nothing left to climb
+// toward, same "full bar, nothing more" reading every other maxed skill
+// (Foraging, per-item crafting mastery) already gives its own display.
 export function levelProgress(xp) {
   const level = levelFromXp(xp);
   let spent = 0;
   for (let l = 0; l < level; l++) spent += xpToNext(l);
-  return { level: level, into: xp - spent, need: xpToNext(level) };
+  return { level: level, into: xp - spent, need: level >= MAX_SKILL_LEVEL ? 0 : xpToNext(level) };
 }
