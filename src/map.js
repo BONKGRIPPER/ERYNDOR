@@ -9,12 +9,14 @@
 // actual moving); tapping the current location, or one with no direct
 // unlocked road, opens the same sheet with no button.
 
-import { LOCATIONS, ROADS } from "./data.js";
+import { LOCATIONS, ROADS, HOME_LOCATION_ID } from "./data.js";
 import { state } from "./state.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { openSheet, closeSheet } from "./sheet.js";
-import { roadBetween, isTraveling, startTravel } from "./travel.js";
+import {
+  roadBetween, isTraveling, isAtHome, startTravel,
+} from "./travel.js";
 
 const TYPE_ICON = {
   city: "\u{1F3F0}",
@@ -47,10 +49,11 @@ function openLocationSheet(id) {
   body.append(type);
 
   const facts = [];
+  if (id === HOME_LOCATION_ID) facts.push("Warehouse · Production hub");
   if (loc.type === "city") facts.push("Market open 24/7 · Bank (shared across every city)");
-  if (loc.type === "town") facts.push("Market closed 5pm-9am · Local storage");
-  if (loc.type === "landmark" || loc.type === "wilderness") facts.push("No market, no storage");
-  if (loc.stations && loc.stations.length) facts.push("Stations: " + loc.stations.join(", "));
+  if (loc.type === "town") facts.push("Market closed 5pm-9am");
+  if (loc.type === "landmark" || loc.type === "wilderness") facts.push("No market");
+  if (id === HOME_LOCATION_ID && loc.stations && loc.stations.length) facts.push("Production stations available at Home");
   if (loc.forage) facts.push("Foraging available");
 
   facts.forEach(function (fact) {
@@ -64,7 +67,7 @@ function openLocationSheet(id) {
   const road = roadBetween(state.currentLocation, id);
   if (id === state.currentLocation) {
     note.className = "map-sheet-here";
-    note.textContent = "You are here.";
+    note.textContent = isAtHome() ? "You are home." : "You are here.";
     body.append(note);
   } else if (state.travel && state.travel.to === id) {
     note.className = "map-sheet-here";
@@ -92,6 +95,16 @@ function openLocationSheet(id) {
       buildMap();
     });
     body.append(btn);
+  }
+
+  // What you can *do* at a location -- activities, market, the outpost,
+  // Return Home -- lives on the Explore tab now, not in this sheet. This
+  // sheet is travel only.
+  if (id === state.currentLocation) {
+    const hint = document.createElement("div");
+    hint.className = "map-sheet-fact";
+    hint.textContent = "Open the Explore tab for activities here.";
+    body.append(hint);
   }
 
   openSheet(loc.name);
@@ -174,7 +187,7 @@ export function buildMap() {
   ids.forEach(function (id) {
     const loc = LOCATIONS[id];
     const p = pixel(id);
-    const isHere = id === state.currentLocation;
+    const isHere = id === state.currentLocation && !isAtHome();
     const isDest = !!(state.travel && state.travel.to === id);
     const node = document.createElement("button");
     node.className = "map-node" + (isHere ? " current" : "") + (isDest ? " traveling" : "");
@@ -185,7 +198,7 @@ export function buildMap() {
       '<span class="map-node-circle">' + (TYPE_ICON[loc.type] || "\u{2753}") + "</span>" +
       '<span class="map-node-label">' + loc.name + "</span>" +
       '<span class="map-node-type">' +
-        (isHere ? "You are here" : isDest ? "Arriving..." : (TYPE_LABEL[loc.type] || loc.type)) +
+        (isAtHome() && id === HOME_LOCATION_ID ? "Home" : isHere ? "You are here" : isDest ? "Arriving..." : (TYPE_LABEL[loc.type] || loc.type)) +
       "</span>";
     canvas.append(node);
   });
@@ -225,7 +238,7 @@ export function refreshMap() {
   updateTravelNote();
 }
 
-el("back-map").addEventListener("click", function () { show("home"); });
+el("back-map").addEventListener("click", function () { show("explore"); });
 
 // ------------------------------------------------------------- drag to pan
 //

@@ -10,6 +10,8 @@
   --warn: #e0684f;
 }
 
+body.forage-hidden { --forage-h: 0px; }
+
 /* touch-action: manipulation is the CSS half of killing mobile Safari/
    Chrome's double-tap-to-zoom -- this game is tapped rapidly and
    repeatedly by design (Mining's swings, Forage, chopping), and a phone
@@ -1195,6 +1197,43 @@ body {
    other .villager-hire button (Township's hire cards, Combat's Fight
    prompt) has no such element, so this is invisible to them. */
 .mine-surface-fill { background: rgba(216, 189, 106, 0.28); }
+
+/* The mine's bank action uses a squared, double-edged NES panel instead of
+   the softer shared hire-card treatment. Its ladder emoji remains only as
+   the fallback for a missing sprite. */
+#mine-surface-btn {
+  min-height: 62px;
+  border: 2px solid var(--gold);
+  border-radius: 4px;
+  background: #211d18;
+  box-shadow: inset 0 0 0 2px #4b4029, 3px 3px 0 #0e0c0a;
+}
+#mine-surface-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: inset 0 0 0 2px #4b4029, 1px 1px 0 #0e0c0a;
+}
+.mine-surface-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  overflow: hidden;
+  border: 2px solid #75643a;
+  border-radius: 2px;
+  background: #151310;
+  box-shadow: inset 0 0 0 1px #30291d;
+}
+.mine-surface-icon .sprite-img {
+  display: none;
+  width: 92%;
+  height: 92%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.mine-surface-icon.using-sprite .sprite-img { display: block; }
+.mine-surface-icon.using-sprite .sprite-fallback { display: none; }
+.mine-surface-icon .sprite-fallback { font-size: 20px; }
 .villager-hire-icon, .villager-hire-body, .villager-hire-cost { position: relative; z-index: 1; }
 .villager-hire:active { transform: scale(0.98); }
 .villager-hire-icon { font-size: 20px; flex-shrink: 0; }
@@ -1320,7 +1359,13 @@ body {
   align-items: center;
   justify-content: center;
 }
-.mine-art .sprite-img { display: none; width: 100%; height: 100%; object-fit: cover; }
+.mine-art .sprite-img {
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
 .mine-art.using-sprite .sprite-img { display: block; }
 .mine-art.using-sprite .sprite-fallback { display: none; }
 .mine-art .sprite-fallback {
@@ -1460,8 +1505,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 6px 4px;
+  padding: 5px 4px;
   border: 0;
   border-radius: 10px;
   background: transparent;
@@ -1471,18 +1515,55 @@ body {
   font-weight: 600;
   cursor: pointer;
 }
-.dock-btn .dock-icon { font-size: 19px; line-height: 1; }
+.dock-btn .dock-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  font-size: 30px;
+  line-height: 1;
+}
+.dock-icon .sprite-img {
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  transform: scale(1.12);
+}
+.dock-icon.using-sprite .sprite-img { display: block; }
+.dock-icon.using-sprite .sprite-fallback { display: none; }
 .dock-btn.current { color: var(--text); }
 .dock-btn.current .dock-icon { transform: translateY(-1px); }
 .dock-btn.locked { color: var(--dim); opacity: 0.55; }
-/* The Market dock button while a town's market is closed for the night
-   (dock.js's refreshMarketDockBadge()) -- same dimmed language
-   .dock-btn.locked already uses, plus the swapped-in "Closed" label
-   itself (that text change is what actually communicates it; the dimming
-   alone would look identical to any other momentarily-inactive icon). */
-.dock-btn.closed { color: var(--dim); opacity: 0.55; }
-.dock-btn.closed .dock-label { color: var(--warn); }
 .dock-btn.shake { animation: nope 0.32s ease; }
+/* .dock-btn sets display:flex, which would otherwise beat the UA [hidden]
+   rule -- the Home tab toggles this attribute (dock.js's refreshDock()). */
+.dock-btn[hidden] { display: none; }
+
+/* ================================ explore =============================== */
+.explore-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 12px;
+}
+.explore-where {
+  font-size: 12.5px;
+  color: var(--dim);
+  margin: 2px 0 8px;
+}
+.explore-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+.explore-grid .explore-activity { margin-top: 0; }
+.explore-activity.attention {
+  box-shadow: 0 0 0 2px var(--green);
+  color: var(--text);
+}
 
 /* ================================ inventory ============================== */
 /* Equipment page: one full-width pill per slot (2026-08-28), Armor first,
@@ -1565,6 +1646,55 @@ body {
   cursor: pointer;
 }
 .inv-view-btn.active { background: var(--green); color: var(--bg); border-color: var(--green); }
+.inv-view-btn.locked { opacity: 0.45; cursor: not-allowed; }
+.freight-panel { padding: 12px; border: 1px solid var(--line); border-radius: 10px; margin: 8px 0; }
+.freight-panel summary { cursor: pointer; font-weight: 650; }
+#freight-status { white-space: pre-line; font-size: 13px; padding-top: 10px; }
+
+/* "Send goods home" order sheet -- a stepper row per Bag item. */
+.freight-list { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 4px; max-height: 46vh; overflow-y: auto; }
+.freight-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel-2);
+}
+.freight-row.active { border-color: var(--gold); }
+.freight-row-info { flex: 1; min-width: 0; }
+.freight-row-name { font-weight: 640; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.freight-row-meta { font-size: 11px; color: var(--dim); margin-top: 1px; }
+.freight-row-ctl { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.freight-step {
+  width: 34px; height: 34px; flex-shrink: 0;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel); color: var(--text);
+  font: inherit; font-size: 18px; font-weight: 700; line-height: 1; cursor: pointer;
+}
+.freight-step:active { background: var(--panel-2); }
+.freight-row-qty { min-width: 26px; text-align: center; font-weight: 650; font-variant-numeric: tabular-nums; }
+.freight-row-max {
+  padding: 7px 8px; border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel); color: var(--gold);
+  font: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
+}
+.freight-summary { font-size: 12.5px; color: var(--dim); margin: 8px 2px 10px; min-height: 1.2em; }
+#sheet-body select { max-width: 100%; min-height: 44px; font: inherit; }
+#sheet-body details label { min-height: 36px; padding: 6px 0; }
+
+/* ---- Forest Road outpost sheets (caravanUI.js) ---- */
+.outpost-status { font-size: 13.5px; font-weight: 600; margin: 2px 0; }
+.outpost-status.dim { font-weight: 500; color: var(--dim); margin-bottom: 6px; }
+.sheet-back { align-self: flex-start; margin-bottom: 10px; }
+.transfer-ctl { margin: 10px 0 12px; }
+.route-depart { margin: 4px 0 12px; }
+.route-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.route-chip {
+  padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--panel-2); color: var(--dim);
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.route-chip.on { border-color: var(--gold); color: var(--gold); }
+.seed-row.active { border-color: var(--gold); }
+.inv-card.locked { opacity: 0.72; cursor: default; }
 
 /* Section headers inside the Bank tab's list (src/market.js's
    buildBankList()) -- "In the bank" / "Carrying" -- same weight/spacing

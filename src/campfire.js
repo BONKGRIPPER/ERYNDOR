@@ -10,7 +10,7 @@
 // time, tap Cook again once it's done for the next.
 
 import { FUELS, COOKABLES, COOK_MS, TINTS } from "./data.js";
-import { state, save, gainItem } from "./state.js";
+import { state, save, deliverProduction } from "./state.js";
 import { pillFor, setPillFill } from "./pills.js";
 import { canAfford, buildCostNodes, spendCost, combinedOwned } from "./costDisplay.js";
 import { useSprite, slug } from "./sprites.js";
@@ -84,7 +84,7 @@ export function settleCampfire() {
   const c = state.campfire;
   if (!c.current || Date.now() < c.current.readyAt) return null;
   const gives = COOKABLES[c.current.item].gives;
-  gainItem(gives, 1);
+  if (!deliverProduction(gives, 1)) return null;
   c.current = null;
   // Same reset craft.js's settleCraft() does -- without it, a finished
   // cook's .pill-fill sits at its last-drawn 100% (fully colored) forever,
@@ -122,7 +122,7 @@ export function refreshCampfire() {
   const sub = cookPill.querySelector(".pill-sub");
   if (running) {
     cookPill.querySelector(".pill-name").textContent = "Cooking " + c.current.item + "…";
-    sub.textContent = "Makes " + COOKABLES[c.current.item].gives;
+    sub.textContent = Date.now() >= c.current.readyAt ? "Warehouse full — output waiting" : "Makes " + COOKABLES[c.current.item].gives;
     cookPill.classList.remove("unaffordable", "affordable-ready");
   } else {
     cookPill.querySelector(".pill-name").textContent = "Cook";

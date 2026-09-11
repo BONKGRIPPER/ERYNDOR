@@ -14,8 +14,8 @@
 // the bag the instant it starts, same "spend on commit" rule Crafting
 // already uses, so a running cycle can never fail to finish.
 
-import { STATIONS } from "./data.js";
-import { state, save, gainItem, gainSkillXp } from "./state.js";
+import { STATIONS, HOME_LOCATION_ID } from "./data.js";
+import { state, save, deliverProduction, gainSkillXp } from "./state.js";
 import { openZoneWheel } from "./zoneWheel.js";
 import { GROWTH_PER_LEVEL, levelFromXp, levelProgress } from "./skills.js";
 import { pillFor, setPillFill } from "./pills.js";
@@ -104,8 +104,8 @@ export function settleStations() {
     const c = state.stations[id];
     if (!c || Date.now() < c.readyAt) return;
     const cfg = STATIONS[id];
-    gainItem(cfg.output, cfg.outputQty || 1);
-    zoneLevels += gainSkillXp(cfg.skillXp, cfg.xp);
+    if (!deliverProduction(cfg.output, cfg.outputQty || 1)) return;
+    zoneLevels += gainSkillXp(cfg.skillXp, cfg.xp, HOME_LOCATION_ID);
     state.stations[id] = null;
     // Same reset craft.js's settleCraft() does -- without it, a finished
     // cycle's .pill-fill sits at its last-drawn 100% (fully colored)
@@ -114,7 +114,7 @@ export function settleStations() {
     if (recordCraft(cfg.output)) leveledUp[id] = true;
     done.push(id);
   });
-  if (zoneLevels) openZoneWheel(state.currentLocation, zoneLevels);
+  if (zoneLevels) openZoneWheel(HOME_LOCATION_ID, zoneLevels);
   if (done.length) {
     save();
     updateSkillsNote();
@@ -156,9 +156,9 @@ export function refreshStation(id) {
   pill.classList.toggle("unaffordable", !running && !affordable);
   pill.classList.toggle("affordable-ready", !running && affordable);
   const sub = pill.querySelector(".pill-sub");
-  if (running) sub.textContent = "Working…";
+  if (running) sub.textContent = Date.now() >= state.stations[id].readyAt ? "Warehouse full — output waiting" : "Working…";
   else sub.replaceChildren.apply(sub, buildCostNodes(cost));
-  pill.querySelector(".pill-count").textContent = state.bag[cfg.output] || 0;
+  pill.querySelector(".pill-count").textContent = state.storage[cfg.output] || 0;
 }
 
 export function refreshAllStations() {

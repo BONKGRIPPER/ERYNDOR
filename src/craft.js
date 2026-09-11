@@ -6,7 +6,7 @@
 // running, can never fail to finish for lack of materials.
 
 import { RECIPES, CRAFT_MS } from "./data.js";
-import { state, save, gainItem } from "./state.js";
+import { state, save, deliverProduction } from "./state.js";
 import { pillFor, setPillFill } from "./pills.js";
 import { useSprite } from "./sprites.js";
 import { el } from "./dom.js";
@@ -54,7 +54,7 @@ export function settleCraft() {
     const c = state.crafting[item];
     if (!c || Date.now() < c.readyAt) return;
     const name = RECIPES[item].name;
-    gainItem(name, 1);
+    if (!deliverProduction(name, 1)) return;
     state.crafting[item] = null;
     setPillFill(item, 0, 0);
     if (recordCraft(name)) leveledUp[item] = true;
@@ -86,9 +86,9 @@ export function refreshCraft(only, flash) {
     pill.classList.toggle("unaffordable", !active && !affordable);
     pill.classList.toggle("affordable-ready", !active && affordable);
     const sub = pill.querySelector(".pill-sub");
-    if (active) sub.textContent = "Crafting…";
+    if (active) sub.textContent = Date.now() >= state.crafting[item].readyAt ? "Warehouse full — output waiting" : "Crafting…";
     else sub.replaceChildren.apply(sub, buildCostNodes(recipe.cost));
-    pill.querySelector(".pill-count").textContent = state.bag[recipe.name] || 0;
+    pill.querySelector(".pill-count").textContent = state.storage[recipe.name] || 0;
 
     // The crafted item's own mastery -- independent of anything above.
     const badge = pill.querySelector(".pill-level-badge");

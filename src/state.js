@@ -42,9 +42,12 @@ export const state = {
   // pop a one-shot "Inventory full" toast (src/toast.js) rather than
   // spamming one every tick a producer keeps trying and failing.
   bagFullFlag: 0,
-  // A second bag, same shape, sitting at Aerendell rather than carried.
-  // One shared crate for now -- there's only one place to put it.
+  // The Aerendell Warehouse. The save key remains `storage` so existing
+  // saves migrate without moving or duplicating any items.
   storage: {},
+  // Ephemeral mirror of bagFullFlag for production output or a home unload
+  // that cannot fit in the Warehouse.
+  warehouseFullFlag: 0,
   // slot id -> item name, or null. See EQUIPMENT in data.js for what can
   // go where.
   equipment: {},
@@ -223,12 +226,24 @@ export const state = {
   // (src/map.js) highlights this one with "You are here"; src/travel.js
   // is what's allowed to change it, once a trip finishes.
   currentLocation: "aerendell",
+  // Home is a real physical context now, separate from the last/selected
+  // field zone. Production screens require "home"; active gathering
+  // screens require "field". "traveling" blocks both until settleTravel().
+  playerContext: "home",
   // null when not traveling. Otherwise { from, to, readyAt } -- readyAt is
   // an absolute deadline like every other timer in this game, not a
   // countdown, so a trip keeps progressing correctly across a reload or
   // the tab being closed outright. One trip in flight at a time; see
   // src/travel.js.
   travel: null,
+  // Framework for later merchant/caravan freight. No UI creates shipments
+  // in this batch, but the durable shape and offline settlement path can be
+  // added without another save migration.
+  shipments: [],
+  logisticsVersion: 2,
+  freightHistory: [],
+  outposts: {},
+  caravan: null,
   // One shared bank, not one per city -- exactly what "items in the bank
   // can be accessed from any other city" (the original ask) means: there's
   // nothing to key per-city in the first place. Same {name: qty} shape as
@@ -346,6 +361,14 @@ export function bagRoomFor(name) { return roomForIn(state.bag, name, bagSlotCap(
 export function storageSlotsUsed() { return slotsUsedIn(state.storage); }
 export function storageRoomFor(name) { return roomForIn(state.storage, name, STORAGE_SLOTS); }
 
+function recordGain(name) {
+  state.discoveredItems[name] = true;
+  const i = state.recentItems.indexOf(name);
+  if (i !== -1) state.recentItems.splice(i, 1);
+  state.recentItems.unshift(name);
+  if (state.recentItems.length > 5) state.recentItems.length = 5;
+}
+
 // The one place every producer (foraging, crafting, cooking, mining,
 // farming, logging, stations, buying, both villager systems) routes a bag
 // gain through -- so the slot cap above only ever needs enforcing here,
@@ -361,14 +384,51 @@ export function gainItem(name, amount) {
   const granted = Math.min(amount, bagRoomFor(name));
   if (granted > 0) {
     state.bag[name] = (state.bag[name] || 0) + granted;
-    state.discoveredItems[name] = true;
-    const i = state.recentItems.indexOf(name);
-    if (i !== -1) state.recentItems.splice(i, 1);
-    state.recentItems.unshift(name);
-    if (state.recentItems.length > 5) state.recentItems.length = 5;
+    recordGain(name);
   }
   if (granted < amount) state.bagFullFlag += 1;
   return granted;
+}
+
+// Production never materializes into the carried Bag. Outputs settle into
+// Aerendell's Warehouse even while the player is away, which is what lets
+// the production half remain genuinely idle without remote inventory magic.
+export function gainWarehouseItem(name, amount) {
+  const granted = Math.min(amount, storageRoomFor(name));
+  if (granted > 0) {
+    state.storage[name] = (state.storage[name] || 0) + granted;
+    recordGain(name);
+  }
+  if (granted < amount) state.warehouseFullFlag += 1;
+  return granted;
+}
+
+// Paid jobs retain their complete output until space exists. Callers keep
+// their deadline and inputs committed when this returns false.
+export function deliverProduction(name, amount) {
+  if (storageRoomFor(name) < amount) return false;
+  gainWarehouseItem(name, amount);
+  return true;
+}
+
+// Returning home unloads the entire carried Bag in one pass. Anything that
+// cannot fit stays carried; no reward is ever discarded by the unload.
+export function unloadBagToWarehouse() {
+  let moved = 0;
+  let blocked = 0;
+  Object.keys(state.bag).forEach(function (name) {
+    const owned = state.bag[name] || 0;
+    const qty = Math.min(owned, storageRoomFor(name));
+    if (qty > 0) {
+      state.bag[name] -= qty;
+      if (state.bag[name] <= 0) delete state.bag[name];
+      state.storage[name] = (state.storage[name] || 0) + qty;
+      moved += qty;
+    }
+    blocked += owned - qty;
+  });
+  if (blocked > 0) state.warehouseFullFlag += 1;
+  return { moved: moved, blocked: blocked };
 }
 
 // Feeds ZONE_XP_SHARE of an XP gain into whatever zone the player is
@@ -377,8 +437,8 @@ export function gainItem(name, amount) {
 // grant can carry a zone through more than one level in a single call.
 // Returns how many levels it just gained (0 most of the time), so callers
 // know whether -- and how many times -- to spin the loot wheel.
-export function gainZoneXp(amount) {
-  const id = state.currentLocation;
+export function gainZoneXp(amount, zoneId) {
+  const id = zoneId || state.currentLocation;
   if (!state.zones[id]) state.zones[id] = { level: 1, xp: 0 };
   const z = state.zones[id];
   z.xp += amount;
@@ -398,9 +458,9 @@ export function gainZoneXp(amount) {
 // at each of those call sites. Returns whatever gainZoneXp() returns, so a
 // caller that gets a truthy (>0) result knows to open the loot wheel --
 // see src/zoneWheel.js's openZoneWheel().
-export function gainSkillXp(field, amount) {
+export function gainSkillXp(field, amount, zoneId) {
   state[field] += amount;
-  return gainZoneXp(amount * ZONE_XP_SHARE);
+  return gainZoneXp(amount * ZONE_XP_SHARE, zoneId);
 }
 
 Object.keys(STATIONS).forEach(function (id) { state.stations[id] = null; });
@@ -517,7 +577,13 @@ export function save() {
       hubOrder: state.hubOrder,
       discoveredItems: state.discoveredItems,
       currentLocation: state.currentLocation,
+      playerContext: state.playerContext,
       travel: state.travel,
+      shipments: state.shipments,
+      logisticsVersion: state.logisticsVersion,
+      freightHistory: state.freightHistory,
+      outposts: state.outposts,
+      caravan: state.caravan,
       bank: state.bank,
     }));
   } catch (e) { /* no storage available */ }
@@ -773,6 +839,26 @@ export function load() {
     } else {
       state.travel = null;
     }
+    if (data.playerContext === "home" || data.playerContext === "field" || data.playerContext === "traveling") {
+      state.playerContext = data.playerContext;
+    } else if (state.travel) {
+      state.playerContext = "traveling";
+    } else {
+      state.playerContext = state.currentLocation === "aerendell" ? "home" : "field";
+    }
+    state.shipments = Array.isArray(data.shipments)
+      ? data.shipments.filter(function (shipment) {
+          return shipment && shipment.items && typeof shipment.readyAt === "number";
+        })
+      : [];
+    state.shipments.forEach(function (shipment, index) {
+      shipment.id = shipment.id || "legacy-" + index;
+      shipment.to = shipment.to || "aerendell";
+      shipment.status = shipment.status === "arrived" ? "arrived" : "traveling";
+    });
+    state.freightHistory = Array.isArray(data.freightHistory) ? data.freightHistory.slice(-5) : [];
+    state.outposts = data.outposts && typeof data.outposts === "object" ? data.outposts : {};
+    state.caravan = data.caravan && typeof data.caravan === "object" ? data.caravan : null;
     if (data.bank && typeof data.bank === "object") state.bank = data.bank;
     if (data.discoveredItems && typeof data.discoveredItems === "object") {
       state.discoveredItems = data.discoveredItems;

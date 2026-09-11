@@ -11,14 +11,14 @@
 // that move. One that doesn't belong at this location at all just isn't
 // shown, same as it never showed on the wrong Craft Bench before.
 
-import { BUILDINGS, LOCATIONS } from "./data.js";
+import { BUILDINGS, LOCATIONS, HOME_LOCATION_ID } from "./data.js";
 import { state, save } from "./state.js";
 import { el } from "./dom.js";
 import { drawBag, drawMenu } from "./hub.js";
 import { canAfford, buildCostNodes, spendCost } from "./costDisplay.js";
 
 function belongsHere(id) {
-  const loc = LOCATIONS[state.currentLocation];
+  const loc = LOCATIONS[HOME_LOCATION_ID];
   return !!(loc && loc.stations && loc.stations.indexOf(id) >= 0);
 }
 

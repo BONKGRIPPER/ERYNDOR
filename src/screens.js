@@ -3,17 +3,19 @@
 // screens.js <-> dock.js, screens.js <-> inventory.js, screens.js <->
 // market.js, screens.js <-> campfire.js, screens.js <-> journal.js,
 // screens.js <-> combat.js, screens.js <-> township.js, screens.js <->
-// map.js, screens.js <-> fishing.js, screens.js <-> craft.js,
-// screens.js <-> stations.js, and screens.js <-> buildings.js are mutually
-// importing on purpose. It's safe: `show`, `syncDock`, `buildInventory`,
-// `buildMarket`, `campfireShown`, `buildJournal`, `refreshCombat`,
-// `buildCombatIdle`, `buildTownship`, `buildMap`, `buildFishing`, `refreshCraft`,
+// map.js, screens.js <-> explore.js, screens.js <-> fishing.js,
+// screens.js <-> craft.js, screens.js <-> stations.js, and screens.js <->
+// buildings.js are mutually importing on purpose. It's safe: `show`,
+// `syncDock`, `buildInventory`, `buildMarket`, `campfireShown`,
+// `buildJournal`, `refreshCombat`, `buildCombatIdle`, `buildTownship`,
+// `buildMap`, `buildExplore`, `buildFishing`, `refreshCraft`,
 // `refreshAllStations` and `drawStationCards` are only ever called from
 // inside event handlers, never at module-evaluation time, so the circular
 // live bindings are always resolved by the time anything actually calls
 // them.
 
-import { SCREEN_IDS } from "./data.js";
+import { SCREEN_IDS, PRODUCTION_SCREEN_IDS, FIELD_SCREEN_IDS, LOCATION_ACTIVITIES } from "./data.js";
+import { state } from "./state.js";
 import { el } from "./dom.js";
 import { syncDock } from "./dock.js";
 import { buildInventory } from "./inventory.js";
@@ -23,6 +25,7 @@ import { buildJournal } from "./journal.js";
 import { refreshCombat, syncTimerBars, buildCombatIdle } from "./combat.js";
 import { buildTownship } from "./township.js";
 import { buildMap } from "./map.js";
+import { buildExplore } from "./explore.js";
 import { buildFishing } from "./fishing.js";
 import { refreshCraft } from "./craft.js";
 import { refreshAllStations } from "./stations.js";
@@ -38,6 +41,18 @@ export const STATION_SCREENS = ["spinningWheel", "sawmill", "stoneCutter", "tann
 // and the browser's back button works without any routing code. Adding a
 // screen is: give it a #screen-<id> element and list <id> in SCREEN_IDS.
 export function show(name) {
+  // A workshop asked for while not at Home (away, or in field context at
+  // Aerendell) just lands on Explore -- the Home dock button is the only
+  // way in, and it isn't offered anywhere the player couldn't take it.
+  if (PRODUCTION_SCREEN_IDS.indexOf(name) >= 0 && state.playerContext !== "home") {
+    name = "explore";
+  }
+  // A field activity asked for where it isn't available (wrong location, or
+  // still in home context) also lands on Explore, which lists what *is*
+  // available here.
+  if (FIELD_SCREEN_IDS.indexOf(name) >= 0 && (state.playerContext !== "field" || !(LOCATION_ACTIVITIES[state.currentLocation] || []).includes(name))) {
+    name = "explore";
+  }
   SCREEN_IDS.forEach(function (id) {
     el("screen-" + id).classList.toggle("hidden", id !== name);
   });
@@ -66,6 +81,7 @@ export function show(name) {
   if (name === "combat") { buildCombatIdle(); refreshCombat(); syncTimerBars(); }
   if (name === "township") buildTownship();
   if (name === "map") buildMap();
+  if (name === "explore") buildExplore();
   if (name === "fishing") buildFishing();
   if (name === "craft") { refreshCraft(); drawStationCards(); }
   if (name === "beehive") { buildBeehiveSlots(); drawBeehive(); }

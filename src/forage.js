@@ -61,7 +61,7 @@ function currentPoolId() {
 }
 
 function canForageHere() {
-  return !!currentPoolId();
+  return state.playerContext === "field" && !!currentPoolId();
 }
 
 // The assigned Forager works wherever they were actually assigned (the
@@ -340,11 +340,14 @@ function drawForageLevel(flash) {
 // a leveled-up Craft pill's own badge does.
 export function refreshForage(flash) {
   const pill = pillFor("forage");
-  pill.classList.toggle("forage-disabled", !canForageHere());
+  const available = canForageHere();
+  el("forage-bar").classList.toggle("hidden", !available);
+  document.body.classList.toggle("forage-hidden", !available);
+  pill.classList.toggle("forage-disabled", !available);
   pill.classList.toggle("active", !!state.forage);
   drawForageLevel(flash);
   if (pill.classList.contains("result")) return;
-  if (!canForageHere()) {
+  if (!available) {
     pill.querySelector(".pill-sub").textContent = "Nothing to forage here";
     pill.querySelector(".pill-name").textContent = "Forage";
     return;

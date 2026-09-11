@@ -8,17 +8,17 @@
 import { RECIPES, AWAY_POPUP_MS } from "./data.js";
 import { state, load, save } from "./state.js";
 import { probeSprites } from "./sprites.js";
-import { showFromHash, STATION_SCREENS } from "./screens.js";
+import { show, showFromHash, STATION_SCREENS } from "./screens.js";
 import {
   drawMenu, drawBag, updateWalletNote, updateHubAttention, updateSeasonNote, updateDaytimeBadge,
 } from "./hub.js";
-import { buildDock, refreshMarketDockBadge } from "./dock.js";
+import { buildDock, refreshDock } from "./dock.js";
 import {
   buildPlots, applyToolSprites, settle, drawField, drawXp,
 } from "./field.js";
 import { updateSkillsNote } from "./hub.js";
 import {
-  buildLogPlots, settleLogging, drawLogging, drawLogXp,
+  buildLogPlots, settleLogging, drawLogging, drawLogXp, resetLogPlotsForLocation,
 } from "./logging.js";
 import {
   applyForageSprites, settleForage, refreshForage, showForageResult, showAwayPopup, drawForageProgress,
@@ -37,6 +37,10 @@ import {
   settleCombat, refreshCombat, drawCombatXp, drawWeaponSkillsXp, syncTimerBars, buildCombatIdle,
 } from "./combat.js";
 import { settleTravel } from "./travel.js";
+import { settleShipments } from "./shipments.js";
+import { settleCaravan } from "./caravans.js";
+import { refreshFreight } from "./freightUI.js";
+import { buildInventory } from "./inventory.js";
 import { buildMap, refreshMap } from "./map.js";
 import { buildMarket } from "./market.js";
 import {
@@ -65,10 +69,18 @@ import "./devRoom.js";
 // truthy is what keeps this a one-shot toast per new overflow instead of
 // firing every single tick a still-full bag keeps rejecting a producer.
 let lastBagFullFlag = 0;
+let lastWarehouseFullFlag = 0;
 function checkBagFull() {
   if (state.bagFullFlag !== lastBagFullFlag) {
     lastBagFullFlag = state.bagFullFlag;
     showToast("Inventory full");
+  }
+}
+
+function checkWarehouseFull() {
+  if (state.warehouseFullFlag !== lastWarehouseFullFlag) {
+    lastWarehouseFullFlag = state.warehouseFullFlag;
+    showToast("Warehouse full");
   }
 }
 
@@ -80,6 +92,11 @@ function reportForageCatchup(results, awayMs) {
 }
 
 function start() {
+  // Travel and future freight settle before the first draw so an offline
+  // arrival never flashes the old location or stale container totals.
+  settleTravel();
+  settleShipments();
+  settleCaravan();
   drawMenu();
   drawStationCards();
   drawBag();
@@ -164,23 +181,12 @@ function start() {
   refreshCombat();
   syncTimerBars();
 
-  // Catches up a trip that finished while the tab was closed, same as
-  // every other settle() above -- state.currentLocation is already
-  // correct by the time showFromHash() below decides what to draw. The
-  // hub/build-prompt/forage redraws right after are what actually apply
-  // that location everywhere gated on it; showFromHash() itself handles
-  // the Market screen (buildMarket() reads state.currentLocation fresh)
-  // if that's what the URL hash points back to.
-  settleTravel();
-  drawMenu();
-  drawStationCards();
-  refreshForage();
-
   updateHubAttention();
   updateSeasonNote();
   updateDaytimeBadge();
-  refreshMarketDockBadge();
+  refreshDock();
   checkBagFull();
+  checkWarehouseFull();
 
   showFromHash();
 
@@ -273,6 +279,9 @@ function start() {
     // banner needs touching -- same "full rebuild vs. light refresh" split
     // every other visible-screen check above already makes.
     const arrived = settleTravel();
+    const shipmentsChanged = settleShipments();
+    const caravanChanged = settleCaravan();
+    refreshFreight();
     const mapVisible = !el("screen-map").classList.contains("hidden");
     if (mapVisible) { if (arrived) buildMap(); else refreshMap(); }
 
@@ -287,19 +296,43 @@ function start() {
       drawMenu();
       drawStationCards();
       refreshForage();
+      // Swap any stale trees for the new location's species (see
+      // resetLogPlotsForLocation()); redraw the plot list if it's showing
+      // so it doesn't sit stale for one tick.
+      if (resetLogPlotsForLocation() && !el("screen-logging").classList.contains("hidden")) {
+        drawLogging();
+      }
       const marketVisible = !el("screen-market").classList.contains("hidden");
       if (marketVisible) buildMarket();
       if (fishingVisible) buildFishing();
       // A location-exclusive enemy (Road Goblin, so far) can appear or
       // disappear from the idle list the instant a trip lands.
       if (combatVisible) buildCombatIdle();
+      if (arrived.home) {
+        show("home");
+        if (arrived.blocked > 0) {
+          showToast(arrived.moved + " cargo unloaded · " + arrived.blocked + " still in Bag");
+        } else {
+          showToast(arrived.moved + " cargo unloaded to Warehouse");
+        }
+      } else {
+        // Landed in the field -- drop straight into "what's here" rather
+        // than leaving the player staring at the travel map.
+        show("explore");
+      }
+    }
+
+    if (shipmentsChanged || caravanChanged) {
+      drawBag();
+      if (!el("screen-inventory").classList.contains("hidden")) buildInventory();
     }
 
     updateHubAttention();
     updateSeasonNote();
     updateDaytimeBadge();
-    refreshMarketDockBadge();
+    refreshDock();
     checkBagFull();
+    checkWarehouseFull();
   }, 200);
 }
 

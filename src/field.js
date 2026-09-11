@@ -9,7 +9,7 @@ import { openZoneWheel } from "./zoneWheel.js";
 import { GROWTH_PER_LEVEL, WATER_XP, levelFromXp, levelProgress } from "./skills.js";
 import { growthMultiplier } from "./time.js";
 import { tryStartCanRefill, settleCanRefill, drawCanMeter } from "./canmeter.js";
-import { canAfford, buildCostNodes, spendCost } from "./costDisplay.js";
+import { canAffordBag, buildBagCostNodes, spendBagCost } from "./costDisplay.js";
 import { useSprite, slug } from "./sprites.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
@@ -78,8 +78,8 @@ function canExpandHere() {
 function buyPlot() {
   if (!canExpandHere()) return;
   const cost = expandCost();
-  if (!canAfford(cost)) { shakeExpand(); return; }
-  spendCost(cost);
+  if (!canAffordBag(cost)) { shakeExpand(); return; }
+  spendBagCost(cost);
   state.plots.push({
     crop: null, stage: 0, startedAt: 0, readyAt: null, waterProgress: 0,
     fertilizer: null,
@@ -123,7 +123,7 @@ function drawExpandCard() {
   }
   wrap.append(card);
   const cost = expandCost();
-  const affordable = canAfford(cost);
+  const affordable = canAffordBag(cost);
   card.classList.toggle("unaffordable", !affordable);
   card.classList.toggle("affordable-ready", affordable);
   card.replaceChildren();
@@ -132,7 +132,7 @@ function drawExpandCard() {
   label.textContent = "+ New Farm Plot";
   const cost_ = document.createElement("span");
   cost_.className = "plot-expand-cost";
-  cost_.replaceChildren.apply(cost_, buildCostNodes(cost));
+  cost_.replaceChildren.apply(cost_, buildBagCostNodes(cost));
   card.append(label, cost_);
 }
 
@@ -674,7 +674,7 @@ function openSeeds() {
   openSheet("Choose a seed");
 }
 
-el("back").addEventListener("click", function () { show("home"); updateSkillsNote(); });
+el("back").addEventListener("click", function () { show("explore"); updateSkillsNote(); });
 
 // Tool icons don't change frame like a growing crop does, so they're wired
 // once here rather than in the per-tick draw loop.

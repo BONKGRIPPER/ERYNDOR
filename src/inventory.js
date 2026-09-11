@@ -2,7 +2,7 @@
 //
 // Three pages, switched by the same bottom-tab pattern Farm's tools use,
 // not two independent pieces any more: Equipment (gear on the body), Bag
-// (carried), Storage (at Aerendell). Nothing here is animated or
+// (field cargo), Warehouse (at Aerendell). Nothing here is animated or
 // time-based, so there's no tick loop to hook into -- everything just
 // redraws on open or on a tap.
 //
@@ -22,6 +22,7 @@ import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { openSheet, closeSheet } from "./sheet.js";
 import { showToast } from "./toast.js";
+import { isAtHome } from "./travel.js";
 
 // Bag by default (2026-09-04) -- what the player's actually carrying is
 // almost always what they opened Inventory to check; Equipment is one tap
@@ -233,6 +234,10 @@ function slotCapFor(v) { return v === "storage" ? STORAGE_SLOTS : bagSlotCap(); 
 function slotsUsedFor(v) { return v === "storage" ? storageSlotsUsed() : bagSlotsUsed(); }
 
 export function buildInventory() {
+  const warehouseBtn = el("inv-view-storage");
+  warehouseBtn.disabled = !isAtHome();
+  warehouseBtn.classList.toggle("locked", !isAtHome());
+  if (view === "storage" && !isAtHome()) view = "bag";
   buildEquipSlots();
 
   const equipPage = el("equip-page");
@@ -250,13 +255,13 @@ export function buildInventory() {
   equipPage.classList.add("hidden");
   hint.classList.remove("hidden");
   grid.classList.remove("hidden");
-  moveAllBtn.classList.remove("hidden");
-  moveAllBtn.textContent = "Move All to " + (view === "bag" ? "Storage" : "Bag");
+  moveAllBtn.classList.toggle("hidden", view === "bag" && !isAtHome());
+  moveAllBtn.textContent = "Move All to " + (view === "bag" ? "Warehouse" : "Bag");
 
   const cap = slotCapFor(view);
   const used = slotsUsedFor(view);
   hint.textContent =
-    (view === "bag" ? "Tap an item to store it." : "Tap an item to carry it.") +
+    (view === "bag" ? "Your carried field cargo." : "Aerendell production stock.") +
     " " + used + "/" + cap + " slots used.";
   grid.replaceChildren();
 
@@ -275,6 +280,9 @@ function buildStackCard(stack) {
   const name = stack.name;
   const card = document.createElement("button");
   card.className = "inv-card";
+  const warehouseLocked = view === "bag" && !isAtHome();
+  card.disabled = warehouseLocked;
+  card.classList.toggle("locked", warehouseLocked);
 
   const img = document.createElement("img");
   img.className = "sprite-img";
@@ -318,6 +326,10 @@ function buildEmptySlot() {
 // splitting the stack some other way first. Only ever called from the
 // Bag/Storage grid, so `view` is always one of those two here.
 function openTransferPicker(name) {
+  if (!isAtHome()) {
+    showToast("Warehouse access requires returning to Aerendell");
+    return;
+  }
   const from = bagFor(view);
   // Both directions can fill up now that Storage has its own real cap
   // (STORAGE_SLOTS) -- same bag-room clamp gainItem() itself enforces,
@@ -325,12 +337,12 @@ function openTransferPicker(name) {
   const roomAtDest = view === "storage" ? bagRoomFor(name) : storageRoomFor(name);
   const max = Math.min(itemGet(from, name), roomAtDest);
   if (max < 1) {
-    if (itemGet(from, name) > 0) showToast((view === "storage" ? "Bag" : "Storage") + " full");
+    if (itemGet(from, name) > 0) showToast((view === "storage" ? "Bag" : "Warehouse") + " full");
     return;
   }
 
   const to = view === "bag" ? state.storage : state.bag;
-  const destLabel = view === "bag" ? "Storage" : "Bag";
+  const destLabel = view === "bag" ? "Warehouse" : "Bag";
 
   const body = el("sheet-body");
   body.replaceChildren();
@@ -367,7 +379,9 @@ function openTransferPicker(name) {
   refresh();
 
   accept.addEventListener("click", function () {
-    const qty = Math.min(Number(slider.value), itemGet(from, name));
+    if (!isAtHome()) { closeSheet(); return; }
+    const room = view === "storage" ? bagRoomFor(name) : storageRoomFor(name);
+    const qty = Math.min(Number(slider.value), itemGet(from, name), room);
     if (qty > 0) {
       itemAdd(from, name, -qty);
       itemAdd(to, name, qty);
@@ -394,6 +408,7 @@ function openTransferPicker(name) {
 // one at a time -- whatever doesn't fit stays put and the player's told,
 // rather than silently vanishing or blocking the rest of the move.
 function moveAll() {
+  if (!isAtHome()) return;
   const from = bagFor(view);
   const toBag = view === "storage";
   const to = toBag ? state.bag : state.storage;
@@ -418,7 +433,7 @@ function moveAll() {
     save();
     buildInventory();
   }
-  if (blockedAny) showToast((toBag ? "Bag" : "Storage") + " full — moved what fit");
+  if (blockedAny) showToast((toBag ? "Bag" : "Warehouse") + " full — moved what fit");
 }
 
 function setView(next) {
@@ -431,8 +446,11 @@ function setView(next) {
 
 el("inv-view-equipment").addEventListener("click", function () { setView("equipment"); });
 el("inv-view-bag").addEventListener("click", function () { setView("bag"); });
-el("inv-view-storage").addEventListener("click", function () { setView("storage"); });
+el("inv-view-storage").addEventListener("click", function () {
+  if (!isAtHome()) { showToast("Warehouse access requires returning to Aerendell"); return; }
+  setView("storage");
+});
 
 el("inv-move-all-btn").addEventListener("click", moveAll);
 
-el("back-inventory").addEventListener("click", function () { show("home"); });
+el("back-inventory").addEventListener("click", function () { show(isAtHome() ? "home" : "explore"); });

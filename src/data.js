@@ -31,12 +31,34 @@ export const BAG_SLOT_BONUS = { "Highland Sack": 3 };
 // rather than a per-LOCATIONS table -- first-pass, per the user's own "for
 // now" framing.
 export const STORAGE_SLOTS = 100;
+// Merchant freight fee, per selected inventory stack, scaled by how far
+// the goods have to travel: fee = stacks x FREIGHT_FEE_PER_STACK x
+// ceil(roadMinutes / FREIGHT_FEE_DISTANCE_STEP). The nearest market away
+// from Home is Thal-Barak at 20 road-minutes (2 steps -> 6 Shards/stack);
+// Riverhold at 55 minutes is 4 steps -> 12 Shards/stack. That keeps a
+// small shipment affordable against early Shard income (a combat win is
+// +15) while making it a real question whether to ship a far-away haul
+// home or just sell it on the spot -- and giving the outpost caravan
+// (Batch 9.7) something to undercut. No recurring fee; paid once at
+// dispatch. First-pass numbers, tune against a real playthrough.
+export const FREIGHT_FEE_PER_STACK = 3;
+export const FREIGHT_FEE_DISTANCE_STEP = 15;
+export const OUTPOST_COST = 50;
+export const CART_COST = 100;
+export const OUTPOST_CAPACITY = 200;
+export const CART_CAPACITY = 10;
+export const CART_HANDLING_MS = 10000;
+export const LOGGING_CREW_COST = 75;
+export const LOGGING_CREW_INTERVALS = [90000, 60000, 45000];
+export const LOGISTICS_UPGRADE_COSTS = { crew: [100, 200], stockpile: [50, 100], cart: [75, 150] };
+export const CARGO_UNITS = { "Pine Logs": 2, "Birch Logs": 2, "Stone": 2, "Iron Ore": 2, "Copper Ore": 2 };
 
 // The hub. Add a destination by adding a line here.
-// `hub` controls whether a place shows as a card on the home screen. Inventory,
-// Skills and Map live in the dock now instead (see DOCK_IDS below) -- they
-// stay in this list because the dock still looks up their icon/name from
-// here, they just don't get a card of their own anymore.
+// `hub` controls whether a place shows as a card on the Home screen.
+// Explore, Bag (inventory), Journal (skills) and Map live in the dock (see
+// DOCK_IDS below); Home is a dock button too, shown only at Aerendell. They
+// all stay in this list because the dock still looks up their icon/name
+// from here, they just don't get a Home card of their own.
 // Order here is also grid order (2 columns, read row by row) -- roughly
 // matches a hand-sketched layout (2026-08-28): Farm/Forest, Mining/Craft
 // Bench, Spinning Wheel/Camp Fire, Stone Cutter next to it, then Combat
@@ -45,16 +67,17 @@ export const STORAGE_SLOTS = 100;
 // outright (2026-09-01), not just hidden, once it was clear it wasn't
 // getting one; nothing else in the game referenced it.
 export const PLACES = [
-  { id: "home",      icon: "\u{1F3E1}", name: "Home",      note: "Back to the farmstead",  ready: true,  hub: false },
-  { id: "field",     icon: "\u{1F331}", name: "Farm",      note: "Plant, water, harvest",  ready: true,  hub: true },
-  { id: "logging",   icon: "\u{1FAB5}", name: "Forest",    note: "Plant, water, chop",     ready: true,  hub: true },
-  { id: "mining",    icon: "\u{26CF}\u{FE0F}", name: "Mining", note: "Descend, dig, and bank your finds", ready: true, hub: true },
+  { id: "home",      icon: "\u{1F3E1}", name: "Home",      note: "Your crafting stations", ready: true,  hub: false },
+  { id: "explore",   icon: "\u{1F9ED}", name: "Explore",   note: "Where you are and what's here", ready: true, hub: false },
+  { id: "field",     icon: "\u{1F331}", name: "Farm",      note: "Plant, water, harvest",  ready: true,  hub: false },
+  { id: "logging",   icon: "\u{1FAB5}", name: "Forest",    note: "Plant, water, chop",     ready: true,  hub: false },
+  { id: "mining",    icon: "\u{26CF}\u{FE0F}", name: "Mining", note: "Descend, dig, and bank your finds", ready: true, hub: false },
   { id: "craft",     icon: "\u{1F6E0}", name: "Craft Bench", note: "Tools from raw material", ready: true, hub: true },
   { id: "spinningWheel", icon: "\u{1F9F6}", name: "Spinning Wheel", note: "Turn flax into string", ready: true, hub: true },
   { id: "campfire",  icon: "\u{1F525}", name: "Campfire",  note: "Cook logs and berries",  ready: true,  hub: true },
   { id: "stoneCutter", icon: "\u{1FAA8}", name: "Stone Cutter", note: "Cut stone into blocks", ready: true, hub: true },
   { id: "tanningStation", icon: "\u{1F9F5}", name: "Tanning Station", note: "Turn hides into leather", ready: true, hub: true },
-  { id: "combat",    icon: "\u{2694}\u{FE0F}", name: "Combat", note: "Fight what's out there", ready: true, hub: true },
+  { id: "combat",    icon: "\u{2694}\u{FE0F}", name: "Combat", note: "Fight what's out there", ready: true, hub: false },
   { id: "sawmill",       icon: "\u{1FA9A}", name: "Sawmill",        note: "Turn pine logs into pine planks", ready: true, hub: true },
   { id: "township",  icon: "\u{1F465}", name: "Township",  note: "Villagers and their upgrades", ready: true, hub: true },
   { id: "armorBench", icon: "\u{1FA61}", name: "Armor Bench", note: "Sew cloth into armor", ready: true, hub: true },
@@ -66,12 +89,12 @@ export const PLACES = [
   // fish. Gated by location like a built station (hub.js's
   // fishingAvailableHere()), but on LOCATIONS[...].fishing rather than
   // needing to be "built" first.
-  { id: "fishing",   icon: "\u{1F3A3}", name: "Fishing",   note: "Rod, net, or trap -- see what bites", ready: true, hub: true },
+  { id: "fishing",   icon: "\u{1F3A3}", name: "Fishing",   note: "Rod, net, or trap -- see what bites", ready: true, hub: false },
   { id: "market",    icon: "\u{2696}\u{FE0F}", name: "Market", note: "Sell what you've gathered", ready: true, hub: false },
-  { id: "inventory", icon: "\u{1F392}", name: "Inventory", note: "What you're carrying",   ready: true,  hub: false },
+  { id: "inventory", icon: "\u{1F392}", name: "Bag",       note: "What you're carrying",   ready: true,  hub: false },
   { id: "skills",    icon: "\u{1F4D4}", name: "Journal",   note: "Skills and your collection", ready: true,  hub: false },
   { id: "town",      icon: "\u{1F3D8}", name: "Aerendell", note: "Villagers and trade",    ready: false, hub: false },
-  { id: "map",       icon: "\u{1F5FA}", name: "Map",       note: "Beyond the farmstead",   ready: true,  hub: false },
+  { id: "map",       icon: "\u{1F5FA}", name: "Map",       note: "Travel between locations", ready: true,  hub: false },
 ];
 // Foraging isn't a PLACES entry any more -- it's one persistent button
 // pinned above the dock (see index.html's #forage-bar and src/forage.js),
@@ -80,15 +103,44 @@ export const PLACES = [
 
 // Screens that exist, keyed to a #screen-<id> element and a #<id> URL hash.
 export const SCREEN_IDS = [
-  "home", "field", "logging", "mining", "combat", "inventory", "skills", "craft", "market", "campfire",
+  "home", "explore", "field", "logging", "mining", "combat", "inventory", "skills", "craft", "market", "campfire",
   "spinningWheel", "sawmill", "township", "stoneCutter", "tanningStation", "map", "fishing", "armorBench",
   "grindStone", "beehive", "fletchingBench", "loom",
 ];
 
-// The persistent bottom dock. Home first (left side) so there's always a
-// one-tap way back to the hub from anywhere; Field, Logging and Crafting
-// stay hub-only, or the dock turns into a second copy of the menu.
-export const DOCK_IDS = ["home", "inventory", "market", "skills", "map"];
+// The persistent bottom dock. `home` is first but only rendered while the
+// player is actually at Aerendell (dock.js's refreshDock()) -- it opens the
+// crafting-station grid. Explore is the "what's here" screen (field
+// activities + market for the current location); Map is the travel map.
+// Bag and Journal are Inventory and the Skills/Collection journal.
+export const DOCK_IDS = ["home", "explore", "inventory", "skills", "map"];
+
+// Aerendell is the one permanent production home. `currentLocation` still
+// tracks the field zone the player is exploring, but it no longer decides
+// which workshops exist on Home.
+export const HOME_LOCATION_ID = "aerendell";
+
+// Screens whose actions require the player to be physically at the home
+// workshop. Existing timers on these systems continue settling everywhere;
+// only opening/managing them is home-gated.
+export const PRODUCTION_SCREEN_IDS = [
+  "home", "craft", "campfire", "spinningWheel", "sawmill", "township",
+  "stoneCutter", "tanningStation", "armorBench", "grindStone", "beehive",
+  "fletchingBench", "loom",
+];
+
+// Active play is the travel-sensitive half of the game. These destinations
+// are offered from a location's World sheet rather than from Home.
+export const FIELD_SCREEN_IDS = ["field", "logging", "mining", "combat", "fishing"];
+
+export const LOCATION_ACTIVITIES = {
+  aerendell: ["field", "logging", "mining", "combat"],
+  forestRoad: ["logging", "combat", "fishing"],
+  thalBarak: ["combat", "fishing"],
+  stilltidePass: ["mining", "combat", "fishing"],
+  duunVaelBridge: ["combat"],
+  riverhold: ["combat", "fishing"],
+};
 
 // One canonical icon per skill -- meant to be reused anywhere a skill needs
 // representing, not just the Skills screen it was built for. Sprite-ready
@@ -609,8 +661,10 @@ export const RECIPES = {
   stonePlate:   { name: "Stone Plate",   cost: { "Stone": 25, "Pine Logs": 15 } },
   // Fishing's three tools -- see FISHING section near the bottom of this
   // file for what actually tells them apart. Net needs String (Spinning
-  // Wheel output) rather than raw Flax, same "a real conversion chain, not
-  // a shortcut" reasoning every other station-fed recipe already follows.
+  // Wheel output) and Birch Logs (Forest Road logging) -- both a real
+  // conversion/gather chain, not a shortcut, same reasoning every other
+  // station-fed recipe already follows, and it's back on the Craft Bench
+  // (see index.html) since it now has real inputs behind it.
   // Fishing Rod switched (2026-09-02) from Sticks/String to Oak Planks and
   // Fine String -- neither has a real source in the game yet (see the
   // "Oak Planks"/"Fine String" TINTS comment above), so this recipe is
@@ -618,7 +672,7 @@ export const RECIPES = {
   // spot, nothing behind it yet" story most of this game's forward-
   // referenced content follows. Quantities are a first-pass guess.
   fishingRod: { name: "Fishing Rod", cost: { "Oak Planks": 10, "Fine String": 8 } },
-  net:        { name: "Net",         cost: { "String": 15, "Sticks": 5 } },
+  net:        { name: "Net",         cost: { "String": 15, "Birch Logs": 5 } },
   trap:       { name: "Trap",        cost: { "Sticks": 20, "Flint": 5 } },
   // Bait -- Rod-only (see canFishHere()/rollFish() in fishing.js). Net and
   // Trap don't take bait on purpose: they're the bulk/passive tools, bait
@@ -1726,11 +1780,11 @@ export const LOCATIONS = {
 // straight off the hand-drawn map -- first-pass, meant to be tuned once
 // the location spreadsheet comes back, not a balanced economy yet.
 export const ROADS = [
-  { from: "aerendell", to: "forestRoad", minutes: 5 },
-  { from: "forestRoad", to: "thalBarak", minutes: 15 },
-  { from: "thalBarak", to: "stilltidePass", minutes: 5 },
-  { from: "stilltidePass", to: "duunVaelBridge", minutes: 15 },
-  { from: "duunVaelBridge", to: "riverhold", minutes: 15 },
+  { id: "aerendell-forestRoad", from: "aerendell", to: "forestRoad", minutes: 5 },
+  { id: "forestRoad-thalBarak", from: "forestRoad", to: "thalBarak", minutes: 15 },
+  { id: "thalBarak-stilltidePass", from: "thalBarak", to: "stilltidePass", minutes: 5 },
+  { id: "stilltidePass-duunVaelBridge", from: "stilltidePass", to: "duunVaelBridge", minutes: 15 },
+  { id: "duunVaelBridge-riverhold", from: "duunVaelBridge", to: "riverhold", minutes: 15 },
 ];
 
 // ----------------------------------------------------------- zone leveling

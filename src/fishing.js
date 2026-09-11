@@ -413,7 +413,7 @@ el("fish-tool-trap").addEventListener("click", function () { setMode("trap"); })
 pillFor("fish-cast").addEventListener("click", tapCast);
 pillFor("fish-net").addEventListener("click", tapNet);
 el("fish-trap-btn").addEventListener("click", setTrap);
-el("back-fishing").addEventListener("click", function () { show("home"); });
+el("back-fishing").addEventListener("click", function () { show("explore"); });
 
 export function applyFishingSprites() {
   useSprite(pillFor("fish-cast").querySelector(".pill-icon"), "fishing/rod");

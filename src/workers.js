@@ -39,6 +39,8 @@ import { tryAutoCook } from "./campfire.js";
 import { tryAutoBeehive } from "./beehive.js";
 import { levelFromXp } from "./skills.js";
 import { canAfford } from "./costDisplay.js";
+import { laborAssigned, laborCapacity } from "./labor.js";
+import { settleCaravan } from "./caravans.js";
 
 // The skill a role's tier-unlocking/speed bonus/unlock-level reads from --
 // a tiered role reads it off its own first stationIds entry's own STATIONS
@@ -133,10 +135,7 @@ function attemptRole(w) {
 // worker to their own assign zone's houses, same reasoning state.housing's
 // own comment in state.js already gives.
 export function workerCap() {
-  const houses = Object.keys(state.housing).reduce(function (sum, loc) {
-    return sum + (state.housing[loc] || 0);
-  }, 0);
-  return houses * HOUSE_WORKER_SLOTS;
+  return laborCapacity();
 }
 
 export function getWorker(role) {
@@ -145,7 +144,7 @@ export function getWorker(role) {
 
 export function isAssigned(role) { return !!getWorker(role); }
 
-export function assignedCount() { return state.workers.length; }
+export function assignedCount() { return laborAssigned(); }
 
 export function freeSlots() { return Math.max(0, workerCap() - assignedCount()); }
 
@@ -191,6 +190,7 @@ function estimateTickMs(role) {
 // flavor/display only for a station-based role, but is the Forager's
 // actual working zone).
 export function assignWorker(role) {
+  settleCaravan();
   if (!canAssignWorker(role)) return false;
   state.workers.push({
     role: role,
@@ -206,6 +206,7 @@ export function assignWorker(role) {
 // up later (by this or a different worker), starting fresh (a new
 // nextTickAt from scratch, not resuming wherever the old one left off).
 export function unassignWorker(role) {
+  settleCaravan();
   const idx = state.workers.findIndex(function (w) { return w.role === role; });
   if (idx === -1) return false;
   state.workers.splice(idx, 1);

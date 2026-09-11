@@ -585,5 +585,5 @@ el("combat-btn-choose").addEventListener("click", chooseAnother);
 // again instead of the same stale result screen.
 el("back-combat").addEventListener("click", function () {
   if (state.combat && state.combat.over) { state.combat = null; save(); }
-  show("home");
+  show("explore");
 });

@@ -17,8 +17,8 @@
 // already a built, location-gated station -- if it's here, expanding it
 // is always allowed.
 
-import { BEEHIVE_HONEY_MS, BEEHIVE_EXPAND_COST, BEEHIVE_XP } from "./data.js";
-import { state, save, gainItem, gainSkillXp } from "./state.js";
+import { BEEHIVE_HONEY_MS, BEEHIVE_EXPAND_COST, BEEHIVE_XP, HOME_LOCATION_ID } from "./data.js";
+import { state, save, deliverProduction, gainSkillXp } from "./state.js";
 import { openZoneWheel } from "./zoneWheel.js";
 import { levelProgress } from "./skills.js";
 import { canAfford, buildCostNodes, spendCost } from "./costDisplay.js";
@@ -98,16 +98,16 @@ export function settleBeehive() {
   const now = Date.now();
   state.beehiveSlots.forEach(function (slot, i) {
     if (!slot || now < slot.readyAt) return;
+    if (!deliverProduction("Honey", 1)) return;
     state.beehiveSlots[i] = null;
-    gainItem("Honey", 1);
     finished += 1;
   });
   if (finished > 0) {
-    const zoneLevels = gainSkillXp("beekeepingXp", BEEHIVE_XP * finished);
+    const zoneLevels = gainSkillXp("beekeepingXp", BEEHIVE_XP * finished, HOME_LOCATION_ID);
     save();
     updateSkillsNote();
     drawBeehiveXp();
-    if (zoneLevels) openZoneWheel(state.currentLocation, zoneLevels);
+    if (zoneLevels) openZoneWheel(HOME_LOCATION_ID, zoneLevels);
   }
   return finished > 0;
 }
@@ -134,7 +134,7 @@ export function drawBeehive() {
     } else {
       fill.style.width = "0%";
     }
-    node.querySelector(".pill-sub").textContent = brewing ? "Brewing…" : "Tap to start a batch";
+    node.querySelector(".pill-sub").textContent = brewing ? (now >= slot.readyAt ? "Warehouse full — Honey waiting" : "Brewing…") : "Tap to start a batch";
   });
   drawBeehiveXp();
   drawExpandCard();

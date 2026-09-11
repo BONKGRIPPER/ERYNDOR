@@ -14,8 +14,8 @@ const TYPES = {
 http.createServer((req, res) => {
   let rel = decodeURIComponent(req.url.split("?")[0]);
   if (rel === "/") rel = "/index.html";
-  const file = path.join(ROOT, rel);
-  if (!file.startsWith(ROOT)) { res.writeHead(403).end("no"); return; }
+  const file = path.resolve(ROOT, "." + rel);
+  if (file !== ROOT && !file.startsWith(ROOT + path.sep)) { res.writeHead(403).end("no"); return; }
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404).end("not found"); return; }
     res.writeHead(200, {
@@ -24,4 +24,4 @@ http.createServer((req, res) => {
     });
     res.end(data);
   });
-}).listen(PORT, () => console.log("serving " + ROOT + " on http://localhost:" + PORT));
+}).listen(PORT, "127.0.0.1", () => console.log("serving " + ROOT + " on http://127.0.0.1:" + PORT));

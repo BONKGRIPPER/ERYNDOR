@@ -25,6 +25,7 @@ import { levelProgress, levelFromXp, MAX_SKILL_LEVEL } from "./skills.js";
 import { useSprite } from "./sprites.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
+import { isAtHome } from "./travel.js";
 import { openSheet } from "./sheet.js";
 
 const SKILL_ROWS = [
@@ -135,7 +136,7 @@ export function drawSkills() {
   });
 }
 
-el("back-skills").addEventListener("click", function () { show("home"); });
+el("back-skills").addEventListener("click", function () { show(isAtHome() ? "home" : "explore"); });
 
 // Reset lives on the Skills screen since it's the one place already
 // showing the player everything they'd be giving up. A single tap can't

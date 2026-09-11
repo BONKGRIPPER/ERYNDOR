@@ -4,9 +4,8 @@
 // constant through batch 2; it's state.currentLocation now, read fresh
 // every call via zone() below, same "read live, don't cache" rule the rest
 // of this game's location-aware code follows. Sell shows everything you
-// own across your bag *and* storage combined (a town's local storage
-// crate, specifically -- see costDisplay.js's own combinedOwned() for the
-// unrelated bag+storage-for-costs rule elsewhere in the game); Purchase
+// own in the Bag, plus the Warehouse while physically home in Aerendell.
+// The Warehouse is never remotely available from another market. Purchase
 // shows what the market itself keeps in stock to sell you (BUYABLE in
 // data.js, still one flat list -- no zone has its own stock list yet).
 // Both share one pricing curve off one stock number per item: selling
@@ -37,6 +36,8 @@ import { show } from "./screens.js";
 import { drawBag, updateWalletNote } from "./hub.js";
 import { openSheet, closeSheet } from "./sheet.js";
 import { isTownMarketOpen } from "./time.js";
+import { isAtHome } from "./travel.js";
+import { openFreightOrder } from "./freightUI.js";
 
 function zone() {
   return state.currentLocation;
@@ -139,14 +140,14 @@ function maxAffordable(item, shards) {
 }
 
 function combinedOwned(name) {
-  return (state.bag[name] || 0) + (state.storage[name] || 0);
+  return (state.bag[name] || 0) + (isAtHome() ? (state.storage[name] || 0) : 0);
 }
 
 function bankQty(name) {
   return state.bank[name] || 0;
 }
 
-// Same bag-then-storage draw order sellQty() uses -- which container an
+// Same Bag-then-Warehouse draw order sellQty() uses -- which container an
 // item comes out of doesn't matter, only that the total banked matches
 // what actually left the player's hands.
 function depositQty(name, qty) {
@@ -191,7 +192,8 @@ function withdrawQty(name, qty) {
   buildMarket();
 }
 
-// Draws from the carried bag first, then storage for whatever's left --
+// Draws from the carried Bag first, then the Warehouse for whatever's left
+// while home --
 // which container it came from doesn't change the payout, only where the
 // count gets removed from.
 function sellQty(name, qty) {
@@ -472,6 +474,7 @@ export function buildMarket() {
   syncMarketTabs();
   const loc = LOCATIONS[zone()];
   const list = el("market-list");
+  el("market-send-freight").classList.toggle("hidden", state.playerContext !== "field" || zone() === "aerendell" || !locationHasMarket(loc) || !marketOpenHere());
   // "notice-only" pins the list to the bottom of the screen instead of its
   // usual spot right under the tabs -- see the .craft-list.notice-only
   // rule in style.css. Only the two single-notice cases below get it; the
@@ -621,7 +624,8 @@ function marketHint(text) {
 }
 
 el("market-view-sell").addEventListener("click", function () { setView("sell"); });
+el("market-send-freight").addEventListener("click", openFreightOrder);
 el("market-view-purchase").addEventListener("click", function () { setView("buy"); });
 el("market-view-bank").addEventListener("click", function () { setView("bank"); });
 
-el("back-market").addEventListener("click", function () { show("home"); });
+el("back-market").addEventListener("click", function () { show("explore"); });

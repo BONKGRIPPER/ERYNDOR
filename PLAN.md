@@ -1,13 +1,22 @@
 # Aerendell — Batch Implementation Plan (v2)
 
-> Supersedes v1 of this document. As of this revision: Batch 3's real-time
-> clock and season calendar are built and wired into growth speed (see
-> `src/time.js`) — the old decorative Watch/Tide clock this replaced is long
-> gone, removed cleanly since it gated nothing. Foraging and Crafting remain
-> without skill XP for now, by choice, not oversight — that's deferred
-> rather than urgent.
+> Supersedes v1 of this document. Reconciled with the codebase 2026-09-10.
 >
-> Engine note unchanged: plain HTML/CSS/JS, no build step.
+> Since the last revision: the game grew a great deal. Fishing, Beehive,
+> Grind Stone, Loom, Fletching Bench and a real armor line all shipped;
+> Foraging became a real skill (Crafting still has none, by choice); Combat
+> got auto-attack and an Archery/Melee split; the Bag/Warehouse got real
+> slot caps; six locations, a road chain and real travel replaced
+> "Aerendell is the only place"; the Home/World split (Batch 9.5) made
+> Aerendell the permanent workshop home and everything else a field zone;
+> and the first three road-logistics batches (9.6 merchant freight, 9.7
+> outpost + caravan, 9.8 passive logging crew) are built and unit-tested.
+> See `README.md`'s dated entries for the blow-by-blow.
+>
+> Engine note unchanged: plain HTML/CSS/JS, no build step. A tiny
+> `serve.js` gives ES modules a real HTTP origin (`node serve.js`).
+> Logistics simulation has its own headless test suites under `tests/`
+> (`node tests/freight.test.mjs`, `caravan.test.mjs`, `loggingCrew.test.mjs`).
 
 ---
 
@@ -28,37 +37,41 @@ Every batch ends in something you can open in the browser and do.
 
 | System | State |
 |---|---|
-| **Hub + dock** | Home screen with Field/Logging/Mining/Crafting/Campfire/Spinning Wheel/Sawmill cards; Home/Inventory/Market/Skills/Map in a persistent bottom dock, Home first (left) as a one-tap way back |
-| **Hero header** | Wallet badge top right, device-clock+day/night badge top left, "Now" banner underneath showing season/day/year only |
-| **Field (Farming)** | 6 plots, 2 crops (Red Berries 120s, Flax 240s), single growth stage each, real Farming XP/levels, growth-speed bonus per level |
-| **Mining ("The Shaft")** | Default skill, no building required; risk/reward digging with a carried pouch that's lost on a cave-in and only safe once surfaced/timed to bank. Digging is swing-based (several timed clicks per swing, count set by the equipped pickaxe) with flat per-swing cave-in risk and a cumulative depth-weighted material pool (`MINE_MATERIALS`), balanced against a real spreadsheet (2026-08-28); only Wooden/Flint/Stone (all capped at 100m) are craftable so far, deeper tiers exist as tuned data with nothing that can produce them yet |
-| **Foraging** | One persistent action pinned above the dock on every screen (not a hub card/screen), tap-and-wait, result rolled per-zone from `FORAGE_POOLS` on completion, real XP/levels with milestone speed-ups |
-| **Villager** | Bought once at Foraging Lv 10 (250 Shards); keeps the forage loop chaining on its own, live and offline, with a "welcome back" popup summarizing what was gathered and how long the game was closed |
-| **Crafting** | 2 recipes (Flint Axe, Flint Pick), concurrent 15s crafts, cost deducted on start, no skill attached (deferred) |
-| **Spinning Wheel + Sawmill** | Build-gated conversion stations (Flax→String, Logs→Planks); one generic handler (`src/stations.js`), each with its own skill (Sowing, Milling) on Farming/Logging's continuous speed curve |
-| **Inventory** | Card grid of every bag item, sprite-ready with tinted-dot fallback |
-| **Currency + Market** | `state.shards`; Aerendell's market is buy *and* sell, dynamic pricing by stock, one `BASE_VALUE` driving both directions |
-| **Buildings + Campfire** | `BUILDINGS` registry (build-once stations); Campfire cooks Logs→Charcoal and Berries→Cooked Berries via two queues, one pair at a time, chained while away |
-| **Zones** | Does not exist — Aerendell is the only place |
-| **Skills** | Farming, Logging, Mining, Foraging, Sowing and Milling are real; Foraging is the only one with a level cap (100) |
-| **Time** | Real, not simulated: night reads the device clock (shown honestly in its own hero badge now, not just felt), the season calendar reads real elapsed time since `state.startedAt` (one real week/season, four seasons/real month). `growthMultiplier()` feeds Farm/Logging's growth timers; nothing else reads it yet |
-| **Watering + chopping** | A plot needs 4 separate can-taps before it's watered (the can holds 4 charges, refills in 5s on an explicit tap); felling a tree is 4 separate 1.5s chops. Both fully animated |
-
-This is a smaller surface than v1 of this plan assumed, which is the point of
-removing the old clock before building the new one instead of swapping it
-in place — nothing to unwind, nothing dragging half-updated code behind it.
+| **Dock + screens** | Four permanent bottom-dock tabs: **Explore · Bag · Journal · Map**, plus a fifth **Home** tab shown only while standing at Aerendell (`dock.js`'s `refreshDock()`). Home is the crafting-station grid (one card per built workshop); Explore (`src/explore.js`) is "where you are and what's here" — the current location's field activities, its Market, Return-to-Aerendell when away, the Forest Road outpost, and the Freight panel; Map is the travel map only |
+| **Home vs. field context** | `state.playerContext` is `home`, `field`, or `traveling`. Aerendell (`HOME_LOCATION_ID`) is the permanent workshop home; every other location is a field zone reached by travel. Workshops only open in `home` context (`PRODUCTION_SCREEN_IDS`); Field/Logging/Mining/Combat/Fishing open only in `field` context and only where `LOCATION_ACTIVITIES` lists them. The Explore/Home dock buttons set the context implicitly (`enterFieldMode()` / `enterHomeMode()`), so it isn't managed by hand. Production timers keep settling everywhere; only opening/managing them is gated |
+| **Hero header** | Wallet badge top right, device-clock + day/night badge top left, "Now" banner underneath showing season/day/year |
+| **Field (Farming)** | 3 plots, 2 crops (Red Berries 120s, Flax 240s, each yields 3), one growth stage each, real Farming XP/levels with a continuous per-level speed bonus. Optional Bonemeal fertilizer (`FERTILIZERS`, ×1.5, applied before the first watering) |
+| **Logging** | Farming's mirror — plant a cone, water, chop once ripe. Pine everywhere by default; Forest Road grows Birch, and felling Birch needs an axe of ≥3 damage (Stone Axe or better). Own skill (Logging) |
+| **Mining ("The Shaft")** | Default skill, no building. Risk/reward digging with a carried pouch lost on a cave-in and safe only once surfaced. Swing-based (several timed clicks per swing, count set by the equipped pickaxe), flat per-swing cave-in risk, a cumulative depth-weighted material pool (`MINE_MATERIALS`), spreadsheet-balanced. Pickaxes are real equipped bag items (Wooden / Flint / Stone craftable, all capped at 100m); deeper tiers are tuned data with nothing to produce them yet |
+| **Foraging** | One persistent action pinned above the dock on every screen, tap-and-wait, result rolled from the current location's `FORAGE_POOLS` entry on completion. Real skill (Foraging), the one skill with milestone speed-ups (`FORAGE_SPEED_LEVELS`) rather than a continuous curve |
+| **Fishing** | Three tools, three different interactions (Rod reflex minigame, Net tap-sweep, Trap set-and-forget), five pool *types* (river/pond/lake/stream/ocean) mapped per location, ~20 fish, own skill. Rod/Net/Trap are craftable at the Craft Bench |
+| **Combat** | Two independent RuneScape-style clocks (enemy attacks on its own timer, player has a separate recovery clock); Attack fires on its own now. Multiple enemies, some zone-gated (Road Goblin). Weapon → attack damage, Armor+Shield → defense, Armor alone → recovery speed, Food is its own equip slot. Combat XP on every win plus Archery *or* Melee by the weapon that landed the kill. Night makes enemies tougher and more rewarding (`isNight()`) |
+| **Villagers (Township)** | Ten assignable worker professions (`WORKERS`: Forager, Cook, Spinster, Mason, Millworker, Miller, Beekeeper, Fletcher, Tanner, Weaver). Villager slots come from Houses (`HOUSE_WORKER_SLOTS` = 3 each; a new save starts with one House). Assigning an unlocked profession to a free slot is **free** — no Shard cost — and freely un/reassignable. A profession unlocks when its building is built and, where set, its skill reaches a threshold (only the Forager so far: Foraging Lv 3). An assigned worker auto-runs its station's next tier as the underlying skill levels; the Forager chains the forage loop live and offline with a "welcome back" popup. Shared food/heat upkeep (`labor.js`) covers every assigned villager including outpost crews |
+| **Crafting** | Craft Bench, ~20 recipes (tools, Scrap armor line, Fishing Rod/Net/Trap, baits, Short Bow, Highland Sack, …), concurrent crafts, cost deducted on start, **no skill attached** (still deferred). Reads and writes the Warehouse |
+| **Conversion stations** | One generic handler (`src/stations.js`) drives ~9 build-gated stations across ~16 recipes: Spinning Wheel (Sowing), Sawmill (Woodcutting), Stone Cutter (Stonecutting), Grind Stone (Grinding), Tanning Station (Tanner), Loom (Weaving), Fletching Bench (Fletcher), Armor Bench. Each has its own skill on Farming/Logging's continuous per-level curve |
+| **Beehive** | A growable station: buy Honey slots, each brews on its own `{startedAt,readyAt}` timer, chained while away. Honey is a combat buff food. Own skill (Beekeeping) |
+| **Inventory** | Real slot grid: 25-slot Bag (`BAG_SLOTS`, 99/stack), 100-slot Warehouse (`state.storage`, still that save key), an Equipment tab. Bag is Inventory's default view; "Move All" skips foods. The Bag is field cargo; the Warehouse is production stock and is locked while away |
+| **Currency + Market** | `state.shards` only. Aerendell's market is buy *and* sell, dynamic pricing by stock, one `BASE_VALUE` per item driving both directions, stock decaying back toward zero on a real-time half-life. Away markets can't sell or bank Warehouse items; town/city markets away from home instead offer "Send goods home" freight |
+| **Buildings + Campfire** | `BUILDINGS` registry (11 build-once workshops). Campfire cooks one (fuel, item) pair at a time from a single selected fuel + cook choice (the old two-queue version was simplified away), chained while away |
+| **Zones / travel** | Six `LOCATIONS` (Aerendell town, Forest Road wilderness, Thal-Barak city, Stilltide Pass wilderness, Duun-Vael Bridge landmark, Riverhold city) on a **linear** road chain (`ROADS`, 5 segments, `minutes` 5/15/5/15/15). Real travel with a countdown; Return Home takes the shortest unlocked path (Dijkstra in `travel.js`) and unloads the Bag into the Warehouse on arrival. Per-location forage pools, fish pools, tree species and activity lists. Zone XP (a 25% share of every skill XP gain feeds the current zone) with a working loot wheel on level-up |
+| **Road logistics** | **9.6–9.8 built, unit-tested + playtested (2026-09-10) — the first logistics milestone is done.** Merchant freight (`shipments.js` / `freightUI.js`): "Send goods home" from an away town/city market via a −/qty/+/Max stepper sheet, one active shipment, distance-scaled fee (`stacks × 3 × ceil(roadMin/15)`), live ETA, offline delivery, retries into a full Warehouse. Forest Road outpost + one reusable cart (`caravans.js` / `caravanUI.js`): build for 50 + 100 Shards, 200-unit stockpile, 10-unit cart, per-item source reserve, ready/full departure; the outpost sheet is a compact status list with "Deposit / withdraw" and "Route settings" sub-sheets. Passive logging crew: unlock for 75 Shards with a Stone Axe, one shared housing slot, one Birch Log / 90s into the outpost, upkeep-gated, with crew/stockpile/cart upgrades. Reached via a Freight `<details>` panel and an "Outpost & cart" sheet on the Explore tab — no dedicated screen |
+| **Skills** | 17-skill registry (`SKILLS`): Farming, Logging, Foraging, Mining, Combat, Sowing, Woodcutting, Stonecutting, Tanner, Fishing, Tailoring, Grinding, Beekeeping, Fletcher, Weaving, Archery, Melee — all real and trained by a live system (the eight station-based ones earn XP through `stations.js`'s generic handler). Real Skills screen behind the dock. Every skill shares a level-100 cap; Foraging is the only one on the milestone speed table |
+| **Time** | Real, not simulated: night reads the device clock (shown in its own hero badge), the season calendar reads real elapsed time since `state.startedAt` (one real week per season, four seasons per real month). `growthMultiplier()` feeds Farm/Logging growth timers; `isNight()` also feeds Combat difficulty/rewards |
+| **Watering + chopping** | A plot needs `WATER_TAPS_NEEDED` (4) separate can-taps before it's watered (the can holds `CAN_CAPACITY` = 4 charges, refills in 5s on an explicit tap); felling a tree is a timed HP fight against the equipped axe. Both fully animated |
 
 ---
 
 ## 2. The foundation question — resolved, done
 
-Decided: split now. **Done, as of this revision.** `game.js` (1065 lines) is
-gone; the game is fourteen ES modules under `src/`, wired together by
-`src/main.js`. No behavior changed — same save format, same everything —
-verified by full regression: hub navigation, Field plant/water/harvest with
-correct XP math, Foraging, Crafting's insufficient-funds shake, Inventory's
-card count, the dock, and offline-style timer resume all re-checked after the
-split and matched pre-split behavior exactly.
+Decided: split now. **Done.** `game.js` (1065 lines) is gone; the game is
+~45 ES modules under `src/`, wired together by `src/main.js` (the only file
+that imports every other). No behavior changed at the time of the split —
+same save format, same everything — verified by full regression: hub
+navigation, Field plant/water/harvest with correct XP math, Foraging,
+Crafting's insufficient-funds shake, Inventory's card count, the dock, and
+offline-style timer resume all re-checked after the split and matched
+pre-split behavior exactly. The module count has grown with every batch
+since; `README.md`'s file map is the current inventory.
 
 One consequence worth knowing: **ES modules need a real HTTP origin, not
 `file://`.** A tiny zero-dependency server is committed at `serve.js` for
@@ -83,9 +96,10 @@ New, from this revision:
   one used to be." It's placed early (Batch 3) because Logging and seasonal
   Farming rules depend on it existing, same reasoning as before — just no
   longer framed as replacing anything.
-- **Foraging/Crafting XP is deferred, not scheduled.** It'll happen inside
-  whatever batch naturally touches the Skills screen next (Batch 1 or 2), but
-  isn't gating anything else, so it's not called out as its own step anymore.
+- **Crafting XP is deferred, not scheduled.** Foraging got its own skill in
+  Batch 3.7; the Craft Bench still has none. It isn't gating anything else,
+  so it's not called out as its own step — it'll happen inside whatever
+  batch naturally touches the Craft screen next.
 
 ---
 
@@ -96,12 +110,13 @@ Reorganized into `src/dom.js`, `data.js`, `skills.js`, `sprites.js`,
 `state.js`, `pills.js`, `screens.js`, `hub.js`, `dock.js`, `inventory.js`,
 `field.js`, `forage.js`, `craft.js`, `main.js`. See `README.md`'s file map.
 
-### Batch 1 — Skills as real infrastructure
-Generalize Farming's skill code into a shared multi-skill system: one
-`SKILLS` registry, one `state.skillXp[id]` map, a real Skills screen behind
-the dock's Skills button.
-**Done when:** the Skills dock destination is a real screen. Farming shows up
-on it with a real bar. Foraging/Crafting don't have to yet — see §3.
+### Batch 1 — Skills as real infrastructure ✅ done
+Farming's skill code became a shared multi-skill system: one `SKILLS`
+registry (17 entries now), per-skill `state.<skill>Xp`, and a real Skills
+screen behind the dock. Every later production system (conversion stations,
+Fishing, Combat's Archery/Melee split, Grinding, Beekeeping, Fletcher,
+Weaving) plugged into it as it shipped. A shared level-100 cap was added
+across all skills in the 2026-09-04 worker-leveling pass.
 
 ### Batch 1.5 — Inventory: equip shell + storage crate — done
 Landed out of order, ahead of the batch it was originally filed under,
@@ -171,9 +186,9 @@ in Spring (1.15× farming, no night penalty) at Farming Lv 2 finished in
 98.4s, matching the combined multiplier exactly. `isShopHours()` and other
 gates weren't built — nothing needs one yet, and inventing a consumer
 before one exists isn't the point of this batch.
-**Done when:** *(remaining)* something beyond growth speed reads
-`isNight()` or a season's `growth` entry — combat, market demand, forage
-yield, whichever lands first.
+**Done:** Combat now reads `isNight()` for its night difficulty/reward
+tier, so a system beyond growth speed keys off the clock. Season `growth`
+entries still only feed Farm/Logging — deeper seasonal effects are Batch 13.
 
 ### Batch 3.5 — Watering can meter + multi-chop axe — done
 Two mechanics that turn a single tap into several: a plot needs
@@ -343,27 +358,32 @@ picked for being the most idle-native fit alongside everything else in the
 game. The other two remain options for a future zone/skill rather than
 scope for this one.
 
-### Batch 4 — Logging (mirrors Farming exactly) — partly done
-Plant a pine cone → water → grow → chop is built and working: its own plot
-grid, its own tool, its own skill and XP bar, one tree (Pine → Logs). **Axe-
-tier gating is not built** -- there's only one tool tier in the game so far
-(no axes exist yet outside the single Flint Axe recipe), so that half of this
-batch waits on real tool tiers existing, not on Logging itself.
-**Done when:** *(remaining)* a second tree exists and chopping it requires a
-better axe than chopping Pine does.
+### Batch 4 — Logging (mirrors Farming exactly) ✅ done
+Plant a cone → water → grow → chop, with its own plot grid, tool, skill and
+XP bar. Two trees now: Pine everywhere, Birch at Forest Road
+(`LOCATIONS.forestRoad.tree`), and felling Birch requires an axe of ≥3
+damage (`TREES.birch.minAxeDamage`, i.e. Stone Axe or better) — the
+axe-tier gate this batch was waiting on, added 2026-09-04 once Stone/Scrap
+axes existed. Felling is a timed HP fight against the equipped axe rather
+than a fixed number of chops.
 
-### Batch 5 — First production tier: Woodworking + tiered materials
-Introduces the tiered material system as real infrastructure, T1→T2 scale
-only: logs (T1, Logging) → planks (T2, Woodworking). Recipes stop being flat
-raw-material costs and start requiring a previous tier's *output*.
-**Done when:** a plank recipe genuinely can't be made without logging first.
+### Batch 5 — First production tier: Woodworking + tiered materials ✅ done
+The tiered material system is real infrastructure now, proven several times
+over: Sawmill turns Pine Logs → Pine Planks (Woodcutting skill), and a
+second `birchPlanks` tier needs 3 Birch Logs + 1 Pine Plank. The same
+"recipe requires a previous tier's output" pattern also runs the
+String→Cloth→Fabric line (Spinning Wheel + Loom) feeding the Highland armor
+recipes, and Bones→Bonemeal (Grind Stone) feeding the Farm's fertilizer.
 
-### Batch 6 — Mining + Smelting (the second T1→T2 pair)
-Mining (risk/RNG-heavy per the brief) produces ore; Smelting turns ore into
-bars. Second proof of the Batch 5 pattern, plus RNG-weighted yield as a
+### Batch 6 — Mining + Smelting (the second T1→T2 pair) — partly done
+Mining is done and then some (spreadsheet-rebalanced swing digging, real
+equipped pickaxes, a depth-weighted material pool). **Smelting is not** —
+an early Furnace station was built and then pulled (see README's "Furnace
+removed" entry); ore→bar has no station yet, and Scrap tools currently use
+Scrap Metal directly. RNG-weighted yield-per-tap still to prove as a
 mechanic.
-**Done when:** a bar recipe requires mined ore, and yield-per-tap has real,
-visible variance.
+**Done when:** *(remaining)* a bar recipe requires mined ore through a real
+smelting step, with visible per-tap yield variance.
 
 ### Batch 8 — Combat, part one: stats and the tick engine
 **Done 2026-08-28**, in a different shape than originally sketched here: not
@@ -377,29 +397,123 @@ the brief specifically wanted), Food is its own equip slot so Eat consumes
 whatever's equipped there. See README.md's Combat section for the full
 shape and the equip-slot-per-stat reasoning.
 
-### Batch 9 — Combat, part two: encounters as a real gate
-Batch 8 shipped the loop with a single enemy and no stakes beyond the fight
-itself — this batch is everything still missing: more enemies, real loot,
-and the brief's core rule (you cannot out-craft your way past a fight). The
-expedition/checkpoint-banking structure discussed as Combat's differentiator
-from Mining — HP and loot persisting across a sequence of fights, banked
-only at a retreat point, the same "carried until banked" tension Mining
-already has — lands here too, plus at least one progression node that
-requires a won fight, not just enough materials.
-**Done when:** there's a wall in the game gold and crafting alone can't clear.
+### Batch 9 — Combat, part two: encounters as a real gate — partly done
+More enemies (5 now: Chicken, Highland Cow, Highland Sheep, Grey Wolf, and
+the zone-gated Road Goblin), real loot drops, and Archery/Melee as
+weapon-driven skills all shipped. **Still missing:** the
+expedition/checkpoint-banking structure (HP and loot persisting across a
+sequence of fights, banked only at a retreat point — `combat.js` still
+notes "no expedition/checkpoint layer yet"), and at least one progression
+node that requires a won fight rather than just materials.
+**Done when:** *(remaining)* there's a wall in the game gold and crafting
+alone can't clear.
 
-### Batch 10 — A second zone + real-time travel
-One more place. Real-hours travel timer. Per-zone crafting tax, reduced by
-zone level/reputation. Batch 7's economy becomes arbitrage, per the brief.
-**Done when:** hauling goods to the second zone and selling there is
-measurably better than selling at the hub.
+### Batch 9.5 — Aerendell production hub + field Bag ✅ done (first pass)
 
-### Batch 11 — Remaining production skills
-Weaving, Tanning, Smithing (armor), Fletching — each another T1→T2→T3 chain
-using the Batch 5 pattern, proven twice over by now. New recipe data and a
-screen each, no new infrastructure.
-**Done when:** armor and ranged weapons exist as real, craftable, wearable
-gear that changes combat stats.
+Aerendell is the fixed Home and production hub; travel now governs only
+active field work. Crafting and conversion stations use the Warehouse
+(`state.storage` keeps its save key for compatibility). Farming, Logging,
+Foraging, Mining, Fishing and Combat are entered from World locations.
+
+The existing **Bag is field cargo**—there is no separate cargo container. Field
+rewards and carried supplies share it. Production consumes Warehouse stock and
+returns completed goods to the Warehouse. On Return Home, Bag contents unload
+automatically; any overflow remains safely in the Bag. The Warehouse tab is
+locked while away, and remote markets cannot sell or bank Warehouse items.
+
+`state.playerContext` explicitly records `home`, `field`, or `traveling`, so
+Aerendell can be both a map zone and the permanent Home without confusing the
+two states. Old saves migrate from their current location. Production XP is
+credited to Aerendell rather than whichever field zone was visited last.
+
+The first-pass loop is:
+
+1. Open **World** and explore Aerendell or travel to another unlocked zone.
+2. Choose a field activity available at that location; gains enter the Bag.
+3. Use **Return Home**. Longer returns use the shortest unlocked road duration.
+4. On arrival, Bag contents unload into the Warehouse automatically.
+5. Start production at Home using Warehouse inputs; outputs return there even
+   if their timers finish while the player is away.
+
+Shipment support started as framework-only here (`state.shipments[]`,
+queueing, offline settlement, Warehouse delivery, safe overflow) with no UI;
+Batch 9.6 built the merchant-freight UI on top of it without a save
+migration, exactly as this batch's "add to the UI later" clause intended.
+
+**Done:** Home stations stay fixed at Aerendell; field activity availability
+follows travel; returning unloads the Bag without loss; production reads and
+writes only the Warehouse; old saves load; shipment state took a UI in 9.6
+with no further migration.
+
+### Batches 9.6–9.11 — Road logistics and automation
+
+Planned 2026-09-10. See [LOGISTICS_PLAN.md](LOGISTICS_PLAN.md) for full scope,
+ownership/timing rules, migration requirements, and acceptance checks.
+
+1. **9.6 — Reliable transfers and merchant freight ✅ built, tested,
+   playtested + first-tuned (2026-09-10):** "Send goods home" from an away
+   town/city market via a −/qty/+/Max stepper sheet; one active shipment,
+   distance-scaled fee (`stacks × 3 × ceil(min/15)`), live ETA, offline
+   delivery, safe overflow, transactional cargo ownership. Tracked on the
+   Explore Freight panel. `shipments.js` / `freightUI.js`.
+   `tests/freight.test.mjs` passes.
+2. **9.7 — Outpost + one reusable caravan ✅ built, tested, playtested +
+   sheet-reworked (2026-09-10):** Forest Road stockpile, repeating Home
+   route, physical empty returns, per-item source reserve, ready/full
+   departure. The `openOutpost()` sheet went from one long scroll of raw
+   `<select>` / `<input number>` / `<details>` controls to a compact status
+   + action list with "Deposit / withdraw" (tap-to-pick + stepper) and
+   "Route settings" (cargo chips, reserve stepper, departure segmented
+   control, max-wait chips) as small sub-sheets. `caravans.js` /
+   `caravanUI.js` / `labor.js`. `tests/caravan.test.mjs` passes.
+3. **9.8 — Passive extraction + first bottleneck ✅ built, tested,
+   playtested (2026-09-10):** an unlockable Birch logging crew (Stone Axe
+   + a shared housing slot + Township upkeep), local stockpile buffer,
+   crew/stockpile/cart upgrades. The crew's ~40 logs/hr against the
+   starter cart's ~29 logs/hr ceiling (~58 after the cart upgrade) makes a
+   real backlog you clear with one purchase. Playtest surfaced that the
+   bottleneck read only lived in the Explore panel — refactored to a
+   shared `crewStatus()` and shown in the outpost sheet's crew section
+   too. `tests/loggingCrew.test.mjs` passes.
+4. **9.9 — Stock targets and multiple routes** *(not started)*: Warehouse
+   demand, source reserves, cargo priorities, incoming-stock accounting,
+   production supply status.
+5. **9.10 — Road capacity** *(not started)*: segment travel, fair freight
+   queues, road upgrades, visible traffic. Player travel stays independent
+   of freight congestion.
+6. **9.11 — Depots and return cargo** *(not started)*: intermediate
+   transfers, outward supplies, regional specialization, route alternatives
+   once the map gains branches.
+
+**9.6–9.8 architecture note:** no dedicated logistics screen and no
+`outposts.js` / `logistics.js` — outpost, cart and logging-crew simulation
+all live in `caravans.js`, shared housing/upkeep in `labor.js`, and the UI
+is a Freight `<details>` panel plus an "Outpost & cart" sheet (with its own
+Deposit and Route sub-sheets) reached from the Explore tab at Forest Road.
+This matches the plan's "small mobile sheets" product rule; only the plan's
+own module-name guesses were off.
+
+**Milestone done.** 9.6–9.8 are all built, unit-tested and playtested on a
+phone viewport. Next logistics work is Batch 9.9 (Warehouse stock targets,
+source reserves, a second route). Road `minutes` (5/15/5/15/15) are still
+first-pass off the hand-drawn map — do not scale them toward real-hour
+journeys until 9.9's demand loop has proven waiting stays enjoyable.
+
+### Batch 10 — Additional-zone economy (reframed)
+With Batches 9.5–9.11 owning travel and logistics, this batch is about why destinations
+matter: unique resources, local merchants and real per-zone demand. It no
+longer adds another competing production hub or a per-zone crafting tax.
+**Done when:** gathering or selling in a second zone creates a measurable
+advantage without moving the player's Aerendell workshops.
+
+### Batch 11 — Remaining production skills — mostly done
+Weaving (Loom), Tanning (Tanning Station) and Fletching (Fletching Bench)
+all shipped as real skills with their own chains — String→Cloth→Fabric,
+Hide→Leather, and Flint Arrows/Short Bow — feeding the Highland armor line
+and Archery. **Smithing (armor from bars) is the piece left**, and it's
+blocked on Batch 6's smelting step existing.
+**Done when:** *(remaining)* metal armor exists as craftable, wearable gear
+that changes combat stats, made from smithed bars.
 
 ### Batch 12 — Faith and Social
 Prayer, Religion, Factions. Last among the skills on purpose — each is a
@@ -423,8 +537,15 @@ playing in real June.
 1. **Batch order.** Same note as v1 — optimized for "smallest thing that
    unblocks the most later batches." Combat can move up if playability
    matters more than economy depth right now, at the cost of placeholder gear.
-2. **How literal should real-time travel be** — 2 hours vs. 20 hours is a
-   different game. Decide before Batch 10 starts, not during it.
+2. **Travel duration scale.** Road `minutes` (5/15/5/15/15) are still read
+   straight off the hand-drawn map. **Batches 9.6–9.8 are all playtested**
+   (2026-09-10): the merchant loop (fee now `stacks × 3 × ceil(min/15)`),
+   the outpost + cart route, and the passive logging crew have each run
+   end to end on a phone viewport, with their order sheets rebuilt for
+   touch and their economies confirmed against the design targets (crew
+   40 vs cart 29 → 58 logs/hr). Do not scale road times toward real-hour
+   journeys until Batch 9.9's demand loop has proven waiting stays
+   enjoyable.
 3. ~~Are Flint Axe / Flint Pick permanent T1 content, or placeholders?~~
    **Resolved 2026-08-26:** yes, permanent T1 — Flint Pick was renamed to
    Flint Pickaxe and given a real mechanical effect (dig speed/safety/max

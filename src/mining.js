@@ -436,6 +436,17 @@ function drawMineArt() {
   el("mine-art-label").textContent = zone.name;
 }
 
+// Keep the swing control's art on the same equipment source of truth as its
+// label and stats. Swapping tools now updates this icon immediately; an empty
+// slot falls back to the generic mining placeholder instead of a stale item.
+function drawDigPickaxeSprite() {
+  const icon = pillFor("mine-dig").querySelector(".pill-icon");
+  const key = state.equipment.pick
+    ? "items/" + slug(state.equipment.pick)
+    : "mining/pickaxe";
+  useSprite(icon, key);
+}
+
 export function refreshMining() {
   const cooldown = onCooldown();
   const p = pickaxe();
@@ -446,6 +457,7 @@ export function refreshMining() {
   drawCarried();
 
   const pill = pillFor("mine-dig");
+  drawDigPickaxeSprite();
   // Says which pickaxe is actually driving the numbers below it (speed,
   // risk, depth per swing all come off whatever's equipped in the Pick
   // slot -- see pickaxe() above) rather than a fixed "Dig Deeper", same
@@ -511,8 +523,9 @@ function drawSurfaceCooldown(cooldown) {
 
 pillFor("mine-dig").addEventListener("click", startDig);
 el("mine-surface-btn").addEventListener("click", bankAndSurface);
-el("back-mining").addEventListener("click", function () { show("home"); });
+el("back-mining").addEventListener("click", function () { show("explore"); });
 
 export function applyMiningSprites() {
-  useSprite(pillFor("mine-dig").querySelector(".pill-icon"), "mining/pickaxe");
+  drawDigPickaxeSprite();
+  useSprite(el("mine-surface-icon"), "mining/surface");
 }

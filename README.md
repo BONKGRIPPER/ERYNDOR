@@ -3868,6 +3868,214 @@ cold boot and confirmed both the assigned workers and the housing count
 survived the save/load round-trip unchanged. No console errors
 throughout. Test save reset afterward.
 
+### Navigation rework: a real Explore tab, Home only at Aerendell (2026-09-10)
+
+The dock had grown to five permanent tabs (Home, Bag, Market, Journal,
+World) plus a Home-button quick-nav popup, a Home-travel sheet, and a
+Market "Closed" badge -- and the things you could actually *do* at a
+location were scattered across Map node-sheets and a `#map-activities`
+strip. This flattens it.
+
+The dock is now four permanent tabs -- **Explore · Bag · Journal · Map**
+-- plus a fifth, **Home**, rendered only while the player is standing at
+Aerendell and not mid-trip (`dock.js`'s `refreshDock()` toggles the
+button's `hidden` attribute; `main.js` calls it each tick and on every
+navigation). "Inventory" is labelled "Bag", "World" is labelled "Map".
+
+**Explore** (`src/explore.js`, `#screen-explore`) is the new "where you are
+and what's here" screen: the current location's field activities (from
+`LOCATION_ACTIVITIES`), a Market button when the location has one, a
+prominent "Return to Aerendell (N min)" button when away, the Forest Road
+"Outpost & cart" entry, and the Freight panel. Tapping an activity calls
+`enterFieldMode()` first, so the `home`/`field` context split (Batch 9.5)
+is no longer something the player manages by hand. Field/logging/mining
+buttons carry the same green "needs attention" ring the old Home cards had
+(`fieldNeedsAttention()` etc. are now exported from `hub.js`).
+
+**Home** (`#screen-home`, unchanged content) is now purely the
+crafting-station grid -- the "Explore Aerendell" card is gone
+(`visiblePlaces()` no longer special-cases it), and the Home dock button
+calls `enterHomeMode()` before `show("home")` so the production-screen
+gate lets it through. **Map** is now purely the travel map: the
+activities strip and the Explore/Return-Home buttons came off it, and a
+tapped node's sheet shrinks to type + facts + a Travel button, with a
+one-line "Open the Explore tab for activities here."
+
+Routing: `show()` now redirects a blocked production/field screen to
+`explore` instead of `map` (and no longer pops the old Home-travel sheet);
+field-activity back buttons point to `explore`, station back buttons still
+point to `home`, and Bag/Journal back go to `home` at Aerendell or
+`explore` away. Arriving in the field lands on Explore rather than leaving
+the player on the travel map.
+
+Deleted: `src/locationActivities.js`, `openStationQuickNav()`,
+`openHomeTravelSheet()`, `refreshMarketDockBadge()`, `enterHomeFields()`,
+`isInField()`, and the `.dock-btn.closed` styling.
+
+Verified live: fresh save boots to Home showing only Craft Bench; built
+every station and confirmed all twelve cards render with no Explore card.
+Explore at Aerendell listed Farm/Forest/Mining/Combat + Market; tapping
+Farm entered field context and opened the Farm screen; its back button
+returned to Explore. Travelled to Forest Road -- the Home tab disappeared
+from the dock, Explore showed Forest/Combat/Fishing + Outpost & cart + a
+"Return to Aerendell (5 min)" button and no Market (wilderness). Return
+button started the trip and showed Map; forcing arrival landed on Home
+with the Home tab back. Home->Campfire->back->Home and
+Explore->Market->back->Explore both round-tripped. Map rendered all six
+nodes and five road badges with no `#map-activities` reference. Cold page
+reload booted clean with the four/five-tab dock and no console errors.
+Test save reset afterward.
+
+### Batch 9.6 merchant freight: playtested, restyled, and a real fee (2026-09-10)
+
+The merchant-freight code (Batch 9.6) had been unit-tested but never
+driven by hand. Two things were wrong once it was.
+
+**The order sheet** was a stack of raw `<input type="number">` fields --
+bright white boxes against the dark UI, fiddly to fill on a phone, and
+nothing like the game's other quantity pickers. It's now a stepper list
+(`src/freightUI.js`): one row per Bag item with `−` / quantity / `+` and
+a `Max` toggle, a selected row lit gold, a live "N stacks · home in M
+min" summary, and a single `Send — N Shards` button. The verbose intro
+paragraph and the duplicate fee text are gone.
+
+**The fee** was a flat 1 Shard per selected stack -- effectively free
+(a stack of 99 logs shipped 20 minutes home for 1 Shard). It's now
+distance-scaled: `stacks × FREIGHT_FEE_PER_STACK (3) × ceil(roadMinutes
+/ FREIGHT_FEE_DISTANCE_STEP (15))`, so 6 Shards/stack from Thal-Barak
+(20 min) and 12 from Riverhold (55 min). That's a real cost against
+early Shard income (a combat win is +15) without being punishing, it
+scales with how far the goods travel, and it gives the outpost caravan
+(Batch 9.7) something to undercut. Both numbers are still first-pass.
+`shipments.js` gained an exported `freightFee(stacks, minutes)` and
+`quoteShipment` now returns `stacks` for the sheet's summary.
+
+Also: `refreshFreight()` no longer appends the caravan/logging-crew
+read-out to the Explore Freight panel until the Forest Road outpost
+actually exists (it used to nag "Visit Forest Road to establish an
+outpost" on every player's panel), and shows "No shipments in transit."
+when there's nothing to report. The dispatch toast says "track it in
+Explore", not "in World".
+
+Verified live on a 375px viewport at Thal-Barak: filled the stepper
+sheet (Pine Logs Max + a few Stone), confirmed the summary read "2
+stacks · home in 20 min" and the button "Send — 12 Shards"; dispatched
+and confirmed the Bag lost exactly the sent goods, Shards dropped by 12,
+and a shipment appeared with a 20-minute ETA. Reloaded the whole page --
+the shipment and its countdown survived. Forced the deadline into the
+past and settled offline: exactly the sent goods landed in the
+Warehouse, the shipment cleared, and `freightHistory` recorded it. A
+second dispatch while one was active was blocked with "Your current
+shipment must finish unloading first." The Explore Freight panel showed
+the in-transit line and the last delivery with no caravan noise.
+`node tests/freight.test.mjs` updated for the new fee and passes, along
+with the caravan and logging-crew suites. Test save reset afterward.
+
+### The Net is back on the Craft Bench, and travel resets stale tree plots (2026-09-10)
+
+**Net.** The `net` RECIPES entry has always existed but its Craft Bench
+pill was pulled on 2026-08-30 (no real inputs behind it). Its cost is now
+`15 String · 5 Birch Logs` — String from the Spinning Wheel, Birch Logs
+from Forest Road logging, both real chains — and the pill is back in
+`index.html`'s `craft-list` (one `<button class="pill" data-item="net">`,
+picked up automatically by `craft.js`'s `#screen-craft .pill` wiring, no
+code change). Verified: the pill renders with the cost, a craft spends
+15 String + 5 Birch Logs and delivers 1 Net to the Warehouse.
+
+**Tree plots on arrival.** Travelling to a location whose Logging grows a
+different species used to leave the previous place's trees standing — you
+had to fell every stale Pine at Forest Road before a single Birch started
+growing. `logging.js` gained `resetLogPlotsForLocation()`, called from
+`main.js`'s travel-resolved block: any plot locked to a species other than
+the arrival location's is cleared (mid-chop swing included) and restarted
+as a fresh growth cycle of the local tree. Plots that *already* match are
+left completely untouched — growth timer, ripe state and all — so
+travelling between two Pine locations costs nothing. Verified: Aerendell
+(ripe/growing/mid-chop Pine) → Forest Road turned all three plots into
+fresh growing Birch; Thal-Barak → Stilltide Pass (both Pine) left a
+running growth timer exactly where it was.
+
+### Batch 9.7 playtested: the Forest Road outpost sheet, rebuilt (2026-09-10)
+
+Same pass as the 9.6 pickup, one batch further. `openOutpost()` (the
+"Outpost & cart" sheet reached from the Explore tab at Forest Road) had
+been unit-tested but never driven by hand. On a 375px viewport it was one
+long scroll: a six-line status blob, a raw `<select>` + `<input
+type=number>` deposit form, a `<details>` cargo checklist listing *every*
+`TINTS` key, and two more bright-white number fields for the reserve and
+max-wait — and the whole thing re-rendered and jumped to the top on every
+button press.
+
+It's now a **compact status + action list** with the two form-heavy jobs
+split into their own small sub-sheets (`src/caravanUI.js`):
+
+- Main sheet: two status lines (`Stockpile N / cap · Cart N / cap`, then a
+  live cart-phase line via the new exported `cartPhaseLine()`), then
+  `Deposit / withdraw goods`, `Route settings`, pause/disband, a Logging
+  Crew section, and an Upgrades section — all consistent gold-outline
+  buttons. Scroll position is captured and restored across the sheet's own
+  self-refresh.
+- **Deposit / withdraw** sub-sheet: a tap-to-select item list (`.seed-row`
+  with Bag/Outpost counts) plus one `−/qty/+` stepper with `Max bag` /
+  `Max out`, and Deposit / Withdraw buttons.
+- **Route settings** sub-sheet: cargo toggle-chips (only Bag ∪ stockpile ∪
+  current order, not all of `TINTS`), a reserve stepper (±5), a
+  When-ready / When-full segmented control, and max-wait preset chips
+  (30s / 1m / 3m / 10m / 30m / 60m) shown only for "when full".
+
+The Explore Freight panel's own live cart line now uses `cartPhaseLine()`
+too. Economy left as-is: a hand playtest confirmed the crew's 40 logs/hr
+against the starter cart's ~29 logs/hr ceiling (~58 after the first cart
+upgrade) already produces the intended stockpile bottleneck, so
+`OUTPOST_CAPACITY` / `CART_CAPACITY` / `LOGGING_CREW_INTERVALS` were not
+touched.
+
+Verified live (375px, Forest Road): built outpost + cart, deposited 40
+Birch Logs through the stepper sub-sheet, configured a full route (cargo,
+reserve 10, "when full", 3-minute max wait) and confirmed it saved as
+`{items:["Birch Logs"],reserve:10,mode:"full",maxWaitMs:180000}`; ran
+three cart cycles and confirmed the reserve floor stopped extraction
+exactly at 10, deliveries reached the Warehouse, and a single-jump
+offline `settleCaravan` matched the incremental run byte for byte;
+unlocked and assigned the logging crew (−75 Shards, shared upkeep clock
+started); reloaded the whole page with an active cart + assigned crew and
+confirmed the outpost, cart, crew and route order all survived.
+`node tests/caravan.test.mjs` and the freight / logging-crew suites still
+pass. Test save reset afterward.
+
+### Batch 9.8 playtested: the crew-vs-cart bottleneck, surfaced (2026-09-10)
+
+Last of the first logistics milestone. The passive Birch logging crew
+(unlock 75 Shards with a Stone Axe, one shared housing slot, Township
+food/heat upkeep, 1 Birch Log / 90s) was unit-tested but never watched
+run. Sim playtest: assign the crew and the outpost stockpile climbs from
+0 to its ~100-Birch cap over ~10 sim-hours while the starter cart lags
+behind (~+11 logs/hr net); park the cart empty and buy the one cart
+upgrade (10 → 20 units, 75 Shards); the backlog then drains back to zero
+(~+18 logs/hr net) and stays there. Crew 40 logs/hr vs starter-cart ~29
+logs/hr ceiling (~58 after the upgrade) is exactly the intended mismatch,
+so `OUTPOST_CAPACITY` / `CART_CAPACITY` / `LOGGING_CREW_INTERVALS` were
+not touched. Online (incremental) and offline (one `settleCaravan` jump)
+runs matched.
+
+The one gap: the bottleneck read only lived in the Explore Freight panel,
+not the outpost sheet where you'd act on it. The shared calc is now
+`crewStatus()` in `src/caravanUI.js` — crew rate, cart ceiling, a current
+reason ("Gathering Birch Logs" / "Stockpile full — extraction paused" /
+"Paused — Township is out of food or heat"), and a remedy line ("The
+cart can't keep up (29 vs 40 logs/hr) — upgrade it." / "Build a cart to
+move the logs home." / "Add Birch Logs to the cart's route and resume
+it."). Both `loggingSummary()` (panel text) and the outpost sheet's
+Logging Crew section render it, so they tell the same story and the fix
+sits directly above the Upgrades section. `STATIONS.birchPlanks` (3 Birch
+Logs + 1 Pine Plank → 1 Birch Plank at the Sawmill) confirmed as the home
+sink. All three logistics suites pass; no console errors. Test save reset.
+
+**Milestone note:** Batches 9.6–9.8 — merchant freight, the outpost + cart
+route, and the passive crew — are now all built, unit-tested and
+playtested end to end on a phone viewport. Batch 9.9 (Warehouse stock
+targets, source reserves, a second route) is the next logistics layer.
+
 ## Adding to it
 
 A new crop, tree, or recipe is one entry in `src/data.js`; a new zone's

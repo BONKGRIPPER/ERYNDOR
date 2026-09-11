@@ -241,7 +241,10 @@
                filling yellow bar -- "time to surface" -- see mining.js's
                refreshMining(). -->
           <div class="pill-fill mine-surface-fill"></div>
-          <span class="villager-hire-icon">🪜</span>
+          <span id="mine-surface-icon" class="villager-hire-icon mine-surface-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <span class="sprite-fallback" aria-hidden="true">🪜</span>
+          </span>
           <span class="villager-hire-body">
             <span class="villager-hire-name">Surface &amp; Bank</span>
             <span class="villager-hire-sub" id="mine-bank-preview">Nothing carried yet</span>
@@ -470,7 +473,7 @@
       <div class="inv-toggle">
         <button id="inv-view-equipment" class="inv-view-btn">Equipment</button>
         <button id="inv-view-bag" class="inv-view-btn active">Bag</button>
-        <button id="inv-view-storage" class="inv-view-btn">Storage</button>
+        <button id="inv-view-storage" class="inv-view-btn">Warehouse</button>
       </div>
     </div>
 
@@ -504,6 +507,20 @@
       </div>
     </div>
 
+    <!-- ============================= EXPLORE ============================= -->
+    <div id="screen-explore" class="screen hidden">
+
+      <header class="field-head">
+        <div>
+          <div class="field-title">Explore</div>
+          <div class="field-sub">Where you are and what's here</div>
+        </div>
+      </header>
+
+      <div id="explore-list" class="explore-list"></div>
+      <details class="freight-panel"><summary>Freight</summary><div id="freight-status" aria-live="off"></div></details>
+    </div>
+
     <!-- =============================== MAP ================================ -->
     <div id="screen-map" class="screen hidden">
 
@@ -511,7 +528,7 @@
         <button id="back-map" class="back" aria-label="Back">‹</button>
         <div>
           <div class="field-title">Map</div>
-          <div class="field-sub">Beyond the farmstead</div>
+          <div class="field-sub">Travel between locations</div>
         </div>
       </header>
 
@@ -769,8 +786,27 @@
           <span class="pill-count">0</span>
         </button>
 
-        <!-- Padded Vest, Stone Plate, Fishing Rod, Net, Trap, Worm Bait
-             and Shiny Lure are pulled from Aerendell's Craft Bench
+        <button class="pill" data-item="net">
+          <div class="pill-fill"></div>
+          <div class="pill-level-fill"></div>
+          <span class="pill-level-badge">0</span>
+          <span class="pill-icon">
+            <img class="sprite-img" alt="" draggable="false">
+            <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3 3 12l9 9 9-9Z" />
+              <path d="M7.5 7.5 16.5 16.5" />
+              <path d="M16.5 7.5 7.5 16.5" />
+            </svg>
+          </span>
+          <span class="pill-body">
+            <span class="pill-name">Net</span>
+            <span class="pill-sub">15 String · 5 Birch Logs</span>
+          </span>
+          <span class="pill-count">0</span>
+        </button>
+
+        <!-- Padded Vest, Stone Plate, Fishing Rod, Trap, Worm Bait and
+             Shiny Lure are pulled from Aerendell's Craft Bench
              (2026-08-30) -- same "markup gone, logic untouched" removal
              combat's own log just got. Their RECIPES/ARMORS/EQUIPMENT/
              BAITS entries in data.js are all still there: anyone who
@@ -778,9 +814,11 @@
              armor, casting a Rod, setting a Trap), and craft.js's own
              `document.querySelectorAll("#screen-craft .pill")` wiring
              just finds fewer pills to bind, no special-casing needed.
-             Reintroducing any of them -- here, a different station, or a
-             different location's own Craft Bench once that's a real
-             distinction -- is a markup change, not a logic one. -->
+             The Net came back (2026-09-10) once it had real inputs
+             (String + Birch Logs). Reintroducing any of the others --
+             here, a different station, or a different location's own
+             Craft Bench once that's a real distinction -- is a markup
+             change, not a logic one. -->
       </div>
 
       <!-- Buildable stations moved below the Recipes list (2026-09-01,
@@ -813,6 +851,7 @@
       </div>
 
       <div id="market-list" class="craft-list"></div>
+      <button id="market-send-freight" class="map-travel-btn hidden">Send goods home</button>
 
       <div id="market-hint" class="hint">Tap an item to sell everything you're carrying of it.</div>
     </div>

@@ -12,7 +12,8 @@
 //                                            (n == waters is the ripe frame)
 //   assets/sprites/trees/<treeId>/<n>.png    same idea, for Logging
 //   assets/sprites/forage/basket.png         the one persistent forage button
-//   assets/sprites/mining/pickaxe.png        the one Dig pill on the mining screen
+//   assets/sprites/mining/pickaxe.png        fallback Dig icon when no tool is equipped
+//   assets/sprites/mining/surface.png        the Surface & Bank action icon
 //   assets/sprites/mining/zones/<slug>.png   the Mining screen's big art banner,
 //                                             one per MINE_ZONES entry -- square
 //                                             art still scales best even though
@@ -27,11 +28,13 @@
 //                                             reused anywhere a skill needs
 //                                             representing, not just the
 //                                             Skills screen
+//   assets/sprites/dock/<screenId>.png       the five persistent navigation
+//                                             icons along the bottom edge
 //
 // Files are looked for once at startup. Square art scales best -- images are
 // fit with `object-fit: contain` so nothing gets stretched.
 
-import { CROPS, TREES, RECIPES, STATIONS, TINTS, SKILLS, MINE_ZONES } from "./data.js";
+import { CROPS, TREES, RECIPES, STATIONS, TINTS, SKILLS, MINE_ZONES, DOCK_IDS } from "./data.js";
 
 export const SPRITE_BASE = "assets/sprites/";
 
@@ -44,7 +47,7 @@ export function slug(name) {
 function allSpriteKeys() {
   const keys = [
     "soil/tilled", "tools/seeds", "tools/fertilizer", "tools/water",
-    "forage/basket", "mining/pickaxe",
+    "forage/basket", "mining/pickaxe", "mining/surface",
   ];
   Object.keys(CROPS).forEach(function (id) {
     for (let n = 0; n <= CROPS[id].waters; n++) keys.push("crops/" + id + "/" + n);
@@ -56,6 +59,7 @@ function allSpriteKeys() {
   Object.keys(STATIONS).forEach(function (id) { keys.push("stations/" + id); });
   Object.keys(TINTS).forEach(function (name) { keys.push("items/" + slug(name)); });
   Object.keys(SKILLS).forEach(function (id) { keys.push("skills/" + id); });
+  DOCK_IDS.forEach(function (id) { keys.push("dock/" + id); });
   MINE_ZONES.forEach(function (zone) { keys.push("mining/zones/" + slug(zone.name)); });
   // Not a STATIONS entry (see beehive.js's own header for why), so it
   // isn't picked up by the stations/<id> loop that'd normally cover this

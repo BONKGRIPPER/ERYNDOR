@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <meta name="theme-color" content="#10182f" />
+    <title>Eryndor Idle — NES Home Concept</title>
+    <link rel="stylesheet" href="nes-home.css" />
+  </head>
+  <body>
+    <main id="home-screen" class="game-shell" aria-label="Eryndor Idle NES home screen concept">
+      <header class="hud">
+        <div class="hud-chip"><span class="sun" aria-hidden="true">*</span> 3:16 PM</div>
+        <div class="brand" aria-label="Eryndor Idle">
+          <span class="brand-main">ERYNDOR</span>
+          <span class="brand-sub">IDLE</span>
+        </div>
+        <div class="hud-chip"><span class="coin" aria-hidden="true"></span> 0</div>
+      </header>
+
+      <section class="world-card" aria-labelledby="location-name">
+        <img src="assets/aerendell-nes-hero.png" alt="Pixel-art farmstead beside a lake and pine forest" />
+        <div class="world-shade"></div>
+        <div class="world-title">
+          <span class="eyebrow">LETH-EIREN</span>
+          <h1 id="location-name">AERENDELL</h1>
+          <p>A quiet farmstead at the forest's edge</p>
+        </div>
+        <div class="season"><span>SPRING</span><b>DAY 01</b><span>YEAR 01</span></div>
+      </section>
+
+      <section class="quest-strip" aria-label="Current hint">
+        <span class="quest-gem" aria-hidden="true"></span>
+        <div><small>NEXT STEP</small><strong id="status-copy">Choose your path</strong></div>
+        <span class="blink" aria-hidden="true">▶</span>
+      </section>
+
+      <nav class="adventure-menu" aria-label="Destinations">
+        <button class="quest-card selected" data-area="farm" data-status="The soil is ready. Plant your first seeds." aria-current="true">
+          <span class="card-number">01</span>
+          <span class="pixel-icon soil"><img src="../assets/sprites/items/red-berries.png" alt="" /></span>
+          <span class="card-copy"><strong>FARM</strong><small>PLANT · WATER · HARVEST</small></span>
+          <span class="card-arrow">▶</span>
+        </button>
+
+        <button class="quest-card" data-area="forest" data-status="Pines are ready to be felled.">
+          <span class="card-number">02</span>
+          <span class="pixel-icon woods"><img src="../assets/sprites/items/pine-logs.png" alt="" /></span>
+          <span class="card-copy"><strong>FOREST</strong><small>CHOP · GATHER · GROW</small></span>
+          <span class="card-arrow">▶</span>
+        </button>
+
+        <button class="quest-card" data-area="mine" data-status="Descend carefully and bank your ore.">
+          <span class="card-number">03</span>
+          <span class="pixel-icon mine"><img src="../assets/sprites/items/flint-pickaxe.png" alt="" /></span>
+          <span class="card-copy"><strong>THE SHAFT</strong><small>DIG · RISK · RETURN</small></span>
+          <span class="card-arrow">▶</span>
+        </button>
+
+        <button class="quest-card" data-area="craft" data-status="Turn gathered materials into useful tools.">
+          <span class="card-number">04</span>
+          <span class="pixel-icon craft"><img src="../assets/sprites/items/flint.png" alt="" /></span>
+          <span class="card-copy"><strong>CRAFT BENCH</strong><small>TOOLS FROM RAW MATERIAL</small></span>
+          <span class="card-arrow">▶</span>
+        </button>
+
+        <button class="quest-card wide" data-status="Prepare your equipment before venturing out.">
+          <span class="card-number">05</span>
+          <span class="pixel-icon battle"><img src="../assets/sprites/items/wooden-buckler.png" alt="" /></span>
+          <span class="card-copy"><strong>COMBAT</strong><small>FIGHT WHAT'S OUT THERE</small></span>
+          <span class="card-arrow">▶</span>
+        </button>
+      </nav>
+
+      <section class="recent" aria-label="Recent items">
+        <div class="section-title"><span>RECENT ITEMS</span><i></i></div>
+        <div class="empty-slot">NO ITEMS YET</div>
+      </section>
+
+      <button class="forage-action" data-status="Foraging... the wilds may provide what you need.">
+        <span class="level-badge">LV<br /><b>0</b></span>
+        <span class="berry-icon"><img src="../assets/sprites/items/berries.png" alt="" /></span>
+        <span><strong>FORAGE</strong><small>TAP TO SEARCH THE WILDS</small></span>
+        <span class="button-prompt">A</span>
+      </button>
+
+      <nav class="bottom-nav" aria-label="Main navigation">
+        <button class="active"><span>⌂</span>HOME</button>
+        <button><span>▣</span>ITEMS</button>
+        <button><span>◆</span>MARKET</button>
+        <button><span>▤</span>JOURNAL</button>
+        <button><span>✦</span>MAP</button>
+      </nav>
+    </main>
+
+    <section id="area-screen" class="game-shell area-shell hidden" aria-live="polite">
+      <header class="area-header">
+        <button id="area-back" class="pixel-back" aria-label="Return to Aerendell">◀</button>
+        <div>
+          <span class="eyebrow">AERENDELL</span>
+          <h1 id="area-title">FARM</h1>
+        </div>
+        <div id="area-level" class="area-level">LV 0</div>
+      </header>
+      <div class="xp-panel">
+        <div><strong id="area-skill">FARMING</strong><span>0 / 60 XP</span></div>
+        <div class="xp-track"><i></i></div>
+      </div>
+      <figure class="area-art">
+        <img id="area-image" src="assets/farm-area.png" alt="" />
+        <figcaption><span id="area-location">THE HOMESTEAD</span><b id="area-condition">READY</b></figcaption>
+      </figure>
+      <div id="area-stats" class="area-stats"></div>
+      <section class="area-actions" aria-labelledby="actions-title">
+        <div class="section-title"><span id="actions-title">CHOOSE AN ACTION</span><i></i></div>
+        <div id="action-list" class="action-list"></div>
+      </section>
+      <div class="area-tip">
+        <span class="button-prompt">A</span>
+        <p><small>FIELD NOTES</small><strong id="area-tip-copy">Select an action to begin.</strong></p>
+      </div>
+    </section>
+    <script src="nes-home.js"></script>
+  </body>
+</html>

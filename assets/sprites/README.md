@@ -1,8 +1,51 @@
 # Sprites
 
+## NES replacement direction
+
+The installed NES replacement batches currently include:
+
+- `items/stone.png`
+- `items/stone-block.png`
+- `items/basalt.png`
+- `items/basalt-block.png`
+- `items/coal.png`
+- `items/pine-planks.png`
+- `items/birch-logs.png`
+- `items/birch-planks.png`
+- `items/red-berries.png`
+- `items/flint-axe.png`
+- `items/wooden-axe.png`
+- `items/stone-axe.png`
+- `items/wooden-pickaxe.png`
+- `items/flint-pickaxe.png`
+- `items/stone-pickaxe.png`
+- `items/scrap-pickaxe.png`
+- `trees/pine/0.png` and `trees/pine/1.png`
+- `trees/birch/0.png` and `trees/birch/1.png`
+- `mining/zones/stone.png`, `copper.png`, `iron.png`, `gold.png`, and
+  `diamond.png`
+- `mining/surface.png`
+- all 17 skill icons in `skills/<skillId>.png`
+- `dock/home.png`, `dock/explore.png`, `dock/inventory.png`,
+  `dock/skills.png`, and `dock/map.png`
+- `craft/flintAxe.png` (the same Flint Axe art reused for its recipe)
+- `craft/stoneAxe.png` (the same Stone Axe art reused for its recipe)
+- `craft/flintPickaxe.png`, `craft/stonePickaxe.png`, and
+  `craft/scrapPickaxe.png` (their item art reused for the recipes)
+
+New replacements should match this shared brief: a centered object designed on
+a roughly 24×24 logical pixel grid, hard square pixel clusters, a strong dark
+silhouette, no antialiasing, and no more than four or five object colors. Keep
+generous transparent padding. Do not add rounded-square badges, frames, text,
+external shadows, glow, gradients, or scenery behind inventory objects.
+
+Use a consistent three-quarter view for resources and a lower-left to
+upper-right diagonal for handheld tools. The existing Pine Logs sprite already
+fits the intended direction and remains the reference for wood resources.
+
 Drop image files in at these exact paths and the game uses them automatically
-— no code changes, no rebuild. Nothing here yet, so the game currently runs
-on its built-in vector placeholder art.
+— no code changes and no rebuild. Any missing asset continues to use its
+built-in vector placeholder art.
 
     soil/tilled.png            the plot background, shared by all six plots
 
@@ -42,6 +85,11 @@ on its built-in vector placeholder art.
                                 craft sprites above: the Inventory card
                                 doesn't care how you got the item, just what
                                 it is.
+
+    skills/<skillId>.png       one icon for every entry in SKILLS
+
+    dock/<screenId>.png        Home, Explore, Bag, Skills, and Map icons in
+                                the persistent bottom navigation bar
 
 Crop ids and watering counts live in `CROPS` in `src/data.js`. Tree ids live
 in `TREES`, right below it -- same shape as `CROPS`, since Logging is

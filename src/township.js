@@ -31,6 +31,8 @@ import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { openSheet, closeSheet } from "./sheet.js";
 import { updateWalletNote, drawBag } from "./hub.js";
+import { laborAssigned, settleLaborUpkeep } from "./labor.js";
+import { settleCaravan } from "./caravans.js";
 
 function shake(node) {
   node.classList.remove("shake");
@@ -76,9 +78,7 @@ function actionButton(icon, name, sub, cost) {
 // WORKERS role) counts toward the one shared upkeep bill -- assigning a
 // second or third villager doesn't cost more Shards to feed per villager,
 // but does mean more food/heat drawn each VILLAGE_UPKEEP_MS.
-function headcount() {
-  return state.workers.length;
-}
+function headcount() { return laborAssigned(); }
 
 // Called every tick, unconditionally (see main.js) -- same "runs in the
 // background regardless of screen" shape as settleForage()/
@@ -92,27 +92,16 @@ function headcount() {
 // "settle catches up however far behind it is" shape every other deadline
 // in this game already follows.
 export function settleVillageUpkeep() {
-  if (headcount() === 0 || state.village.nextUpkeepAt === null) return;
-  let changed = false;
-  while (Date.now() >= state.village.nextUpkeepAt) {
-    const foodNeeded = VILLAGE_UPKEEP_FOOD * headcount();
-    const heatNeeded = VILLAGE_UPKEEP_HEAT * headcount();
-    if (state.village.food >= foodNeeded && state.village.heat >= heatNeeded) {
-      state.village.food -= foodNeeded;
-      state.village.heat -= heatNeeded;
-      state.village.nextUpkeepAt += VILLAGE_UPKEEP_MS;
-      state.village.starved = false;
-      changed = true;
-    } else {
-      if (!state.village.starved) changed = true;
-      state.village.starved = true;
-      break;
-    }
-  }
-  if (changed) save();
+  settleCaravan();
+  // Long offline gaps resume in chunks; don't advance upkeep beyond the
+  // extraction cursor while it still has earlier events to process.
+  const crew = state.outposts.forestRoad?.crew;
+  if (crew?.assigned && crew.nextAt <= Date.now()) return;
+  settleLaborUpkeep();
 }
 
 function donateFood(item, qty) {
+  settleCaravan();
   const owned = combinedOwned(item);
   qty = Math.min(qty, owned);
   if (qty <= 0) return;
@@ -124,6 +113,7 @@ function donateFood(item, qty) {
 }
 
 function donateHeat(item, qty) {
+  settleCaravan();
   const owned = combinedOwned(item);
   qty = Math.min(qty, owned);
   if (qty <= 0) return;
@@ -485,7 +475,7 @@ el("township-view-housing").addEventListener("click", function () { setTownshipT
 
 export function buildTownship() {
   const slots = el("township-slots");
-  slots.textContent = assignedCount() + " / " + workerCap() + " villager slots assigned";
+  slots.textContent = assignedCount() + " / " + workerCap() + " villager slots assigned" + (state.outposts.forestRoad?.crew?.assigned ? " · 1 logging at Forest Road (manage in World)" : "");
 
   const wrap = el("township-list");
   wrap.replaceChildren();

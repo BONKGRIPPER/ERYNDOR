@@ -9,7 +9,7 @@
 
 import {
   PLACES, SCREEN_IDS, TINTS, BUILDINGS, CROPS, RECIPES,
-  FUELS, COOKABLES, STATIONS, LOCATIONS,
+  FUELS, COOKABLES, STATIONS, LOCATIONS, HOME_LOCATION_ID,
 } from "./data.js";
 import { state, save } from "./state.js";
 import { season, dayOfSeason, yearNumber, isNight } from "./time.js";
@@ -23,11 +23,6 @@ import { canAfford } from "./costDisplay.js";
 // water to fish -- so it needs its own location check. Same underlying
 // rule as forage's own canForageHere() (src/forage.js): a location either
 // has a pool assigned or it doesn't yet.
-function fishingHere() {
-  const loc = LOCATIONS[state.currentLocation];
-  return !!(loc && loc.fishing);
-}
-
 // A BUILDINGS-backed place (Campfire, Spinning Wheel, Sawmill, Stone
 // Cutter, Tanning Station, Township, Armor Bench) moves onto Home the
 // instant it's actually built (2026-08-31) -- joining Farm/Forest/Mining/
@@ -40,20 +35,18 @@ function fishingHere() {
 // same rule buildings.js's own belongsHere() uses, so a station only ever
 // shows on the one Home it was built for. Fishing has no build step, just
 // its own location check (fishingHere() above).
-// Exported for dock.js's own Home quick-nav popup (see openStationQuickNav()
-// there) -- the exact same "built, and belongs at this location" gating the
-// real hub cards use, so the popup never offers a station the player
-// couldn't actually reach by walking to Home and tapping its card by hand.
+// The Home screen's station grid: Craft Bench plus every built BUILDINGS
+// station that belongs at Aerendell (LOCATIONS[HOME].stations).
 export function visiblePlaces() {
   return PLACES.filter(function (place) {
     if (!place.hub) return false;
+    if (place.id === "craft") return true;
     if (place.id in BUILDINGS) {
       if (!state.buildings[place.id]) return false;
-      const loc = LOCATIONS[state.currentLocation];
+      const loc = LOCATIONS[HOME_LOCATION_ID];
       return !!(loc && loc.stations && loc.stations.indexOf(place.id) >= 0);
     }
-    if (place.id === "fishing") return fishingHere();
-    return true;
+    return false;
   });
 }
 
@@ -254,7 +247,7 @@ el("reorder-done").addEventListener("click", exitReorderMode);
 // bag (ready to plant) -- the same three actionable states Field's own
 // canUse() already recognizes, just asked as "is there at least one"
 // instead of "which tool applies here".
-function fieldNeedsAttention() {
+export function fieldNeedsAttention() {
   const hasSeed = Object.keys(CROPS).some(function (id) {
     return (state.bag[CROPS[id].seed] || 0) > 0;
   });
@@ -273,7 +266,7 @@ function fieldNeedsAttention() {
 // this replaces, see below). A plot needs attention only once it's
 // actually ripe (chopHealth set) and isn't already mid-swing -- a tree
 // that's mid-chop already has the player's attention.
-function loggingNeedsAttention() {
+export function loggingNeedsAttention() {
   return state.logPlots.some(function (plot) {
     return plot.chopHealth !== null && !plot.chopSwing;
   });
@@ -293,8 +286,8 @@ function craftNeedsAttention() {
 // cookable, since queuing either one spends it out of the bag immediately
 // (see campfire.js). Already-queued material naturally stops counting here.
 function campfireNeedsAttention() {
-  const hasFuel = FUELS.some(function (f) { return (state.bag[f] || 0) > 0; });
-  const hasCookable = Object.keys(COOKABLES).some(function (c) { return (state.bag[c] || 0) > 0; });
+  const hasFuel = FUELS.some(function (f) { return (state.storage[f] || 0) > 0; });
+  const hasCookable = Object.keys(COOKABLES).some(function (c) { return (state.storage[c] || 0) > 0; });
   return hasFuel && hasCookable;
 }
 
@@ -312,7 +305,7 @@ function stationNeedsAttention(id) {
 // Mining costs nothing to start and every tap is instant -- the only thing
 // that can make it not-actionable is the post-cave-in/post-surface
 // cooldown, so that's the whole check.
-function miningNeedsAttention() {
+export function miningNeedsAttention() {
   return Date.now() >= state.mineCooldownUntil;
 }
 
@@ -321,9 +314,6 @@ function miningNeedsAttention() {
 // hub is always current the moment the player comes back to it.
 export function updateHubAttention() {
   const marks = {
-    field: fieldNeedsAttention(),
-    logging: loggingNeedsAttention(),
-    mining: miningNeedsAttention(),
     craft: craftNeedsAttention(),
     campfire: campfireNeedsAttention(),
   };
@@ -401,7 +391,7 @@ export function drawBag() {
     const dot = document.createElement("span");
     dot.className = "dot";
     dot.style.background = TINTS[name] || "#9a8f7d";
-    chip.append(dot, name + " " + (state.bag[name] || 0));
+    chip.append(dot, name + " " + ((state.bag[name] || 0) + (state.storage[name] || 0)));
     items.append(chip);
   });
 }

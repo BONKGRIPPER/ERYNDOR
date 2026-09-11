@@ -41,7 +41,7 @@ import { state, save, gainItem, gainSkillXp } from "./state.js";
 import { openZoneWheel } from "./zoneWheel.js";
 import { GROWTH_PER_LEVEL, levelFromXp, levelProgress } from "./skills.js";
 import { growthMultiplier } from "./time.js";
-import { canAfford, buildCostNodes, spendCost } from "./costDisplay.js";
+import { canAffordBag, buildBagCostNodes, spendBagCost } from "./costDisplay.js";
 import { useSprite, slug } from "./sprites.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
@@ -130,6 +130,27 @@ function startGrowing(plot) {
   plot.startedAt = Date.now();
   plot.readyAt = plot.startedAt + growthMs(treeFor(plot));
   plot.chopHealth = null;
+}
+
+// Called on arrival at a new location (main.js's travel-resolved block).
+// Any plot still locked to a *different* species than the one this
+// location grows is reset to a fresh growth cycle of the local tree --
+// without this, arriving at Forest Road (Birch) with ripe/growing Pine
+// plots from Aerendell meant felling every stale Pine before a single
+// Birch started growing. Plots that already match the local species are
+// left completely alone -- growth timer, ripe state, mid-chop swing and
+// all -- so travelling between two Pine locations costs you nothing.
+export function resetLogPlotsForLocation() {
+  const local = treeForCurrentLocation();
+  let changed = false;
+  state.logPlots.forEach(function (plot) {
+    if (plot.tree === local) return;
+    plot.chopSwing = null;
+    startGrowing(plot);
+    changed = true;
+  });
+  if (changed) save();
+  return changed;
 }
 
 // Rolls any finished growth timers forward, and resolves any chop swing
@@ -498,11 +519,11 @@ function canExpandHere() {
 function buyPlot() {
   if (!canExpandHere()) return;
   const cost = expandCost();
-  if (!canAfford(cost)) {
+  if (!canAffordBag(cost)) {
     shakeExpand();
     return;
   }
-  spendCost(cost);
+  spendBagCost(cost);
   const plot = { startedAt: 0, readyAt: null, chopHealth: null, chopSwing: null };
   startGrowing(plot);
   state.logPlots.push(plot);
@@ -543,7 +564,7 @@ function drawExpandCard() {
   }
   wrap.append(card);   // keep it last even as buildLogPlots() rebuilds around it
   const cost = expandCost();
-  const affordable = canAfford(cost);
+  const affordable = canAffordBag(cost);
   card.classList.toggle("unaffordable", !affordable);
   card.classList.toggle("affordable-ready", affordable);
   card.replaceChildren();
@@ -552,8 +573,8 @@ function drawExpandCard() {
   label.textContent = "+ New Pine Plot";
   const cost_ = document.createElement("span");
   cost_.className = "plot-expand-cost";
-  cost_.replaceChildren.apply(cost_, buildCostNodes(cost));
+  cost_.replaceChildren.apply(cost_, buildBagCostNodes(cost));
   card.append(label, cost_);
 }
 
-el("back-logging").addEventListener("click", function () { show("home"); updateSkillsNote(); });
+el("back-logging").addEventListener("click", function () { show("explore"); updateSkillsNote(); });
