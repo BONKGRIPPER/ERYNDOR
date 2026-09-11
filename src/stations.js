@@ -60,7 +60,7 @@ export function costFor(cfg) {
 // rejection feedback -- shared by the player's own startStation() (below,
 // which shakes the pill on a denied tap) and the station-villager auto-
 // trigger in workers.js (which just silently retries on a later tick, same
-// "blocked now, not lost" rule forage.js's own villager cycle follows).
+// "blocked now, not lost" rule the Forager's own tryAutoForage() follows).
 // Returns whether it actually started.
 export function tryStartStation(id) {
   const cfg = STATIONS[id];

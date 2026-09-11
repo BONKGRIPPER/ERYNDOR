@@ -182,45 +182,61 @@ function unequipCan() {
 }
 
 // One full-width pill, same shape Logging's own drawAxeSlot() builds.
+// Built once and updated in place on every later call (this runs every
+// tick via drawField()) -- rebuilding the whole pill each time, as this
+// used to, tore out and recreated the <img> every ~200ms, which defeated
+// useSprite()'s own same-key caching (a fresh <img> has no dataset.key to
+// compare against) and reloaded/repainted the icon constantly, reading as
+// a visible stutter on a perfectly static icon. Bug fixed 2026-09-11.
 function drawCanSlot() {
   const wrap = el("field-can-slot");
   if (!wrap) return;
-  wrap.replaceChildren();
   const equipped = state.equipment.can;
 
-  const btn = document.createElement("button");
-  btn.className = "pill equip-row";
+  let btn = wrap.querySelector(".equip-row");
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.className = "pill equip-row";
 
-  const icon = document.createElement("span");
-  icon.className = "pill-icon";
-  const img = document.createElement("img");
-  img.className = "sprite-img";
-  img.alt = "";
-  img.draggable = false;
-  const fallback = document.createElement("span");
-  fallback.className = "sprite-fallback";
-  if (equipped) fallback.style.background = TINTS[equipped] || "#9a8f7d";
-  icon.append(img, fallback);
-  if (equipped) useSprite(icon, "items/" + slug(equipped));
+    const icon = document.createElement("span");
+    icon.className = "pill-icon";
+    const img = document.createElement("img");
+    img.className = "sprite-img";
+    img.alt = "";
+    img.draggable = false;
+    const fallback = document.createElement("span");
+    fallback.className = "sprite-fallback";
+    icon.append(img, fallback);
 
-  const body = document.createElement("span");
-  body.className = "pill-body";
-  const name = document.createElement("span");
-  name.className = "pill-name";
-  name.textContent = "Watering Can";
-  const sub = document.createElement("span");
-  sub.className = "pill-sub";
+    const body = document.createElement("span");
+    body.className = "pill-body";
+    const name = document.createElement("span");
+    name.className = "pill-name";
+    name.textContent = "Watering Can";
+    const sub = document.createElement("span");
+    sub.className = "pill-sub";
+    body.append(name, sub);
+
+    btn.append(icon, body);
+    btn.addEventListener("click", openCanPicker);
+    wrap.replaceChildren(btn);
+  }
+
+  const icon = btn.querySelector(".pill-icon");
+  const fallback = icon.querySelector(".sprite-fallback");
+  if (equipped) {
+    fallback.style.background = TINTS[equipped] || "#9a8f7d";
+    useSprite(icon, "items/" + slug(equipped));
+  } else {
+    fallback.style.background = "";
+    icon.classList.remove("using-sprite");
+  }
   // The capacity stat right alongside the name -- what's actually driving
   // canmeter.js's own canCapacity() -- rather than a bare item name the
   // player has to already know the numbers behind.
-  sub.textContent = equipped
+  btn.querySelector(".pill-sub").textContent = equipped
     ? equipped + " · " + CANS[equipped].capacity + " charges"
     : "Empty — tap to equip";
-  body.append(name, sub);
-
-  btn.append(icon, body);
-  btn.addEventListener("click", openCanPicker);
-  wrap.append(btn);
 }
 
 // Same picker shape Logging's own openAxePicker() uses -- an "Unequip" row
@@ -674,11 +690,12 @@ function openSeeds() {
   openSheet("Choose a seed");
 }
 
-el("back").addEventListener("click", function () { show("explore"); updateSkillsNote(); });
+el("back").addEventListener("click", function () { show("home"); updateSkillsNote(); });
 
 // Tool icons don't change frame like a growing crop does, so they're wired
 // once here rather than in the per-tick draw loop.
 export function applyToolSprites() {
+  useSprite(el("farm-art"), "home/farm");
   document.querySelectorAll("#screen-field .tool").forEach(function (btn) {
     useSprite(btn.querySelector(".tool-icon"), "tools/" + btn.dataset.tool);
   });

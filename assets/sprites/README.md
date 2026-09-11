@@ -13,9 +13,24 @@ The installed NES replacement batches currently include:
 - `items/birch-logs.png`
 - `items/birch-planks.png`
 - `items/red-berries.png`
+- `items/red-berries-seeds.png`
+- `items/sticks.png`
+- `items/flint.png`
+- `items/flax.png`
+- `items/flax-seeds.png`
 - `items/flint-axe.png`
 - `items/wooden-axe.png`
 - `items/stone-axe.png`
+- `items/scrap-axe.png`
+- `items/wooden-can.png`
+- `items/scrap-watering-can.png`
+- `items/flint-dagger.png`
+- `items/wooden-buckler.png`
+- `items/scrap-helm.png`
+- `items/scrap-armor.png`
+- `items/scrap-legs.png`
+- `items/highland-sack.png`
+- `items/net.png`
 - `items/wooden-pickaxe.png`
 - `items/flint-pickaxe.png`
 - `items/stone-pickaxe.png`
@@ -25,6 +40,12 @@ The installed NES replacement batches currently include:
 - `mining/zones/stone.png`, `copper.png`, `iron.png`, `gold.png`, and
   `diamond.png`
 - `mining/surface.png`
+- `logging/zones/aerendell-forest.png` and
+  `logging/zones/aerendell-forest-road.png`
+- `foraging/zones/aerendell-pine-forest.png` and
+  `foraging/zones/aerendell-forest-road-lake.png`
+- `home/workshop.png`
+- `home/farm.png`
 - all 17 skill icons in `skills/<skillId>.png`
 - `dock/home.png`, `dock/explore.png`, `dock/inventory.png`,
   `dock/skills.png`, and `dock/map.png`
@@ -32,6 +53,13 @@ The installed NES replacement batches currently include:
 - `craft/stoneAxe.png` (the same Stone Axe art reused for its recipe)
 - `craft/flintPickaxe.png`, `craft/stonePickaxe.png`, and
   `craft/scrapPickaxe.png` (their item art reused for the recipes)
+- `craft/scrapAxe.png`, `craft/scrapWateringCan.png`, `craft/flintDagger.png`,
+  `craft/woodenBuckler.png`, `craft/scrapHelm.png`, `craft/scrapArmor.png`,
+  `craft/scrapLegs.png`, `craft/highlandSack.png`, and `craft/net.png`
+- `fishing/net.png` (the Net art reused for its active Fishing action)
+- selector portraits and full encounter art for Chicken, Highland Cow,
+  Highland Sheep, Grey Wolf, and Road Goblin in `combat/selectors/` and
+  `combat/enemies/`
 
 New replacements should match this shared brief: a centered object designed on
 a roughly 24×24 logical pixel grid, hard square pixel clusters, a strong dark
@@ -90,6 +118,22 @@ built-in vector placeholder art.
 
     dock/<screenId>.png        Home, Explore, Bag, Skills, and Map icons in
                                 the persistent bottom navigation bar
+
+    logging/zones/<slug>.png   one full-bleed Logging banner per location's
+                                `loggingZone` value in LOCATIONS
+
+    foraging/zones/<art>.png   one full-bleed Foraging background per
+                                location's optional `forageArt` value
+
+    home/<art>.png             full-bleed Home card art for a PLACES entry's
+                                optional `art` key
+
+    combat/selectors/<slug>.png
+                               compact transparent portrait shown beside
+                                each enemy on the selection screen
+
+    combat/enemies/<slug>.png  full portrait encounter scene shown during
+                                the fight, with status over its lower edge
 
 Crop ids and watering counts live in `CROPS` in `src/data.js`. Tree ids live
 in `TREES`, right below it -- same shape as `CROPS`, since Logging is

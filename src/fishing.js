@@ -235,7 +235,7 @@ function drawBaitRow() {
   if (owned.length === 0) {
     const empty = document.createElement("span");
     empty.className = "chip empty";
-    empty.textContent = "Craft bait at the Craft Bench";
+    empty.textContent = "Craft bait at the Workshop";
     row.append(empty);
     return;
   }

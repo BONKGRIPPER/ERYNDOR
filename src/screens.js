@@ -27,6 +27,7 @@ import { buildTownship } from "./township.js";
 import { buildMap } from "./map.js";
 import { buildExplore } from "./explore.js";
 import { buildFishing } from "./fishing.js";
+import { buildForaging } from "./forage.js";
 import { refreshCraft } from "./craft.js";
 import { refreshAllStations } from "./stations.js";
 import { drawStationCards } from "./buildings.js";
@@ -83,6 +84,7 @@ export function show(name) {
   if (name === "map") buildMap();
   if (name === "explore") buildExplore();
   if (name === "fishing") buildFishing();
+  if (name === "foraging") buildForaging();
   if (name === "craft") { refreshCraft(); drawStationCards(); }
   if (name === "beehive") { buildBeehiveSlots(); drawBeehive(); }
   if (STATION_SCREENS.indexOf(name) >= 0) refreshAllStations();

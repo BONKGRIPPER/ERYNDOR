@@ -69,10 +69,13 @@ export const CARGO_UNITS = { "Pine Logs": 2, "Birch Logs": 2, "Stone": 2, "Iron 
 export const PLACES = [
   { id: "home",      icon: "\u{1F3E1}", name: "Home",      note: "Your crafting stations", ready: true,  hub: false },
   { id: "explore",   icon: "\u{1F9ED}", name: "Explore",   note: "Where you are and what's here", ready: true, hub: false },
-  { id: "field",     icon: "\u{1F331}", name: "Farm",      note: "Plant, water, harvest",  ready: true,  hub: false },
+  { id: "field",     icon: "\u{1F331}", name: "Farm",      note: "Plant, water, harvest", art: "farm", ready: true, hub: true },
   { id: "logging",   icon: "\u{1FAB5}", name: "Forest",    note: "Plant, water, chop",     ready: true,  hub: false },
+  // Its own screen per location (2026-09-11 rework), same as Forest's --
+  // no longer one persistent bar pinned above the dock.
+  { id: "foraging",  icon: "\u{1F9FA}", name: "Foraging",  note: "Gather what's on the ground", ready: true, hub: false },
   { id: "mining",    icon: "\u{26CF}\u{FE0F}", name: "Mining", note: "Descend, dig, and bank your finds", ready: true, hub: false },
-  { id: "craft",     icon: "\u{1F6E0}", name: "Craft Bench", note: "Tools from raw material", ready: true, hub: true },
+  { id: "craft",     icon: "\u{1F6E0}", name: "Workshop", note: "Tools from raw material", art: "workshop", ready: true, hub: true },
   { id: "spinningWheel", icon: "\u{1F9F6}", name: "Spinning Wheel", note: "Turn flax into string", ready: true, hub: true },
   { id: "campfire",  icon: "\u{1F525}", name: "Campfire",  note: "Cook logs and berries",  ready: true,  hub: true },
   { id: "stoneCutter", icon: "\u{1FAA8}", name: "Stone Cutter", note: "Cut stone into blocks", ready: true, hub: true },
@@ -96,14 +99,9 @@ export const PLACES = [
   { id: "town",      icon: "\u{1F3D8}", name: "Aerendell", note: "Villagers and trade",    ready: false, hub: false },
   { id: "map",       icon: "\u{1F5FA}", name: "Map",       note: "Travel between locations", ready: true,  hub: false },
 ];
-// Foraging isn't a PLACES entry any more -- it's one persistent button
-// pinned above the dock (see index.html's #forage-bar and src/forage.js),
-// not a destination you navigate to, so it never had a screen or a hub
-// card to list here.
-
 // Screens that exist, keyed to a #screen-<id> element and a #<id> URL hash.
 export const SCREEN_IDS = [
-  "home", "explore", "field", "logging", "mining", "combat", "inventory", "skills", "craft", "market", "campfire",
+  "home", "explore", "field", "logging", "foraging", "mining", "combat", "inventory", "skills", "craft", "market", "campfire",
   "spinningWheel", "sawmill", "township", "stoneCutter", "tanningStation", "map", "fishing", "armorBench",
   "grindStone", "beehive", "fletchingBench", "loom",
 ];
@@ -122,20 +120,24 @@ export const HOME_LOCATION_ID = "aerendell";
 
 // Screens whose actions require the player to be physically at the home
 // workshop. Existing timers on these systems continue settling everywhere;
-// only opening/managing them is home-gated.
+// only opening/managing them is home-gated. Farm joined this list
+// (2026-09-11) as a starting station, same as Craft Bench -- always on
+// Home, no build cost, no travel gate -- rather than an Explore activity.
+// See hub.js's visiblePlaces() for the "always visible" special case both
+// of them share.
 export const PRODUCTION_SCREEN_IDS = [
-  "home", "craft", "campfire", "spinningWheel", "sawmill", "township",
+  "home", "craft", "field", "campfire", "spinningWheel", "sawmill", "township",
   "stoneCutter", "tanningStation", "armorBench", "grindStone", "beehive",
   "fletchingBench", "loom",
 ];
 
 // Active play is the travel-sensitive half of the game. These destinations
 // are offered from a location's World sheet rather than from Home.
-export const FIELD_SCREEN_IDS = ["field", "logging", "mining", "combat", "fishing"];
+export const FIELD_SCREEN_IDS = ["logging", "foraging", "mining", "combat", "fishing"];
 
 export const LOCATION_ACTIVITIES = {
-  aerendell: ["field", "logging", "mining", "combat"],
-  forestRoad: ["logging", "combat", "fishing"],
+  aerendell: ["logging", "foraging", "mining", "combat"],
+  forestRoad: ["logging", "foraging", "combat", "fishing"],
   thalBarak: ["combat", "fishing"],
   stilltidePass: ["mining", "combat", "fishing"],
   duunVaelBridge: ["combat"],
@@ -310,19 +312,22 @@ export const FERTILIZERS = {
   "Bonemeal": { growthMult: 1.5 },
 };
 
-// Same shape as CROPS, one tree so far. Logging is Farming's mirror: plant
-// a cone, water it, chop it once ripe -- the only real difference is the
-// tool (an equipped Axe fighting the tree's own health, not a single tap)
-// and that it feeds its own skill.
+// Same shape as CROPS, one tree so far. Every plot always has a tree
+// growing on its own now (2026-08-30, see logging.js's own header) --
+// `seed` dropped from here (2026-09-11) along with the item it named,
+// "Pine Cones": leftover from before that rework, when a plot actually
+// needed one planted by hand, and never read by anything once auto-regrow
+// replaced it (logging.js's own settleLogging() starts the next cycle on
+// its own, no seed check at all). "Pine Cones" itself had nothing left
+// that could ever grant or spend it either, so it went with the field
+// rather than surviving as a permanently unreachable bag item.
 // Gives "Pine Logs", not a flat "Logs" -- there'll be more tree/log tiers
 // later (and more plank tiers to match, see STATIONS.sawmill below), so the
 // item name is tree-specific from the start rather than a generic
 // placeholder that'd need renaming everywhere once a second tree exists.
 export const TREES = {
-  // Same rule as CROPS above -- no cone back on felling; Foraging is the
-  // only source of what plants a new one.
   pine: {
-    name: "Pine", seed: "Pine Cones", tint: "#4a6b3a",
+    name: "Pine", tint: "#4a6b3a",
     waters: 1, stageSeconds: 180, xp: 34, health: 24,
     gives: { "Pine Logs": 3 },
   },
@@ -346,9 +351,9 @@ export const TREES = {
 export const TINTS = {
   "Red Berries Seeds": "#c23b52", "Red Berries": "#c23b52",
   "Flax Seeds": "#8fb3d9", "Flax": "#8fb3d9",
-  "Pine Cones": "#4a6b3a", "Pine Logs": "#6b4a2f",
+  "Pine Logs": "#6b4a2f",
   "Birch Cones": "#c9c19a", "Birch Logs": "#d9cba3",
-  "Berries": "#c85a6e", "Flint": "#9098a3", "Sticks": "#8a6a45",
+  "Flint": "#9098a3", "Sticks": "#8a6a45",
   "Flint Axe": "#c9a06b", "Flint Pickaxe": "#a98c5c",
   "Wooden Pickaxe": "#8a6a45", "Stone Pickaxe": "#7d7d76", "Stone Axe": "#7d7d76",
   "Wooden Axe": "#8a6a45", "Wooden Can": "#6b8a9e",
@@ -431,80 +436,61 @@ export const TINTS = {
   "Birch Planks": "#c99a6a", "Bronze Nails": "#b8823f",
 };
 
-// A second, independent gather loop -- no seeds, no growth stages, just tap
-// and wait. Single-tap-and-timer now (2026-08-31), same shape as Crafting
-// (see CRAFT_MS/RECIPES below and craft.js): one tap starts a FORAGE_MS
-// deadline (scaled down by the gather's own mastery level, see
-// FORAGE_LEVEL_THRESHOLDS below), no further taps needed, and it resolves
-// on its own the moment that deadline passes -- an item rolled from the
-// current zone's own pool at that moment, not chosen by the player.
-// Chances within a zone are meant to sum to 1; a zone with no pool falls
-// back to the last entry rather than ever giving nothing.
-export const FORAGE_MS = 10000;   // was 3000 -- 2026-08-31, now that mastery scales it down
-
-// Foraging's own action mastery -- separate from the flat per-gather
-// FORAGE_XP feeding the general Foraging skill below (state.foragingXp,
-// shown in the Journal) -- this instead tracks total completed gathers and
-// speeds up every future one, same "bottom-edge mastery bar on the pill
-// itself" treatment itemLevels.js gives a crafted item (see
-// itemLevelProgress()/recordCraft() there), just with its own uneven
-// threshold table here instead of one flat number repeated forever.
-// THRESHOLDS[level] is how many completed gathers *at that level* it takes
-// to reach the next one -- climbing steeply on purpose (10, 25, 50, 100,
-// then order-of-magnitude jumps) so each level actually means something
-// once forage counts get large. The table's last entry is the practical
-// level cap; there's no 11th threshold to climb past it. Each level
-// doubles gather speed (SPEED_MULT compounds the same way
-// ITEM_LEVEL_SPEED_MULT does), read fresh at the moment a gather starts
-// (see forage.js's startForage()), so a level gained mid-run only speeds
-// up the *next* gather, not the one already in flight.
-export const FORAGE_LEVEL_THRESHOLDS = [10, 25, 50, 100, 1000, 5000, 10000, 25000, 50000, 100000];
-export const FORAGE_LEVEL_SPEED_MULT = 0.5;
-export const FORAGE_POOLS = {
-  // Pine Cones dropped out (2026-08-30) now that Logging's trees regrow
-  // on their own -- nothing plants a cone any more, so there's no reason
-  // to forage one. Red Berries Seeds absorbs the freed weight rather than
-  // splitting it across all three survivors, since Sticks/Flint's own
-  // 0.40/0.40 split already matched the balance pass this pool came from.
-  // Queen Bee added 2026-09-02 at a real 0.5% -- shaved straight off Red
-  // Berries Seeds (0.20 -> 0.195) so the pool still sums to exactly 1;
-  // Sticks/Flint's own 0.40/0.40 split is untouched. Chances within a
-  // pool are read in array order (see forage.js's rollDrop()), so a slice
-  // this small still has to actually fit under 1.0 to ever be reachable.
-  aerendell: [
-    { item: "Red Berries Seeds", chance: 0.195 },
-    { item: "Sticks",            chance: 0.40 },
-    { item: "Flint",             chance: 0.40 },
-    { item: "Queen Bee",         chance: 0.005 },
-  ],
-  // No Flint here on purpose -- Forest Road is meant to read as a
-  // different pocket of the world than Aerendell's own pool, not a copy
-  // of it, and Flax/Flax Seeds give it something Aerendell's pool doesn't
-  // have at all.
-  forestRoad: [
-    { item: "Flax Seeds", chance: 0.30 },
-    { item: "Flax",       chance: 0.30 },
-    { item: "Sticks",     chance: 0.40 },
-  ],
+// Foraging (reworked 2026-09-11): its own screen per location, same as
+// Logging's, instead of one shared bar pinned above the dock -- one pill
+// per item the location offers (FORAGE_ITEMS below), each independently
+// timed. Tapping an idle pill starts a FORAGE_BASE_MS deadline (scaled
+// down by that ITEM's own mastery level, see FORAGE_SPEED_MULT below), no
+// further taps needed, and it resolves on its own -- banking straight into
+// the Bag -- the moment the deadline passes. No roll/pool any more: each
+// pill always produces its own one named item, not a chance among several.
+export const FORAGE_ITEMS = {
+  // "Red Berries" (2026-09-11), not the separate "Berries" item -- one
+  // real berry item shared with Farming's own crop of the same name
+  // (CROPS' `Red Berries`, TINTS' own red-berries sprite) rather than two
+  // near-identical berry items with different names and art depending on
+  // whether they were grown or gathered.
+  aerendell: ["Sticks", "Flint", "Red Berries"],
+  // A different pocket of the world than Aerendell's own list, not a copy
+  // of it -- Flax/Flax Seeds give it something Aerendell doesn't have at
+  // all, and it shares Sticks with Aerendell on purpose (nothing wrong
+  // with two locations offering the same raw material).
+  forestRoad: ["Flax", "Flax Seeds", "Sticks"],
 };
 
-// Foraging XP, first pass -- one flat amount per completed gather, same
-// "small flat amount" shape as Farming's WATER_XP. There's no speed curve
-// tied to level any more -- FORAGE_MS is a flat 3s at base speed, same as
-// Crafting's own recipes. Level 100 is still a cap for display purposes --
-// xpToNext() in skills.js is uncapped by itself, foraging is just the
-// first skill that actually stops mattering past a point.
-export const FORAGE_XP = 8;
-export const FORAGE_MAX_LEVEL = 100;
+export const FORAGE_BASE_MS = 5000;
 
-// Unlocked at VILLAGER_LEVEL: the Forager profession (WORKERS.forager
-// below, assigned for free from the Township screen -- src/township.js/
-// workers.js) that automatically taps the Forage pill itself, once every
-// VILLAGER_TICK_MS -- literally the same click a player's own tap would be,
-// just on a timer. A no-op if a gather is already running (started by the
-// player or a previous villager tick), same as tapping any other already-
-// running pill.
-export const VILLAGER_LEVEL = 3;   // was 10 -- 2026-08-28
+// Per-item forage mastery -- same {level, uses} bottom-edge mastery bar
+// itemLevels.js gives a crafted item, but with its own compounding
+// formula on *both* axes per the request: level N needs
+// ceil(FORAGE_USES_BASE * FORAGE_USES_GROWTH^N) completed gathers to reach
+// N+1 (10, 15, 23, 34, ... climbing forever, unlike itemLevels.js's own
+// flat threshold), and each level speeds up the *next* gather by another
+// factor of FORAGE_SPEED_MULT (read fresh at the moment a gather starts,
+// see forage.js's startForage()), both capped at FORAGE_ITEM_MAX_LEVEL.
+// Tracked per item *name*, not per location -- foraging Sticks at Forest
+// Road trains the same mastery as foraging Sticks at Aerendell, same
+// "how good am I at this, no matter where" rule itemLevels.js's own
+// header comment gives a crafted item.
+export const FORAGE_USES_BASE = 10;
+export const FORAGE_USES_GROWTH = 1.5;
+export const FORAGE_SPEED_MULT = 1.2;
+export const FORAGE_ITEM_MAX_LEVEL = 100;
+
+// There's no general Foraging skill left to route through gainSkillXp() --
+// a completed gather instead feeds the current zone directly with the same
+// small flat amount (old FORAGE_XP=8 * ZONE_XP_SHARE=0.25) that skill used
+// to pass along, so Forest Road's own zone level still gets some love from
+// foraging, same as it always has from Logging/Mining/Combat/Fishing.
+export const FORAGE_ZONE_XP = 2;
+
+// The Forager profession (WORKERS.forager below, assigned for free from
+// the Township screen -- src/township.js/workers.js) auto-starts an idle
+// item at its own homeLocation the same way every other worker's
+// attemptRole() auto-starts a station (2026-09-11) -- no more bespoke
+// tick loop of its own now that there's no single shared pill for it to
+// tap. See workers.js's attemptRole()/estimateTickMs() "forager" cases and
+// forage.js's tryAutoForage().
 export const VILLAGER_TICK_MS = 30000;   // was 2500 (swing-based) -- 2026-08-31
 
 // ------------------------------------------------------------ worker villagers
@@ -581,8 +567,8 @@ export const HOUSE_WORKER_SLOTS = 3;
 // unit -- the same number, not a second one to keep in sync); heat units
 // come off VILLAGE_HEAT_VALUE below. Falling short on either at the 24h
 // mark doesn't refund or partially apply -- every villager simply stops
-// auto-working (src/forage.js and src/workers.js both check
-// state.village.starved) until enough of both is donated to clear the very
+// auto-working (src/workers.js's settleWorkers() checks state.village.
+// starved for every role, the Forager included) until enough of both is donated to clear the very
 // upkeep that was missed, same "resolves the instant it's true, not
 // retroactively" rule every other deadline in this game follows.
 export const VILLAGE_UPKEEP_MS = 24 * 60 * 60 * 1000;
@@ -768,7 +754,6 @@ export const EQUIPMENT = {
   // Eat button consumes whatever's equipped in this slot, not a fixed item,
   // which is the whole reason Food is a real equip slot instead of Combat
   // just reading the bag directly.
-  "Berries": "food",
   "Red Berries": "food",
   "Cooked Berries": "food",
   "Cooked Poultry": "food",
@@ -944,9 +929,12 @@ export const SHIELDS = {
 // heal: how many HP src/combat.js's Eat action restores. Anything with a
 // heal value here is meant to also appear in EQUIPMENT pointed at the
 // "food" slot -- the two lists are meant to be added to together.
-// Raw berries (either source -- foraged "Berries" or farmed "Red Berries")
-// heal 1; cooking either into "Cooked Berries" (see COOKABLES) triples
-// that to 3. Raw poultry/beef/mutton have no entry here at all -- they're
+// Raw Red Berries heal 1; cooking them into "Cooked Berries" (see
+// COOKABLES) triples that to 3. The separate foraged "Berries" item this
+// once also covered is gone (2026-09-11) -- Foraging's own per-item
+// rework points straight at Red Berries instead (see FORAGE_ITEMS above),
+// and "Berries" had nothing left that could ever grant it once that
+// changed. Raw poultry/beef/mutton have no entry here at all -- they're
 // deliberately not equippable/edible raw, only their cooked forms are,
 // each healing 5.
 // `recoveryBoostAttacks`/`recoveryBoostMult` are optional -- Honey is the
@@ -957,7 +945,6 @@ export const SHIELDS = {
 // (not Defend/Eat/Flee -- "next 5 attacks" per the request). First-pass
 // number, not balanced -- a "noticeably faster, not broken" speed-up.
 export const FOODS = {
-  "Berries": { heal: 1 },
   "Red Berries": { heal: 1 },
   "Cooked Berries": { heal: 3 },
   "Cooked Poultry": { heal: 5 },
@@ -1050,12 +1037,12 @@ export const COMBAT_NIGHT_MULT = 2;
 export const CATEGORIES = {
   "Red Berries Seeds": "farming", "Red Berries": "farming",
   "Flax Seeds": "farming", "Flax": "farming",
-  "Pine Cones": "logging", "Pine Logs": "logging",
+  "Pine Logs": "logging",
   "Birch Cones": "logging", "Birch Logs": "logging",
   "Scrap Pickaxe": "crafting", "Scrap Axe": "crafting", "Scrap Watering Can": "crafting",
   "Scrap Helm": "crafting", "Scrap Armor": "crafting", "Scrap Legs": "crafting",
   "Short Bow": "fletcher", "Flint Arrows": "fletcher",
-  "Berries": "foraging", "Flint": "foraging", "Sticks": "foraging",
+  "Flint": "foraging", "Sticks": "foraging",
   "Flint Axe": "crafting", "Flint Pickaxe": "crafting", "Stone Pickaxe": "crafting",
   "Charcoal": "cooking", "Cooked Berries": "cooking",
   "String": "sowing", "Pine Planks": "milling",
@@ -1138,8 +1125,8 @@ export const CURRENCIES = {
 export const BASE_VALUE = {
   "Red Berries Seeds": 10, "Red Berries": 5,
   "Flax Seeds": 10, "Flax": 5,
-  "Pine Cones": 10, "Pine Logs": 10,
-  "Berries": 7, "Flint": 5, "Sticks": 5,
+  "Pine Logs": 10,
+  "Flint": 5, "Sticks": 5,
   "Flint Axe": 50, "Flint Pickaxe": 50, "Stone Pickaxe": 90, "Stone Axe": 90,
   "Scrap Pickaxe": 130, "Scrap Axe": 130, "Scrap Watering Can": 130,
   "Wooden Pickaxe": 1, "Wooden Axe": 1, "Wooden Can": 1,
@@ -1212,8 +1199,8 @@ export const ZONE_DEMAND = {
 // stock down (price climbs), selling pushes it up (price falls) -- one
 // shared number, not a separate buy/sell spread invented on top of it.
 export const BUYABLE = [
-  "Red Berries Seeds", "Flax Seeds", "Pine Cones",
-  "Sticks", "Flint", "Pine Logs", "Berries", "Flint Axe", "Flint Pickaxe",
+  "Red Berries Seeds", "Flax Seeds",
+  "Sticks", "Flint", "Pine Logs", "Flint Axe", "Flint Pickaxe",
 ];
 
 // The anti-farming curve: price = BASE_VALUE * demand * saturation(stock).
@@ -1504,13 +1491,16 @@ export const WORKERS = {
   // Villager (state.villager) -- now just another assignable profession,
   // competing for the same house-derived slots as everyone else, single-
   // tier (no stationIds -- there's nothing to level into) and so already
-  // "max level" the instant it's assigned, per the request. Its own
-  // auto-gather cycle still lives in forage.js (settleForage()), not the
-  // generic attemptRole() below -- see that file's own comments.
+  // "max level" the instant it's assigned, per the request. Reworked again
+  // (2026-09-11, Foraging's per-item rework): no more `skillXp`/
+  // `unlockLevel` gate -- there's no general Foraging skill left to gate
+  // it on, so it's freely assignable the moment a House slot is free, same
+  // as Cook. Its auto-gather now routes through the generic attemptRole()
+  // below (forage.js's tryAutoForage()), not a bespoke tick loop of its
+  // own.
   forager: {
     name: "Forager", icon: "\u{1F9D1}\u{200D}\u{1F33E}",
     building: null,
-    skillXp: "foragingXp", skillName: "Foraging", unlockLevel: VILLAGER_LEVEL,
     note: "Forages on your own, even while you're away",
   },
   cook: {
@@ -1575,10 +1565,6 @@ export const COOK_MS = 10000;
 export const FUELS = ["Sticks", "Pine Logs", "Charcoal"];
 export const COOKABLES = {
   "Pine Logs": { gives: "Charcoal" },
-  "Berries": { gives: "Cooked Berries" },
-  // Both berry sources (foraged and farmed) cook into the same "Cooked
-  // Berries" -- no reason for a separate "Cooked Red Berries" when the
-  // result is identical either way.
   "Red Berries": { gives: "Cooked Berries" },
   // Raw poultry/beef/mutton have no FOODS entry at all -- cooking is the
   // only way any of the three ever becomes edible/equippable.
@@ -1754,6 +1740,8 @@ export const LOCATIONS = {
     // lake/stream/ocean), not one per town -- whichever fits a location's
     // own geography is what its `fishing` points at.
     forage: "aerendell", fishing: null,
+    loggingZone: "Aerendell Forest",
+    forageArt: "aerendell-pine-forest",
   },
   // `tree` (2026-09-04) -- which TREES key Logging grows here, read live
   // by logging.js's treeForCurrentLocation() the moment a plot starts a
@@ -1764,6 +1752,8 @@ export const LOCATIONS = {
   forestRoad: {
     name: "Forest Road", type: "wilderness", pos: { x: 1, y: 1 }, stations: [],
     forage: "forestRoad", fishing: "stream", tree: "birch",
+    loggingZone: "Aerendell Forest Road",
+    forageArt: "aerendell-forest-road-lake",
   },
   thalBarak: { name: "Thal-Barak", type: "city", pos: { x: 0, y: 2 }, stations: [], forage: null, fishing: "river" },
   stilltidePass: { name: "Stilltide Pass", type: "wilderness", pos: { x: 1, y: 3 }, stations: [], forage: null, fishing: "river" },

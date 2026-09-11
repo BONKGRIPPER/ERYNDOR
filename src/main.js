@@ -5,8 +5,8 @@
 // actually wires their click handlers up, this file doesn't need to import
 // them again just for that side effect.
 
-import { RECIPES, AWAY_POPUP_MS } from "./data.js";
-import { state, load, save } from "./state.js";
+import { RECIPES } from "./data.js";
+import { state, load, save, unloadBagToWarehouse } from "./state.js";
 import { probeSprites } from "./sprites.js";
 import { show, showFromHash, STATION_SCREENS } from "./screens.js";
 import {
@@ -21,20 +21,20 @@ import {
   buildLogPlots, settleLogging, drawLogging, drawLogXp, resetLogPlotsForLocation,
 } from "./logging.js";
 import {
-  applyForageSprites, settleForage, refreshForage, showForageResult, showAwayPopup, drawForageProgress,
+  applyForageSprites, settleForaging, refreshForaging, buildForaging,
 } from "./forage.js";
 import { applyCraftSprites, settleCraft, refreshCraft } from "./craft.js";
 import { setPillFill, popCount } from "./pills.js";
 import { drawStationCards } from "./buildings.js";
 import { settleVillageUpkeep, buildTownship } from "./township.js";
-import { settleWorkers, isAssigned } from "./workers.js";
+import { settleWorkers } from "./workers.js";
 import { settleCampfire, refreshCampfire, applyCampfireSprites } from "./campfire.js";
 import {
   settleStations, refreshStation, refreshAllStations, drawAllStationXp, drawAllItemLevels, applyStationSprites,
 } from "./stations.js";
 import { refreshMining, settleMining, drawMiningXp, applyMiningSprites } from "./mining.js";
 import {
-  settleCombat, refreshCombat, drawCombatXp, drawWeaponSkillsXp, syncTimerBars, buildCombatIdle,
+  settleCombat, refreshCombat, drawCombatXp, syncTimerBars, buildCombatIdle,
 } from "./combat.js";
 import { settleTravel } from "./travel.js";
 import { settleShipments } from "./shipments.js";
@@ -51,19 +51,6 @@ import { el } from "./dom.js";
 import { showToast } from "./toast.js";
 import "./devRoom.js";
 
-// Foraging's own settle() can resolve more than one gather in a single
-// pass -- a villager chains straight into the next cycle, so a long gap
-// (a reload, or the game closed entirely) catches up in one call. Shared
-// between the boot-time catch-up and every tick so both paths behave
-// identically, including the rare case where a throttled background tab
-// lets more than one cycle pass between ticks.
-//
-// The "welcome back" popup is only for a *real* gap -- awayMs past
-// AWAY_POPUP_MS, not just "the villager finished a cycle while the tab was
-// open," which is the normal case every ~1-2.5s and would otherwise pop the
-// sheet up constantly during ordinary play. Anything shorter (including
-// every tick's own tiny ~200ms gap) gets the same small in-pill flash a
-// villager-less gather already shows.
 // state.bagFullFlag itself is a plain counter (state.js's gainItem()),
 // not a boolean -- watching for it to *change* rather than reading it as
 // truthy is what keeps this a one-shot toast per new overflow instead of
@@ -84,13 +71,6 @@ function checkWarehouseFull() {
   }
 }
 
-function reportForageCatchup(results, awayMs) {
-  if (results.length === 0) return;
-  drawBag();
-  if (isAssigned("forager") && awayMs > AWAY_POPUP_MS) showAwayPopup(results, awayMs);
-  else showForageResult(results[results.length - 1]);
-}
-
 function start() {
   // Travel and future freight settle before the first draw so an offline
   // arrival never flashes the old location or stale container totals.
@@ -105,6 +85,7 @@ function start() {
   applyToolSprites();
   buildLogPlots();
   buildBeehiveSlots();
+  buildForaging();
   applyForageSprites();
   applyCraftSprites();
   applyStationSprites();
@@ -122,15 +103,11 @@ function start() {
   updateSkillsNote();
   updateWalletNote();
 
-  // How long the game was actually closed -- captured before settleForage()
-  // (and the tick loop after it) start overwriting lastActiveAt.
-  const bootAwayMs = Date.now() - state.lastActiveAt;
-  reportForageCatchup(settleForage(), bootAwayMs);
-  state.lastActiveAt = Date.now();
-  // A swing already partway done from before a reload shows its saved
-  // progress instantly, no fill-bar animation from 0%.
-  drawForageProgress();
-  refreshForage();
+  // Same shape as Crafting/every other settle*() just below -- an offline
+  // gap (a reload, or the game closed entirely) catches up for free since
+  // every forage gather is a deadline, not a countdown.
+  if (settleForaging().length) drawBag();
+  refreshForaging();
 
   settleCraft();
   Object.keys(RECIPES).forEach(function (item) {
@@ -177,7 +154,6 @@ function start() {
 
   settleCombat();
   drawCombatXp();
-  drawWeaponSkillsXp();
   refreshCombat();
   syncTimerBars();
 
@@ -200,16 +176,22 @@ function start() {
     settleBeehive();
     if (!el("screen-beehive").classList.contains("hidden")) drawBeehive();
 
-    // Normally just the ~200ms tick interval -- only meaningfully larger if
-    // a backgrounded tab got throttled, which reportForageCatchup treats
-    // the same way it treats any other gap.
-    const tickAwayMs = Date.now() - state.lastActiveAt;
-    reportForageCatchup(settleForage(), tickAwayMs);
+    // Runs unconditionally regardless of which screen is showing (a
+    // working Forager can be gathering at a location the player isn't even
+    // looking at right now) -- only the Foraging screen itself needs an
+    // explicit redraw, same "settle everywhere, refresh what's visible"
+    // split every other screen in this loop follows.
+    const doneForage = settleForaging();
     state.lastActiveAt = Date.now();
-    // Cheap enough to redraw every tick, same reasoning as updateHubAttention()
-    // below -- the forage bar and hire button are visible on every screen,
-    // not just while some Foraging-specific view happens to be open.
-    refreshForage();
+    const foragingVisible = !el("screen-foraging").classList.contains("hidden");
+    if (doneForage.length) {
+      drawBag();
+      if (foragingVisible) {
+        doneForage.forEach(function (d) {
+          if (d.loc === state.currentLocation) { refreshForaging(d.item); popCount("forage:" + d.item); }
+        });
+      }
+    } else if (foragingVisible) refreshForaging();
 
     const doneCraft = settleCraft();
     if (doneCraft.length) {
@@ -259,7 +241,7 @@ function start() {
     // nothing has "happened" yet.
     settleCombat();
     const combatVisible = !el("screen-combat").classList.contains("hidden");
-    if (combatVisible) { drawCombatXp(); drawWeaponSkillsXp(); refreshCombat(); }
+    if (combatVisible) { drawCombatXp(); refreshCombat(); }
 
     const campfireVisible = !el("screen-campfire").classList.contains("hidden");
     const cooked = settleCampfire();
@@ -286,16 +268,18 @@ function start() {
     if (mapVisible) { if (arrived) buildMap(); else refreshMap(); }
 
     // Arriving can add/remove hub cards (a built station only shows where
-    // it was built), open/close a build prompt, and turn foraging on or
-    // off -- all location-gated, so all three need a fresh look the
-    // instant a trip actually resolves, wherever the player happens to be
-    // looking when it does. The unconditional refreshForage() a few lines
-    // up already ran this same tick against the *old* location -- redone
-    // here so the forage bar doesn't sit stale for one extra tick.
+    // it was built), open/close a build prompt, and change which items a
+    // Foraging pill list offers -- all location-gated, so all three need a
+    // fresh look the instant a trip actually resolves, wherever the player
+    // happens to be looking when it does.
     if (arrived) {
       drawMenu();
       drawStationCards();
-      refreshForage();
+      // A different location can offer an entirely different set of items
+      // (see FORAGE_ITEMS in data.js) -- rebuilt, not just refreshed, same
+      // reasoning Logging's own resetLogPlotsForLocation() gets a full
+      // redraw rather than a light one.
+      if (foragingVisible) buildForaging();
       // Swap any stale trees for the new location's species (see
       // resetLogPlotsForLocation()); redraw the plot list if it's showing
       // so it doesn't sit stale for one tick.
@@ -337,6 +321,13 @@ function start() {
 }
 
 load();
+
+// One-time self-heal for saves written before enterHomeMode() (dock.js's
+// Home button) unloaded the Bag into the Warehouse -- a save could load
+// with playerContext already "home" at Aerendell but real cargo still
+// stuck in the Bag from before that fix. Idempotent and free on an
+// already-clean save (unloadBagToWarehouse() no-ops on an empty Bag).
+if (state.playerContext === "home") { unloadBagToWarehouse(); save(); }
 
 // Sprites are probed once before the first paint so the game never flashes
 // placeholder art and then swaps to real art a frame later.

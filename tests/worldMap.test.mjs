@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import { state, save, load } from '../src/state.js';
+import { settleTravel } from '../src/travel.js';
+import { ROADS } from '../src/data.js';
+import { WORLD, MAP_PLACES, MAP_ROUTES, visiblePlaces } from '../src/worldMap.js';
+let stored;
+globalThis.localStorage = { setItem(k,v) { stored = v; }, getItem() { return stored; } };
+assert.deepEqual([...visiblePlaces({aerendell:true}, ROADS)].sort(), ['aerendell','forestRoad']);
+for (const r of ROADS) {
+  const points = MAP_ROUTES[r.id];
+  assert.deepEqual(points[0], Object.values(MAP_PLACES[r.from]));
+  assert.deepEqual(points.at(-1), Object.values(MAP_PLACES[r.to]));
+  points.forEach(([x,y]) => assert.ok(x >= 0 && x <= WORLD.width && y >= 0 && y <= WORLD.height));
+}
+state.mapVisited = {aerendell:true};
+state.mapExploredRoads = {};
+state.travel = {from:'aerendell',to:'thalBarak',readyAt:0,roads:ROADS.slice(0,2).map(r=>r.id)};
+settleTravel();
+assert.equal(state.mapVisited.forestRoad, true);
+assert.equal(state.mapVisited.thalBarak, true);
+assert.equal(state.mapExploredRoads['forestRoad-thalBarak'], true);
+save();
+state.mapVisited = {}; state.mapExploredRoads = {};
+load();
+assert.equal(state.mapVisited.thalBarak, true);
+assert.equal(state.mapExploredRoads['forestRoad-thalBarak'], true);
+const legacy = JSON.parse(stored);
+delete legacy.mapVisited; delete legacy.mapExploredRoads;
+stored = JSON.stringify(legacy); load();
+assert.deepEqual(state.mapVisited, {aerendell:true,thalBarak:true});
+assert.deepEqual(state.mapExploredRoads, {});
+state.travel = {from:'thalBarak',to:'stilltidePass',readyAt:0};
+settleTravel();
+assert.equal(state.mapExploredRoads['thalBarak-stilltidePass'], true);
+console.log('Map: atlas anchors, exploration frontier, multi-stop reveal, save reload, legacy migration and legacy travel passed.');

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Eryndor · Map workshop</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui;background:#0b202c;color:#e9ecdf}*{box-sizing:border-box}body{margin:0;height:100dvh;display:flex;flex-direction:column}header{padding:12px 18px;border-bottom:1px solid #3a5660;display:flex;gap:18px;align-items:center;flex-wrap:wrap}h1{font:24px Georgia;margin:0;color:#e8cd88}button,select,input,textarea,.file{font:14px system-ui;background:#183746;border:1px solid #52707a;border-radius:4px;color:inherit;padding:8px}button,.file{cursor:pointer}button:hover{background:#345462}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #ffe09b}button[aria-pressed=true]{background:#dfc17e;color:#142630}main{display:flex;flex:1;min-height:0}aside{width:300px;overflow:auto;padding:16px;border-right:1px solid #3a5660}aside>*{margin-bottom:12px}label{display:block;font-size:14px}label input:not([type=checkbox]),select,textarea{display:block;width:100%;margin-top:5px}p{line-height:1.5;font-size:14px;color:#bbced3}.row{display:flex;gap:6px;flex-wrap:wrap}#map{flex:1;min-width:0;width:100%;height:100%;background:#062b46;touch-action:none;cursor:grab}#map image{image-rendering:pixelated}.road{fill:none;stroke:#f3d78d;stroke-width:3;stroke-dasharray:7 5;vector-effect:non-scaling-stroke;cursor:pointer}.road.selected{stroke:#fff;stroke-width:5}.marker{cursor:move}.marker text{fill:#fff3cd;stroke:#102634;stroke-width:3;paint-order:stroke;font:13px system-ui;pointer-events:none}.handle{fill:#fff1b5;stroke:#102634;stroke-width:2;cursor:move}footer{padding:10px 18px;background:#142f3c;font-size:14px}#notes{min-height:80px}a{color:#f2d592}[hidden]{display:none!important}@media(max-width:700px){aside{width:210px;padding:10px}header{gap:8px}h1{font-size:20px}}
+</style>
+<header><h1>Eryndor / Map workshop</h1><button id="minus">−</button><button id="plus">+</button><button id="fit">Fit map</button><span id="zoom">100%</span><button id="undo">Undo</button><button id="export">Export project</button><label class="file">Import project<input id="import" type="file" accept=".json" hidden></label><button id="game">Export game layout</button></header>
+<main><aside>
+<label>Place or road<select id="features"></select></label>
+<div class="row"><button id="focus">Center selection</button><button id="add">Add POI</button><button id="road">Draw road</button><button id="finish" hidden>Finish road</button><button id="cancel" hidden>Cancel</button></div>
+<label><input id="lore" type="checkbox" checked> Show lore reference locations</label>
+<section id="details" hidden><label>Name<input id="name" maxlength="120"></label><div class="row"><label>X<input id="x" type="number" step="1"></label><label>Y<input id="y" type="number" step="1"></label></div><label>Notes<textarea id="notes"></textarea></label><button id="apply">Apply fields</button><button id="remove">Delete draft</button></section>
+<p>Drag empty map to pan; scroll or use +/− to zoom. Drag a marker to move it. Select a road to drag its bend handles. Double-click a road to insert a bend; right-click a bend to remove it.</p>
+<p>Gold markers are game locations. Blue markers are editable lore references. New POIs and roads remain planning annotations until integrated into gameplay.</p>
+<p>Edits stay separate from the game. Export a project to keep or send back your work. Export game layout applies only the existing game locations and roads.</p>
+<a href="assets/maps/eryndor-world.png" download="eryndor-world.png">Download clean map PNG</a>
+</aside><svg id="map" viewBox="0 0 1752 898" aria-label="Editable Eryndor map" tabindex="0"><image href="assets/maps/eryndor-world.png" width="1752" height="898"/><g id="lines"></g><g id="markers"></g><g id="handles"></g><polyline id="draft" class="road"/></svg></main>
+<footer id="status" role="status">No fog in the editor · Coordinates stay aligned when higher-resolution artwork is substituted.</footer>
+<script src="assets/maps/world-map-layout.js"></script>
+<script src="../Maps/Eryndor Pixel Atlas v1/atlas-data.js"></script>
+<script src="map-editor.js"></script>
+</html>

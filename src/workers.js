@@ -7,13 +7,11 @@
 // up to workerCap() at once. Assign/cap bookkeeping lives here; the actual
 // per-tick trigger for each role either calls into stations.js's generic
 // tryStartStation() (every role with a `stationIds` list) or one of the
-// two bespoke systems' own auto-trigger (campfire.js's tryAutoCook(),
-// beehive.js's tryAutoBeehive()) -- workers.js itself never touches
-// state.stations/campfire/beehiveSlots directly, same separation of
-// concerns every other "who actually owns this state" split in this game
-// already follows. The Forager is a third bespoke case, but its own tick
-// loop lives in forage.js (settleForage()), not here -- see this file's
-// settleWorkers() for why it's explicitly skipped below.
+// bespoke systems' own auto-trigger (campfire.js's tryAutoCook(),
+// beehive.js's tryAutoBeehive(), forage.js's tryAutoForage()) --
+// workers.js itself never touches state.stations/campfire/beehiveSlots/
+// forageTimers directly, same separation of concerns every other "who
+// actually owns this state" split in this game already follows.
 //
 // Reworked (2026-09-04, second pass): there's no more Shard cost to
 // assign a worker, and no more per-worker paid leveling. A location's
@@ -37,6 +35,7 @@ import { state, save, kickVillageUpkeepIfIdle } from "./state.js";
 import { effectiveMs, tryStartStation, costFor } from "./stations.js";
 import { tryAutoCook } from "./campfire.js";
 import { tryAutoBeehive } from "./beehive.js";
+import { tryAutoForage } from "./forage.js";
 import { levelFromXp } from "./skills.js";
 import { canAfford } from "./costDisplay.js";
 import { laborAssigned, laborCapacity } from "./labor.js";
@@ -125,6 +124,12 @@ function attemptRole(w) {
   }
   if (w.role === "cook") return tryAutoCook() ? COOK_MS : null;
   if (w.role === "beekeeper") return tryAutoBeehive() ? BEEHIVE_HONEY_MS : null;
+  // Reworked (2026-09-11): the Forager auto-starts an idle item at its own
+  // homeLocation the same way a tiered role auto-starts a station just
+  // above -- tryAutoForage() itself returns the real ms the started
+  // gather will take, same shape tryStartStation()'s own effectiveMs()
+  // pairing gives every other role.
+  if (w.role === "forager") return tryAutoForage(w.homeLocation);
   return null;
 }
 
@@ -180,6 +185,10 @@ function estimateTickMs(role) {
   }
   if (role === "cook") return COOK_MS * WORKER_TICK_MULT;
   if (role === "beekeeper") return BEEHIVE_HONEY_MS * WORKER_TICK_MULT;
+  // No real gather has actually started yet to read a speed from -- the
+  // base rate (same fallback VILLAGER_TICK_MS always was) is close enough
+  // for a first estimate; settleWorkers()'s own loop re-derives the real
+  // number the moment tryAutoForage() actually starts something.
   if (role === "forager") return VILLAGER_TICK_MS;
   return 0;
 }
@@ -214,22 +223,19 @@ export function unassignWorker(role) {
   return true;
 }
 
-// Called every tick (main.js), same shape as forage.js's own villager
-// catch-up loop in settleForage() -- however many intervals came due since
-// the last check, each one attempts the role's own action and only
-// advances nextTickAt on success, so a blocked attempt (station busy, out
-// of input material) is retried on a later call rather than silently
-// skipped, same "blocked now, not lost" rule that fix established. Gated
-// on the shared village upkeep, same as the Forager. The Forager itself is
-// explicitly skipped here -- its own tick loop (and away-popup handling)
-// lives entirely in forage.js's settleForage(), which is called
-// separately from main.js; ticking it a second time here would double its
-// production.
+// Called every tick (main.js) -- however many intervals came due since the
+// last check, each one attempts the role's own action and only advances
+// nextTickAt on success, so a blocked attempt (station busy, out of input
+// material, every forage item at the Forager's location already running)
+// is retried on a later call rather than silently skipped, same "blocked
+// now, not lost" rule that fix established. Gated on the shared village
+// upkeep. The Forager is no longer a special case here (2026-09-11) -- its
+// own auto-gather now runs through attemptRole() like every other role,
+// see forage.js's tryAutoForage().
 export function settleWorkers() {
   if (state.village.starved) return false;
   let changed = false;
   state.workers.forEach(function (w) {
-    if (w.role === "forager") return;
     while (Date.now() >= w.nextTickAt) {
       const ms = attemptRole(w);
       if (ms === null) break;

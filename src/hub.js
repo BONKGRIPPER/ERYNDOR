@@ -18,11 +18,12 @@ import { show } from "./screens.js";
 import { drawSkills } from "./skillsScreen.js";
 import { costFor } from "./stations.js";
 import { canAfford } from "./costDisplay.js";
+import { useSprite } from "./sprites.js";
 
 // Fishing isn't a BUILDINGS entry -- there's no structure to build, just
 // water to fish -- so it needs its own location check. Same underlying
-// rule as forage's own canForageHere() (src/forage.js): a location either
-// has a pool assigned or it doesn't yet.
+// rule Foraging's own FORAGE_ITEMS (src/data.js) follows: a location
+// either offers something or it doesn't.
 // A BUILDINGS-backed place (Campfire, Spinning Wheel, Sawmill, Stone
 // Cutter, Tanning Station, Township, Armor Bench) moves onto Home the
 // instant it's actually built (2026-08-31) -- joining Farm/Forest/Mining/
@@ -35,12 +36,14 @@ import { canAfford } from "./costDisplay.js";
 // same rule buildings.js's own belongsHere() uses, so a station only ever
 // shows on the one Home it was built for. Fishing has no build step, just
 // its own location check (fishingHere() above).
-// The Home screen's station grid: Craft Bench plus every built BUILDINGS
-// station that belongs at Aerendell (LOCATIONS[HOME].stations).
+// The Home screen's station grid: Craft Bench and Farm (both starting
+// stations, always available, per PRODUCTION_SCREEN_IDS's own comment)
+// plus every built BUILDINGS station that belongs at Aerendell
+// (LOCATIONS[HOME].stations).
 export function visiblePlaces() {
   return PLACES.filter(function (place) {
     if (!place.hub) return false;
-    if (place.id === "craft") return true;
+    if (place.id === "craft" || place.id === "field") return true;
     if (place.id in BUILDINGS) {
       if (!state.buildings[place.id]) return false;
       const loc = LOCATIONS[HOME_LOCATION_ID];
@@ -80,6 +83,16 @@ export function drawMenu() {
     card.id = "card-" + place.id;
     card.disabled = !place.ready;
     card.style.setProperty("--wiggle-i", String(i % 4));
+
+    if (place.art) {
+      card.classList.add("art-card");
+      const art = document.createElement("img");
+      art.className = "sprite-img card-art";
+      art.alt = "";
+      art.draggable = false;
+      card.append(art);
+      useSprite(card, "home/" + place.art);
+    }
 
     const icon = document.createElement("div");
     icon.className = "card-icon";
@@ -315,6 +328,7 @@ export function miningNeedsAttention() {
 export function updateHubAttention() {
   const marks = {
     craft: craftNeedsAttention(),
+    field: fieldNeedsAttention(),
     campfire: campfireNeedsAttention(),
   };
   Object.keys(STATIONS).forEach(function (id) { marks[id] = stationNeedsAttention(id); });

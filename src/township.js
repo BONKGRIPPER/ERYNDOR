@@ -20,7 +20,7 @@ import {
   FOODS, WORKERS, HOUSE_COST, HOUSE_WORKER_SLOTS, BUILDINGS, TINTS,
 } from "./data.js";
 import { state, save, kickVillageUpkeepIfIdle } from "./state.js";
-import { refreshForage } from "./forage.js";
+import { refreshForaging } from "./forage.js";
 import {
   workerCap, assignedCount, freeSlots, getWorker, roleUnlocked, roleSkill, roleSkillLevel,
   canAssignWorker, assignWorker, unassignWorker, maxLevelFor, unlockedTierCount, masterOutputFor,
@@ -435,7 +435,7 @@ function workerCard(role) {
       if (!canAssignWorker(role)) { shake(pill); return; }
       assignWorker(role);
       updateWalletNote();
-      refreshForage();
+      refreshForaging();
       buildTownship();
     });
   } else {
@@ -443,7 +443,7 @@ function workerCard(role) {
     price.textContent = "Unassign";
     pill.addEventListener("click", function () {
       unassignWorker(role);
-      refreshForage();
+      refreshForaging();
       buildTownship();
     });
   }

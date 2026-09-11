@@ -4076,13 +4076,367 @@ route, and the passive crew — are now all built, unit-tested and
 playtested end to end on a phone viewport. Batch 9.9 (Warehouse stock
 targets, source reserves, a second route) is the next logistics layer.
 
+### Two bugs: the equip-slot sprite stutter, and Bag cargo stranded at Home (2026-09-11)
+
+**Sprite stutter on the in-screen tool-switch pills.** Farm's Watering
+Can slot, Mining's Pickaxe slot, and Logging's Axe slot (`drawCanSlot()`,
+`drawPickaxeSlot()`, `drawAxeSlot()`) each ran every tick their screen was
+open (via `drawField()`/`refreshMining()`/`drawLogging()`) and rebuilt
+their whole pill from scratch on every call -- a fresh `<img>` every
+~200ms. `useSprite()`'s same-key cache (`img.dataset.key`) only works if
+the same `<img>` element persists between calls; a brand new one has no
+key to compare against, so `img.src` got reassigned and the icon
+re-decoded and repainted constantly, reading as a visible stutter on an
+otherwise completely static icon. All three now build their pill once and
+update it in place after that (icon tint/sprite, `.using-sprite` toggle,
+and the sub-text stat line), the same "build once, patch in place" shape
+`drawField()`'s own plot loop already uses. Verified: the `<img>` element
+compares identical (`===`) across repeated `drawField()`/`refreshMining()`/
+`drawLogging()` calls, `src`/`dataset.key` are never reassigned once set,
+the picker still opens on tap, and unequipping still clears the sprite
+class and tint correctly.
+
+**Bag cargo stranded at Home.** Gathering at Aerendell in field context
+(Farm/Forest/Mining/Combat there) puts the reward in the Bag, same as
+anywhere else. But tapping the Home dock button while already standing at
+Aerendell only ever flipped `playerContext` to `"home"`
+(`travel.js`'s `enterHomeMode()`) -- it never involved `settleTravel()` or
+`returnHome()`, the only two places that actually called
+`unloadBagToWarehouse()`. Since Crafting and every station only ever read
+the Warehouse (`state.storage`), that Bag cargo was invisible to them
+until the player happened to leave and travel back -- reading as
+"crafting doesn't pull from the Bag or Warehouse." `enterHomeMode()` now
+unloads the Bag into the Warehouse itself, exactly like arriving home by
+road, and `dock.js`'s Home button shows the same "N cargo unloaded to
+Warehouse" toast Return Home already used. `main.js` also runs one
+self-healing `unloadBagToWarehouse()` right after `load()` when a save
+comes back already in `home` context, so an existing save already stuck
+in this state (cargo sitting in the Bag, `playerContext` already
+`"home"`) fixes itself on the next boot rather than staying stranded.
+Verified live: farming at Aerendell then tapping Home moved the Bag into
+the Warehouse and Crafting could immediately afford a recipe from it; a
+simulated pre-fix save (context already `"home"`, cargo still in the Bag)
+self-healed on reload. No console errors. Test save reset afterward.
+
+### Mining's cramped mobile layout, crafted gear landing in the Bag, and Farm moves to Home (2026-09-11)
+
+**Mining UI.** The Pickaxe equip pill used to be its own full-width row
+sandwiched between the XP bar and the depth-zone art banner -- one more
+stacked row a short phone screen didn't have room for. It now lives
+inside the art banner's own bottom-right corner (`#mine-pickaxe-slot`
+moved into `.mine-art-overlay`'s status row), replacing the passive
+"Rusty Pickaxe" name label that used to sit there, styled compact by a
+shared `.art-tool-corner` class (auto width, a smaller icon, the
+redundant "Pickaxe" name hidden, just the equipped item + its stat line).
+The art banner's own `max-height` grew from 30vh to 38vh to reclaim the
+row's freed height. Logging's own Axe slot picked up the same corner
+treatment alongside this. Verified: the compact pill renders correctly at
+both 375px and 320px widths, still opens the picker on tap, and the art
+banner visibly fills more of the screen with one fewer stacked row above
+the Dig/Surface controls.
+
+**Crafted gear now lands in the Bag, not the Warehouse.** Every other
+Home production system (conversion stations, Campfire, Beehive) pools
+its output in the Warehouse, and the Craft Bench used to follow the same
+rule -- but Inventory's Equipment picker only ever offers items it finds
+in the *Bag* (`openEquipPicker()`), so a freshly crafted axe or pickaxe
+needed a manual Storage-to-Bag move before it could actually be worn.
+Added `deliverToBag()` in `state.js` (the same "retain the complete
+output until there's room" contract `deliverProduction()` already gives
+the Warehouse, just against the Bag) and pointed `craft.js`'s
+`settleCraft()` at it instead. Recipe *inputs* are untouched -- still
+spent from the Warehouse like every other station, only the finished
+item's destination changed. Verified: crafting a Flint Axe spent Flint/
+Sticks from the Warehouse as before, but the axe itself appeared in the
+Bag and was immediately offered (and equippable) from the Axe slot's
+picker with no extra step.
+
+**Farm joins Craft Bench as a starting Home station.** Farm used to be an
+Explore activity, gated like Forest/Mining/Combat behind field context
+and `LOCATION_ACTIVITIES`. It's now a permanent Home card next to Craft
+Bench instead -- always there, no build cost -- via the same "always
+visible" special case `visiblePlaces()` (`hub.js`) already gave Craft
+Bench, `field` added to `PRODUCTION_SCREEN_IDS` and dropped from
+`FIELD_SCREEN_IDS`/`LOCATION_ACTIVITIES.aerendell`, and its back button
+now returns to Home instead of Explore. **Market now shares Explore's
+activity tile grid** instead of sitting in its own full-width "Trade"
+row below it -- same `.explore-activity` class as Forest/Mining/Combat/
+Fishing, so it's visually identical in size and shape, just one more tile
+in the same grid. Verified: a fresh Home shows exactly Farm + Craft
+Bench; Explore at Aerendell shows Forest/Mining/Combat/Market as four
+uniform tiles with Farm no longer among them; Farm's own back button
+returns to Home; requesting Farm while away still redirects to Explore
+like any other production screen. No console errors throughout. All
+three logistics test suites still pass. Test save reset afterward.
+
+**Foraging rework: its own screen per location, one independently-timed
+pill per item.** Replaced the single shared pill that used to sit pinned
+above the dock on every screen (rolling one item from a weighted per-zone
+pool, `FORAGE_POOLS`) with its own destination screen (`#screen-foraging`,
+reached from Explore's activity grid like Forest/Mining/Combat), built the
+same way Logging's own screen is: a header + back button, and a pill list
+(`#forage-list`) built fresh per location from `FORAGE_ITEMS` in
+`src/data.js` — Sticks/Flint/Berries at Aerendell, Flax/Flax Seeds/Sticks
+at Forest Road. Each pill always produces its own one named item (no more
+roll), starts a 5s (`FORAGE_BASE_MS`) tap-and-wait timer, and carries its
+own per-item mastery bar: 10 completed gathers reaches level 1, each
+further level needs 1.5x the uses of the last (`FORAGE_USES_GROWTH`) and
+speeds up the next gather by another 1.2x (`FORAGE_SPEED_MULT`), capped at
+level 100 — mirroring the old pill's own mastery-bar shape, just with a
+formula that keeps climbing instead of a flat threshold table. Mastery is
+tracked per item *name*, not per location, so leveling Sticks at Forest
+Road also speeds up gathering Sticks at Aerendell. Multiple pills (even
+two locations' worth, player at one and a working Forager villager at
+another) can run at once, since each running gather is now keyed by both
+location and item (`state.forageTimers`) rather than one shared slot.
+
+Collapsed the old *two* separate progression tracks (the pill's own
+mastery bar, plus a general "Foraging" skill that only ever existed to
+feed the Forager villager's tick speed) into that one per-item mastery —
+there's no more general Foraging skill, `state.foragingXp`, or row on the
+Journal's Skills screen. A completed gather instead feeds the current
+zone's own XP directly (`FORAGE_ZONE_XP`), the same small contribution the
+old skill used to pass along. The Forager villager profession is
+simplified to match: no more bespoke tick loop of its own (the old
+`settleForage()`) or skill-level unlock gate — it's freely assignable the
+moment a House slot is free, same as Cook, and its auto-gather
+(`tryAutoForage()`) now runs through `workers.js`'s own generic
+`attemptRole()` scheduler like every other profession, auto-starting
+whichever of its assigned location's items is currently idle. Verified
+live: Aerendell and Forest Road each show their own correct three items;
+tapping one starts and completes on schedule with a live fill bar; gathers
+correctly stack mastery uses/levels (confirmed a forced level-up at
+exactly 10 uses); a second location's items build independently on
+arrival; assigning a Forager villager (no gate) auto-gathers an idle item
+at its own location on a real tick, chaining through multiple catch-up
+attempts at once; and the same item's mastery carries across locations. No
+console errors. All three logistics test suites still pass. Test save
+reset afterward.
+
+**Combat UI rework: an art banner, a simpler arena, items mid-fight.**
+The enemy now gets its own art banner in the arena, same shape Mining's
+depth photo uses — `#combat-enemy-art` (`.mine-art`/`.mine-art-overlay`
+reused wholesale), one custom image per `ENEMIES` entry at
+`assets/sprites/combat/enemies/<slug>.png` (registered in `sprites.js`'s
+`allSpriteKeys()`), falling back to a plain vector silhouette until real
+art exists. Name, brace status, HP bar, and the next-attack countdown
+(now a plain number, not a second progress bar) all ride the image's own
+bottom gradient instead of sitting in a separate bordered panel below
+it — one banner instead of two stacked boxes. Also dropped the compact
+Archery/Melee dual-bar row from the arena entirely (still visible on the
+Journal's Skills page) to declutter, per the request for a simpler UI in
+general.
+
+Replaced the single "Eat" action (tied to whichever one food happened to
+be equipped in the Food slot) with an "Items" action that opens every
+food-category item actually sitting in the *Bag* — `combat.js`'s
+`openItemPicker()`, reusing the same `.seed-row` sheet list shape
+Inventory's own equip picker uses — so a carried Cooked Beef doesn't sit
+useless mid-fight just because Honey happens to be equipped. A bag with
+exactly one food type consumes it straight away, no picker needed for a
+one-item choice; two or more open the sheet to pick.
+
+"Easier to go back into a fight": an unresolved fight now gets its own
+treatment on Explore's own Combat tile — `"⚔️ Continue Fight"` with the
+same attention highlight a needs-attention station gets, instead of
+looking identical to picking a fresh enemy (`explore.js`'s
+`combatInProgress()`). Tapping it (or the Combat dock/hub path generally)
+already dropped straight back into the live arena before this change —
+`refreshCombat()`'s own `if (!c)` branch only ever showed the idle enemy
+list with no fight running — so the fix here is purely that there was
+previously no visible sign a fight was still sitting there to resume.
+
+Verified live: a fresh fight shows the enemy's art banner (fallback
+silhouette, since no real enemy art exists yet), live HP bar, and attack
+countdown; the 2x2 action grid renders Attack/Defend/Items/Flee; Items
+with zero food in the bag is disabled and says so; with one food type it
+eats immediately; with two, a sheet lists both with their tint dot, count,
+and heal amount, and tapping one consumes correctly (bag count decremented,
+HP restored, Honey's recovery-boost log still applies); tapping Items
+after a fight has already resolved correctly no-ops (guarded by the same
+`c.over` check every other action uses); Explore's Combat tile reads
+"Continue Fight" with the attention highlight while a fight is running,
+including after a full page reload, and clicking it drops straight into
+the arena (or the result screen, if the fight resolved while away) with no
+extra step. No console errors. All three logistics test suites still
+pass.
+
+**Multi-hop travel: one summed trip instead of hopping road by road.**
+`travel.js`'s `startTravel(id)` no longer requires a *direct* road to
+`id` -- it now walks however many roads it takes (`allRoadPaths()`, a
+plain DFS over `ROADS` enumerating every simple unlocked route between
+two locations) and starts exactly one travel event whose `readyAt` is the
+*sum* of every road's own minutes, per the request ("add up the time of
+each separate road into a single traveling event"): Aerendell to
+Thal-Barak is Aerendell→Forest Road (5 min) + Forest Road→Thal-Barak
+(15 min) = one 20-minute trip, not two separate legs the player has to
+sit through and re-confirm. `state.travel` gained a `roads` field (the
+ordered list of `ROADS` ids actually being walked) alongside its existing
+`from`/`to`/`readyAt` — `map.js`'s `buildMap()` highlights every one of
+those roads gold while the trip is in progress, not just a single guessed
+segment; a save from before this field existed still highlights correctly
+by falling back to the one direct road `from`/`to` implies (the only kind
+of trip that could exist before this).
+
+Built with future branching in mind, per the request: `allRoadPaths()`
+returns *every* route, not just the fastest, sorted fastest-first --
+today's linear map only ever has one between any two points, so
+`openLocationSheet()` (map.js) shows the familiar single "Travel (X min)"
+button, but the instant a second road out of some location eventually
+reaches the same destination by a different path, that same function
+starts returning more than one entry and the sheet automatically renders
+one button per route ("Travel via `<stop>` (X min)"), leaving the actual
+choice to the player rather than silently picking one. `startTravel(id,
+roads)` takes that chosen route explicitly (re-validated against the live
+road graph, never trusted blindly) instead of always assuming the
+fastest. `returnHome()` was updated to record its own `roads` too, so the
+Map's highlighting is identical whichever way a trip started. The existing
+Dijkstra-based `shortestRoadPath()`/`shortestTravelMinutes()` (used by
+Return Home's own quote, merchant freight, and the Forest Road cart) are
+untouched -- still the single fastest-answer shape those callers already
+expect, not rewired through the new path enumeration.
+
+Verified live: the Map's Aerendell→Thal-Barak sheet now offers "Travel (20
+min)" instead of "No direct road from here yet."; starting it highlights
+both the Aerendell–Forest Road and Forest Road–Thal-Barak segments gold at
+once with one live countdown; forcing the deadline to resolve lands the
+player directly at Thal-Barak in a single hop (not staged through Forest
+Road); Explore's own "Return to Aerendell" from Thal-Barak still correctly
+quotes the same summed 20 minutes. No console errors. All three logistics
+test suites (which exercise `shortestRoadPath()` indirectly through
+freight/the cart) still pass unchanged.
+
+**Removed "Pine Cones" and "Berries"** -- neither had anything left that
+could grant or spend them. Pine Cones was Logging's old plant-a-cone seed
+item from before the 2026-08-30 auto-regrow rework; `TREES.pine`'s own
+dead `seed` field (never read since) went with it. Berries was the
+original foraged-berry item, replaced outright by Foraging's 2026-09-11
+per-item rework, which points straight at the farmed "Red Berries" item
+instead (same TINTS/FOODS/COOKABLES entry either way now, no separate
+"foraged" vs "farmed" berry). Both are gone from every list that named
+them -- TINTS, FOODS, EQUIPMENT (the Food slot), CATEGORIES, BASE_VALUE,
+BUYABLE, COOKABLES -- rather than left as permanently unreachable bag
+items. (`TREES.birch`'s own equally-dead `seed: "Birch Cones"` field
+is untouched -- out of scope, not asked for.)
+
+**Inventory sprite icons enlarged.** `.inv-card .sprite-img` was 58% of
+its tile; bumped to 92% (per the request, "much larger... better fill up
+the square") -- the placeholder tinted-dot fallback (`.sprite-fallback`,
+shown for the many items with no real icon yet) is untouched, this only
+affects an item with actual art.
+
+**Combat art repositioned -- enemies were being cropped at the head.**
+`.mine-art`'s own `max-height: 38vh` cap makes its rendered box notably
+wider, proportionally, than the enemy art's own portrait ratio, so the
+default center-anchored `object-fit: cover` crop was eating into the top
+of the frame -- exactly where these enemies are actually drawn, with
+mostly empty ground/background below them. `#combat-enemy-art .sprite-img`
+now anchors `object-position: top` instead, so any cropping only ever
+comes out of that empty lower area. Verified against both the Chicken
+(a small, low subject) and the Grey Wolf (a much taller one) -- both
+show completely, head to feet, no clipping either.
+
+**Journal Skills: hidden until trained, sorted by level.** Per the
+request ("only show skills that you have gained xp for... keep skills
+hidden," "highest level skill on top to lowest xp on the bottom"),
+`skillsScreen.js`'s `SKILL_ROWS` list is now filtered to `xpOf() > 0`
+and sorted by level descending (ties broken by raw XP descending) on
+every draw, rather than a fixed set of rows built once and patched by
+index. `buildSkills()` (opening the Skills tab) and `drawSkills()`
+(hub.js's `updateSkillsNote()`, firing on every XP gain while the screen
+is open) are now the same rebuild-from-scratch function under two names,
+so a skill appearing for the first time or overtaking another re-sorts
+the list immediately, not just the next time the screen is reopened. A
+completely untrained save shows "Nothing trained yet -- go earn some
+XP." instead of an empty list. Fixed a layout bug this exposed in
+passing: the Skills/Collection toggle shares its `.inv-toggle` class
+with Inventory's own Bag/Storage toggle, which is deliberately pinned to
+the bottom of the screen (`margin-top: auto`) -- correct for Inventory,
+where it sits last under a scrolling grid, but the Journal's toggle sits
+second, right under the header. With sixteen always-shown rows this auto
+margin had nothing to absorb; with as few as zero or one row now
+possible, it left a tall, empty-looking gap between the header and the
+toggle. `#screen-skills .inv-toggle { margin-top: 0; }` fixes it back to
+sitting right under the header. Verified live: a fresh save shows the
+empty-state message; training only Logging and Melee shows exactly
+those two, Logging (a real level) above Melee (level 0 but with XP);
+granting Mining enough XP to reach level 3 immediately promotes it to
+the top of the list without reopening the screen. No console errors.
+
+**Combat art, second pass: full-bleed background instead of a cropped
+banner.** The first pass's `object-position: top` fix (above) stopped the
+enemy's head from being cut off, but left the character sitting low in a
+still-small, still-cropped frame. Replaced the banner entirely with the
+same full-bleed "picture behind the UI" pattern Farm/Workshop/Foraging
+already use for their own screens (their own `.farm-art`/`.workshop-art`/
+`.forage-art`): a `position: fixed` layer (new `#combat-art`/`.combat-art`)
+sized to the app's own max-width column, spanning the full viewport height
+from the very top of the screen down to behind the dock, with every other
+element on the screen floating over it via the shared `#screen-combat >
+:not(.combat-art) { z-index: 1 }` rule those other screens' own CSS
+already establishes the pattern for. The enemy's name/HP/attack-countdown
+moved out of the old art-banner overlay into a plain `.combatant` panel --
+the same shape the player's own HP block already used -- so both now read
+identically and float independently over the artwork rather than one of
+them living inside it. `combat.js`'s `drawCombatArt()` now targets
+`#combat-art`; `refreshCombat()`'s idle branch explicitly clears it
+(`classList.remove("using-sprite")`) so browsing the enemy list never
+shows a stale image left over from the last fight. Verified live: the
+Grey Wolf's full scene (mountains, treeline, ground) now fills the screen
+from the header down to the dock, with the Combat/enemy/player panels and
+action buttons all floating over it, readable regardless of what's behind
+them; returning to the idle enemy list clears the background back to
+blank. No console errors. All four test suites still pass.
+
+**Combat art, third pass: all the fight controls pinned to the bottom,
+the result panel a centered popup.** Per the request ("move all the UI...
+to the bottom of the screen so the enemy can be seen easily"), the enemy
+list / enemy panel / player panel / action buttons all moved into one new
+wrapper (`.combat-ui`) with `margin-top: auto` -- the same trick
+`.mine-actions`/`.inv-toggle` already use to float an element to one edge
+of a flex column -- so they sit as a block at the bottom of the screen
+instead of stacking down from the top, leaving the full-bleed art free
+above them. The header and Combat XP bar were pulled back out of that
+wrapper on a follow-up correction (same request thread) to stay at the
+top like every other screen's own header/XP bar -- only the actual fight
+controls moved, not the whole screen.
+
+The result panel (Victory/Defeated/Fled) is a centered modal now instead
+of sitting inline at the bottom of `.combat-ui` under the action buttons
+-- same "hold the screen's full attention for a beat" shape `#zonewheel`
+already uses for a zone level-up (reusing its own `zw-pop` entrance
+animation), a dark backdrop with a bordered card centered in it via
+`position: fixed` + flex centering, so "Fight Again" always lands dead
+center regardless of how tall `.combat-ui` happens to be. `#combat-result`
+is a sibling of `.combat-ui`, not nested inside it, specifically so its
+own fixed positioning takes it out of the bottom-pinned flow entirely.
+Getting this right took a real specificity fix: `#screen-combat > :not
+(.combat-art) { position: relative; z-index: 1 }`'s generic rule
+(established when the full-bleed background was first added) has higher
+specificity than a plain `.combat-result.show` class selector, so the
+`display: none` base state was winning over the `.show` override and the
+overlay silently never appeared despite the class toggling correctly --
+`#screen-combat #combat-result` / `#screen-combat #combat-result.show`
+(two IDs) is what it actually takes to win.
+
+Verified live: the Combat header and XP bar sit at their usual top
+position on both the idle enemy list and an active fight; the enemy
+list, enemy/player panels, and action buttons all sit as one block at the
+bottom, leaving the Chicken/Grey Wolf's art visible above them; a
+concluded fight shows the result as a centered popup over a darkened
+background with "Fight Again" reachable dead-center; tapping it correctly
+resumes a fresh fight with the same bottom-pinned layout, and the result
+popup itself disappears cleanly. No console errors. All four test suites
+still pass.
+
 ## Adding to it
 
-A new crop, tree, or recipe is one entry in `src/data.js`; a new zone's
-forage pool is one entry in `FORAGE_POOLS`. A new destination on the hub is
-one line in `PLACES`, also in `src/data.js`. A new screen needs a
-`#screen-<id>` element in `index.html`, its id added to `SCREEN_IDS`, and
-its own `src/<name>.js` following the shape of `field.js` or `logging.js`
-(plot-and-timer screens) or `craft.js` (tap-and-fill-pill screens) —
-whichever is the closer match. Scope every selector to that screen's id,
-per the note above.
+A new crop, tree, or recipe is one entry in `src/data.js`; a new
+location's forage items are one entry in `FORAGE_ITEMS`. A new destination
+on the hub is one line in `PLACES`, also in `src/data.js`. A new screen
+needs a `#screen-<id>` element in `index.html`, its id added to
+`SCREEN_IDS`, and its own `src/<name>.js` following the shape of
+`field.js` or `logging.js` (plot-and-timer screens) or `craft.js` /
+`forage.js` (tap-and-fill-pill screens, one dynamically-built pill per
+item) — whichever is the closer match. Scope every selector to that
+screen's id, per the note above.

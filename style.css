@@ -10,8 +10,6 @@
   --warn: #e0684f;
 }
 
-body.forage-hidden { --forage-h: 0px; }
-
 /* touch-action: manipulation is the CSS half of killing mobile Safari/
    Chrome's double-tap-to-zoom -- this game is tapped rapidly and
    repeatedly by design (Mining's swings, Forage, chopping), and a phone
@@ -196,6 +194,228 @@ body {
    floated awkwardly under a centered name. */
 .card-go { display: none; }
 
+/* Full-bleed Home destination artwork. Only cards with both a data-level
+   `art` key and a successfully probed sprite receive this treatment; if an
+   asset is missing, the ordinary icon/name/note card remains intact. */
+.card.art-card.using-sprite {
+  position: relative;
+  min-height: 154px;
+  justify-content: flex-end;
+  padding: 0;
+  overflow: hidden;
+  background: #17130f;
+  border-color: #6f5939;
+}
+.card.art-card .card-art { display: none; }
+.card.art-card.using-sprite .card-art {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 20%;
+  image-rendering: pixelated;
+}
+/* The Farm scene's skyline and mountain silhouettes live at the very top
+   of its portrait artwork, so anchor this card there instead of using the
+   shared destination-card crop. Workshop keeps its existing framing. */
+#card-field.art-card.using-sprite .card-art { object-position: center top; }
+.card.art-card.using-sprite::after {
+  content: "";
+  position: absolute;
+  inset: 42% 0 0;
+  z-index: 1;
+  background: linear-gradient(to bottom, transparent, rgba(7, 6, 5, 0.9));
+  pointer-events: none;
+}
+.card.art-card.using-sprite .card-icon,
+.card.art-card.using-sprite .card-note { display: none; }
+.card.art-card.using-sprite .card-body {
+  position: relative;
+  z-index: 2;
+  padding: 40px 10px 12px;
+}
+.card.art-card.using-sprite .card-name {
+  color: #fff4d6;
+  font-size: 16px;
+  font-weight: 700;
+  text-shadow: 2px 2px 0 #080604;
+}
+
+/* Workshop reuses its Home-card art as a fixed viewport scene, matching the
+   Logging screen's full-background layering. It never receives pointer
+   events, so the original recipe and station UI stays fully interactive. */
+#screen-craft {
+  position: relative;
+  isolation: isolate;
+}
+#screen-craft > :not(.workshop-art) {
+  position: relative;
+  z-index: 1;
+}
+.workshop-art {
+  position: fixed;
+  inset: 0 auto 0 50%;
+  z-index: 0;
+  width: min(100%, 480px);
+  height: 100dvh;
+  overflow: hidden;
+  transform: translateX(-50%);
+  background: var(--bg);
+  pointer-events: none;
+}
+.workshop-art .sprite-img {
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  image-rendering: pixelated;
+}
+.workshop-art.using-sprite .sprite-img { display: block; }
+.workshop-art.using-sprite::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(8, 6, 4, 0.38), rgba(8, 6, 4, 0.72));
+}
+
+/* The Farm follows Workshop's shared Home-card/full-screen-art pattern.
+   Its stronger lower veil protects the plot and tool controls against the
+   bright outdoor scene without hiding the farmstead above them. */
+#screen-field {
+  position: relative;
+  isolation: isolate;
+}
+#screen-field > :not(.farm-art) {
+  position: relative;
+  z-index: 1;
+}
+.farm-art {
+  position: fixed;
+  inset: 0 auto 0 50%;
+  z-index: 0;
+  width: min(100%, 480px);
+  height: 100dvh;
+  overflow: hidden;
+  transform: translateX(-50%);
+  background: var(--bg);
+  pointer-events: none;
+}
+.farm-art .sprite-img {
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  image-rendering: pixelated;
+}
+.farm-art.using-sprite .sprite-img { display: block; }
+.farm-art.using-sprite::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(8, 7, 4, 0.3), rgba(8, 7, 4, 0.74));
+}
+
+/* Foraging uses one location-specific viewport scene beneath its existing
+   controls. The veil is deliberately a little stronger at the bottom,
+   where the gather pills stack, while leaving the forest/lake readable. */
+#screen-foraging {
+  position: relative;
+  isolation: isolate;
+}
+#screen-foraging > :not(.forage-art) {
+  position: relative;
+  z-index: 1;
+}
+.forage-art {
+  position: fixed;
+  inset: 0 auto 0 50%;
+  z-index: 0;
+  width: min(100%, 480px);
+  height: 100dvh;
+  overflow: hidden;
+  transform: translateX(-50%);
+  background: var(--bg);
+  pointer-events: none;
+}
+.forage-art .sprite-img {
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  image-rendering: pixelated;
+}
+.forage-art.using-sprite .sprite-img { display: block; }
+.forage-art.using-sprite::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(8, 10, 7, 0.42), rgba(8, 10, 7, 0.72));
+}
+
+/* Combat's own enemy art (2026-09-11, second pass) -- same full-bleed
+   "picture from the top of the screen to the action row, UI floating
+   over it" treatment Farm/Workshop/Foraging already use above, replacing
+   the first pass's own smaller in-flow art banner (which cropped a tall
+   subject against the banner's own height cap no matter how the crop was
+   anchored). Only populated while a fight is actually on screen --
+   combat.js's refreshCombat() clears it back to blank on the idle enemy
+   list, same as a location with no registered art leaves Farm/Workshop's
+   own layer blank. */
+#screen-combat {
+  position: relative;
+  isolation: isolate;
+}
+#screen-combat > :not(.combat-art) {
+  position: relative;
+  z-index: 1;
+}
+.combat-art {
+  position: fixed;
+  inset: 0 auto 0 50%;
+  z-index: 0;
+  width: min(100%, 480px);
+  height: 100dvh;
+  overflow: hidden;
+  transform: translateX(-50%);
+  background: var(--bg);
+  pointer-events: none;
+}
+.combat-art .sprite-img {
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+  image-rendering: pixelated;
+}
+.combat-art.using-sprite .sprite-img { display: block; }
+/* Every real control pinned to the bottom edge as one block (2026-09-11,
+   third pass), per the request -- the header down through the action
+   buttons all move together, leaving the full-bleed art above free of
+   anything but itself. Same margin-top: auto trick .mine-actions/.inv-
+   toggle already use to float an element to one edge of a flex column;
+   its own children keep the .screen's usual 14px rhythm via this
+   wrapper's own `gap`, since they're no longer direct children of
+   .screen once nested a level deeper here. */
+.combat-ui {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: auto;
+}
+.combat-art.using-sprite::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(8, 7, 4, 0.25), rgba(8, 7, 4, 0.7));
+}
+
 /* --- bag --- */
 .bag {
   border-top: 1px solid var(--line);
@@ -244,7 +464,6 @@ body {
 /* ================================ screens ============================== */
 :root {
   --dock-h: 62px;
-  --forage-h: 78px;   /* the forage bar's fixed height -- just the one pill now, no inline hire button */
 }
 
 .screen {
@@ -254,10 +473,9 @@ body {
   min-height: 100dvh;
   max-width: 480px;
   margin: 0 auto;
-  /* the dock and the persistent forage bar are both fixed and sit on top
-     of every screen, so their combined height is reserved here rather
-     than baked into each screen individually */
-  padding: 22px 16px calc(20px + var(--dock-h) + var(--forage-h) + env(safe-area-inset-bottom));
+  /* the dock is fixed and sits on top of every screen, so its height is
+     reserved here rather than baked into each screen individually */
+  padding: 22px 16px calc(20px + var(--dock-h) + env(safe-area-inset-bottom));
 }
 .hidden { display: none !important; }
 
@@ -346,12 +564,51 @@ body {
 .plot-expand-cost .cost-ingredient.have-enough { color: var(--green); }
 .plot-expand-cost .cost-ingredient.have-short { color: var(--warn); }
 
-/* Logging's Axe slot (2026-08-31) -- a real equip-row now, not a plain
-   status line, using the shared .equip-row look Inventory's own Equipment
-   page already defines (see style.css's "inventory" section below and
-   logging.js's drawAxeSlot()). No rules needed here beyond spacing above
-   the plots. */
-.log-axe-slot { margin-bottom: 4px; }
+/* Logging's current-zone illustration is the screen itself rather than a
+   banner. Fixed positioning keeps the forest framed consistently while the
+   plot list scrolls over it; the dark veil protects text and progress bars
+   against both the shaded pine scene and the brighter birch road. */
+#screen-logging {
+  position: relative;
+  isolation: isolate;
+}
+#screen-logging > :not(.log-art) {
+  position: relative;
+  z-index: 1;
+}
+/* Two-class specificity is intentional: the shared .mine-art banner rules
+   are declared later in this file, so this must outrank them to remain a
+   viewport background rather than collapsing back into a Mining-sized card. */
+.mine-art.log-art {
+  position: fixed;
+  inset: 0 auto 0 50%;
+  z-index: 0;
+  width: min(100%, 480px);
+  height: 100dvh;
+  min-height: 0;
+  max-height: none;
+  aspect-ratio: auto;
+  transform: translateX(-50%);
+  border: 0;
+  border-radius: 0;
+  pointer-events: none;
+}
+.mine-art.log-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(9, 10, 8, 0.48), rgba(9, 10, 8, 0.7));
+}
+.log-zone-overlay {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(18, 16, 14, 0.78);
+  box-shadow: 3px 3px 0 rgba(8, 7, 6, 0.72);
+}
+.log-zone-overlay .mine-art-label {
+  margin-top: 3px;
+}
 
 /* Growing is the pill's own default fill color (the same green every other
    pill uses); watering gets its own blue so "the can is running the show
@@ -753,16 +1010,6 @@ body {
   100% { filter: brightness(1); box-shadow: none; }
 }
 
-/* Archery/Melee's own compact readout in the Combat arena (2026-09-02) --
-   half-width, no level-up flash, just enough to see the two skills moving
-   without competing with Combat's own full-size bar above. */
-.combat-skill-row {
-  display: flex;
-  gap: 10px;
-  margin: 0 0 10px;
-}
-.combat-skill { flex: 1; min-width: 0; }
-.combat-skill-label { font-size: 11px; font-weight: 600; color: var(--dim); }
 /* .small is combined directly on the same element as .bar.xp-bar in the
    markup (`class="bar xp-bar small"`), not a nested child -- this needs
    to out-specificity plain .bar's own height, not just re-declare it on
@@ -1135,33 +1382,9 @@ body {
   transition: width 0.25s ease;
 }
 
-/* =============================== forage bar ============================= */
-/* Fixed and global, same idea as the dock below but for the one persistent
-   gather action -- pinned just above it rather than behind a hub card or a
-   screen of its own, since it's always available from anywhere.
-   `--dock-h` is only the dock's own icon+label content height -- the real
-   dock is taller than that by its bottom padding's own
-   env(safe-area-inset-bottom) (the iOS home-indicator inset), which this
-   bar's own `bottom` needs to add too, or it sinks that many px into the
-   dock's territory and gets covered by it (the dock sits at a higher
-   z-index) on any phone with a non-zero safe area. */
-.forage-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: calc(var(--dock-h) + env(safe-area-inset-bottom));
-  z-index: 14;
-  padding: 8px max(10px, calc((100% - 480px) / 2)) 6px;
-  background: var(--bg);
-  border-top: 1px solid var(--line);
-}
-.forage-bar .pill { margin: 0; }
-/* Wherever LOCATIONS[currentLocation].forage has no pool assigned --
-   see src/forage.js's canForageHere(). Greyed out rather than hidden, so
-   the bar's layout doesn't jump as the player travels around. */
-.pill.forage-disabled { opacity: 0.45; pointer-events: none; }
-
-/* the brief "here's what you got" flash after a gather completes */
+/* the brief "here's what you got" flash after a gather completes -- shared
+   by Farm/Logging's own harvest/chop pop, not just Foraging despite the
+   animation's name. */
 .pill.result .pill-sub { color: var(--gold); font-weight: 700; }
 .pill.result { animation: forage-result 0.4s ease; }
 @keyframes forage-result {
@@ -1237,6 +1460,24 @@ body {
 .villager-hire-icon, .villager-hire-body, .villager-hire-cost { position: relative; z-index: 1; }
 .villager-hire:active { transform: scale(0.98); }
 .villager-hire-icon { font-size: 20px; flex-shrink: 0; }
+.combat-enemy-selector-art {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  overflow: hidden;
+}
+.combat-enemy-selector-art .sprite-img {
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.combat-enemy-selector-art.using-sprite .sprite-img { display: block; }
+.combat-enemy-selector-art.using-sprite .sprite-fallback { display: none; }
+.combat-enemy-selector-art .sprite-fallback { font-size: 24px; }
 .villager-hire-body { flex: 1; min-width: 0; }
 .villager-hire-name { font-weight: 650; font-size: 13.5px; color: var(--gold); }
 .villager-hire-sub { font-size: 11px; color: var(--dim); margin-top: 1px; }
@@ -1350,7 +1591,10 @@ body {
   position: relative;
   width: 100%;
   aspect-ratio: 4 / 5;
-  max-height: 30vh;
+  /* Was 30vh -- bumped (2026-09-11) to reclaim the height the Pickaxe
+     slot's own row used to take between this and the XP bar, now that
+     the slot lives inside this banner's own overlay instead. */
+  max-height: 38vh;
   border-radius: 14px;
   overflow: hidden;
   background: var(--panel-2);
@@ -1364,6 +1608,7 @@ body {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
   image-rendering: pixelated;
 }
 .mine-art.using-sprite .sprite-img { display: block; }
@@ -1410,10 +1655,42 @@ body {
 .mine-status {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
 }
 .mine-depth { font-size: 14px; font-weight: 700; color: var(--text); }
-.mine-pickaxe { font-size: 11.5px; color: var(--dim); font-weight: 600; }
+
+/* Combat's own enemy panel (2026-09-11, second pass) dropped the
+   .mine-art-based banner entirely in favor of a full-bleed background
+   (.combat-art below) with the enemy's own .combatant panel floating
+   over it, same as the player's -- this is that panel's one addition,
+   the next-attack countdown line under the HP bar. */
+.combat-enemy-timer-row {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Compact equipment pill shared by the Pickaxe and Axe selectors embedded
+   in the lower-right corner of their respective zone illustrations. */
+.art-tool-corner .equip-row {
+  width: auto;
+  max-width: 158px;
+  padding: 5px 10px 5px 5px;
+  gap: 7px;
+  background: rgba(18, 16, 14, 0.75);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.art-tool-corner .pill-icon { width: 28px; height: 28px; }
+.art-tool-corner .pill-body { flex: initial; min-width: 0; }
+.art-tool-corner .pill-name { display: none; }
+.art-tool-corner .pill-sub {
+  margin-top: 0;
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* A cave-in needs to read as a real jolt, not just a text-swap -- a quick
    warm flash across the depth/pickaxe row, same --warn used for an empty
@@ -1630,9 +1907,17 @@ body {
   /* Pinned to the bottom of the screen's flex column regardless of how
      tall the page above it is -- an auto top margin absorbs whatever
      space is left, same trick .field-grid's auto vertical margin uses to
-     float, just pinned to one edge instead of centered. */
+     float, just pinned to one edge instead of centered. Inventory's own
+     Bag/Storage toggle wants this (it sits last in that screen's markup,
+     under a scrolling grid); the Journal's Skills/Collection toggle
+     reuses this same class but sits second, right under the header, so
+     the auto margin is undone for it just below -- otherwise a short
+     Skills list (2026-09-11, now that untrained skills hide themselves)
+     leaves a tall, empty-looking gap between the header and the toggle
+     instead of the toggle sitting right under it. */
   margin-top: auto;
 }
+#screen-skills .inv-toggle { margin-top: 0; }
 .inv-view-btn {
   flex: 1;
   padding: 9px 6px;
@@ -1757,8 +2042,12 @@ body {
 
 .inv-card .sprite-img {
   display: none;
-  width: 58%;
-  height: 58%;
+  /* Was 58% -- bumped (2026-09-11, per the request) so a real item icon
+     actually reads as the tile's own art rather than a small picture
+     floating in a mostly-empty square, same fill ratio Craft/Foraging's
+     own pill icons already use for their own (smaller) sprite slot. */
+  width: 92%;
+  height: 92%;
   object-fit: contain;
   image-rendering: pixelated;
 }
@@ -1904,7 +2193,7 @@ body {
 .combat-action.locked { opacity: 0.35; border-style: dashed; }
 .combat-action.attack .name { color: var(--warn); }
 .combat-action.defend .name { color: var(--gold); }
-.combat-action.eat .name { color: var(--green); }
+.combat-action.items .name { color: var(--green); }
 .combat-action.flee .name { color: var(--dim); }
 
 .combat-log {
@@ -1927,16 +2216,35 @@ body {
 .combat-log .brace { color: var(--gold); }
 .combat-log .system { color: var(--dim); font-style: italic; }
 
-.combat-result {
+/* A centered overlay now (2026-09-11, third pass), same modal shape
+   #zonewheel uses for a zone level-up -- a concluded fight is its own
+   moment, not one more thing stacked at the bottom of .combat-ui under
+   the action buttons, and "Fight Again" sits dead center where a thumb
+   can't miss it. #screen-combat #combat-result (not just #combat-result)
+   is what it takes to out-specificity the generic `#screen-combat > :not
+   (.combat-art) { position: relative }` rule above -- this needs `fixed`
+   to actually win. */
+#screen-combat #combat-result {
   display: none;
-  margin-top: 12px;
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 16px;
+}
+#screen-combat #combat-result.show { display: flex; }
+.combat-result-card {
+  width: 100%;
+  max-width: 340px;
   text-align: center;
-  padding: 14px;
-  border-radius: 12px;
+  padding: 22px 18px 18px;
+  border-radius: 16px;
   border: 1px solid var(--gold);
   background: var(--panel);
+  animation: zw-pop 0.4s cubic-bezier(.22, 1.4, .36, 1);
 }
-.combat-result.show { display: block; }
 .result-headline { font-weight: 650; font-size: 15px; margin-bottom: 4px; }
 .result-headline.win { color: var(--gold); }
 .result-headline.loss { color: var(--warn); }
@@ -1996,6 +2304,18 @@ body {
 }
 .map-viewport:active { cursor: grabbing; }
 .map-canvas { position: relative; }
+.world-map-terrain { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; pointer-events: none; }
+.map-controls { display: flex; align-items: center; gap: 6px; }
+.map-controls button { background: var(--panel-2); border: 1px solid var(--gold); color: var(--text); border-radius: 5px; padding: 9px; font: inherit; cursor: pointer; }
+.map-controls output { font-size: 11px; min-width: 42px; text-align: center; }
+.map-help { color: var(--dim); font-size: 11px; }
+.map-viewport * { touch-action: none; }
+.map-viewport .map-node-label, .map-viewport .map-node-type { background: #101a22e8; padding: 3px 6px; border-radius: 3px; }
+.map-viewport .map-node-circle { width: 34px; height: 34px; font-size: 18px; border-color: #d8bd6a; }
+.map-node.unexplored .map-node-circle { border-style: dashed; }
+.map-viewport .map-road-line { stroke: #e6d3a2; stroke-width: 3; stroke-dasharray: 7 6; }
+.map-viewport .map-road-line.traveling { stroke: #ffcf54; }
+.map-viewport .map-road-line.locked { stroke: var(--warn); }
 .map-svg { position: absolute; top: 0; left: 0; pointer-events: none; }
 .map-road-line { stroke: var(--line); stroke-width: 2; stroke-dasharray: 6 6; }
 .map-road-line.locked { stroke: var(--warn); }

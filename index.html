@@ -50,6 +50,12 @@
     <!-- ============================ THE FIELD =========================== -->
     <div id="screen-field" class="screen hidden">
 
+      <!-- Reuses the Home Farm card's scene as a full-screen backdrop,
+           matching Workshop while leaving the original plot UI intact. -->
+      <div id="farm-art" class="farm-art" aria-hidden="true">
+        <img class="sprite-img" alt="" draggable="false">
+      </div>
+
       <header class="field-head">
         <button id="back" class="back" aria-label="Back">‹</button>
         <div>
@@ -149,14 +155,60 @@
         <div class="bar xp-bar"><div id="log-xp-fill" class="xp-fill"></div></div>
       </div>
 
-      <!-- Equip/change the Axe straight from here -- same picker system as
-           Inventory's own Equipment page, writing the exact same
-           state.equipment.axe field. See logging.js's drawAxeSlot(). -->
-      <div id="log-axe-slot" class="log-axe-slot"></div>
+      <!-- Location-driven forest art fills the Logging screen behind its
+           controls. The compact zone panel remains in normal document flow
+           over that background, keeping the local tree and Axe selector
+           readable without reserving a banner-sized block. -->
+      <div id="log-art" class="mine-art log-art">
+        <img class="sprite-img" alt="" draggable="false">
+        <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3 6 11h3l-4 6h14l-4-6h3Z" />
+          <path d="M12 17v4" />
+        </svg>
+      </div>
+
+      <div class="log-zone-overlay">
+        <div class="mine-status">
+          <div id="log-art-tree" class="mine-depth">Pine grove</div>
+          <div id="log-axe-slot" class="art-tool-corner"></div>
+        </div>
+        <div id="log-art-label" class="mine-art-label">Aerendell Forest</div>
+      </div>
 
       <div id="log-plots" class="plots"></div>
 
       <div id="log-hint" class="hint">Tap a grown Pine to chop it.</div>
+    </div>
+
+    <!-- ============================= FORAGING ============================== -->
+    <!-- Its own screen per location (2026-09-11 rework), same shape as
+         Logging's -- one independently-timed pill per item the current
+         location offers (src/data.js's FORAGE_ITEMS), built fresh by
+         src/forage.js's buildForaging() rather than hardcoded here, since
+         the exact set of pills differs by location the same way Logging's
+         own #log-plots is built in JS rather than listed by hand. -->
+    <div id="screen-foraging" class="screen hidden">
+
+      <!-- Location-specific full-screen scene. The original gather pills
+           remain above it; src/forage.js swaps only this image when the
+           player's current location changes. -->
+      <div id="forage-art" class="forage-art" aria-hidden="true">
+        <img class="sprite-img" alt="" draggable="false">
+      </div>
+
+      <header class="field-head">
+        <button id="back-foraging" class="back" aria-label="Back">‹</button>
+        <div>
+          <div class="field-title">Foraging</div>
+          <div id="forage-where" class="field-sub">Foraging</div>
+        </div>
+      </header>
+
+      <div class="market-section-label">Gather</div>
+
+      <div id="forage-list" class="craft-list"></div>
+
+      <div class="hint">Tap an item to gather it.</div>
     </div>
 
     <!-- ============================== MINING =============================== -->
@@ -179,20 +231,19 @@
         <div class="bar xp-bar"><div id="mining-xp-fill" class="xp-fill"></div></div>
       </div>
 
-      <!-- Equip/change the Pickaxe straight from here -- same picker
-           system Logging's own Axe slot uses, writing the exact same
-           state.equipment.pick field. See mining.js's drawPickaxeSlot(). -->
-      <div id="mine-pickaxe-slot" class="log-axe-slot"></div>
-
       <!-- The current depth zone's own illustration -- one custom image per
            MINE_ZONES entry (src/data.js), dropped in at
            assets/sprites/mining/zones/<slug>.png with no code changes (see
            mining.js's drawMineArt()). Falls back to a plain vector pick-axe
            until real art exists, same "never a broken image" rule every
-           other sprite slot in this game follows. The depth/pickaxe status
-           row moved inside this frame's own bottom overlay (2026-08-31,
-           was its own row below the art) -- it sits above the zone's name,
-           both riding the same gradient. -->
+           other sprite slot in this game follows. Stretches down to fill
+           the room the Pickaxe slot's own row used to take between it and
+           the XP bar (2026-09-11) -- the depth/zone-name status still rides
+           the same bottom gradient, and the Pickaxe equip pill itself now
+           sits inside that overlay's bottom-right corner (mining.js's
+           drawPickaxeSlot(), same picker system Logging's own Axe slot
+           uses, writing the exact same state.equipment.pick field) instead
+           of its own full-width row above the art. -->
       <div id="mine-art" class="mine-art">
         <img class="sprite-img" alt="" draggable="false">
         <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
@@ -203,7 +254,7 @@
         <div class="mine-art-overlay">
           <div id="mine-status" class="mine-status">
             <div class="mine-depth">Depth <span id="mine-depth-num">0</span>m</div>
-            <div class="mine-pickaxe" id="mine-pickaxe-name">Rusty Pickaxe</div>
+            <div id="mine-pickaxe-slot" class="art-tool-corner"></div>
           </div>
           <div id="mine-art-label" class="mine-art-label">Stone</div>
         </div>
@@ -343,6 +394,24 @@
     <!-- ============================= COMBAT ================================ -->
     <div id="screen-combat" class="screen hidden">
 
+      <!-- Full-bleed background, same "picture behind the UI, from the top
+           of the screen to the action row" pattern Farm/Workshop/Foraging
+           already use (their own .farm-art/.workshop-art/.forage-art) --
+           one custom image per ENEMIES entry
+           (assets/sprites/combat/enemies/<slug>.png, see combat.js's
+           drawCombatArt()), only populated while a fight is actually
+           showing (combat.js's refreshCombat() clears it back to blank on
+           the idle enemy list). Every other element in this screen is a
+           direct child too, and gets floated above this one by the shared
+           `#screen-combat > :not(.combat-art)` rule in style.css -- same
+           mechanism those other screens use, not a Combat-specific one. -->
+      <div id="combat-art" class="combat-art">
+        <img class="sprite-img" alt="" draggable="false">
+      </div>
+
+      <!-- Header and XP bar stay in their usual top-of-screen spot, same
+           as every other screen (per the request) -- only the actual
+           fight controls below move to the bottom. -->
       <header class="field-head">
         <button id="back-combat" class="back" aria-label="Back">‹</button>
         <div>
@@ -359,85 +428,100 @@
         <div class="bar xp-bar"><div id="combat-xp-fill" class="xp-fill"></div></div>
       </div>
 
-      <div id="combat-idle">
-        <div id="combat-night-note" class="combat-night-note hidden">🌙 Night: enemies are tougher, but reward more.</div>
-        <div id="combat-enemy-list" class="township-list"></div>
+      <!-- Every actual fight control pinned to the bottom of the screen as
+           one block (margin-top: auto, same trick .mine-actions/.inv-
+           toggle already use to float to an edge) -- per the request, so
+           the full-bleed art above has room to actually be seen instead
+           of being fought for space by the enemy/player panels sitting at
+           their usual top-down flow position. -->
+      <div class="combat-ui">
+        <div id="combat-idle">
+          <div id="combat-night-note" class="combat-night-note hidden">🌙 Night: enemies are tougher, but reward more.</div>
+          <div id="combat-enemy-list" class="township-list"></div>
+        </div>
+
+        <div id="combat-arena" class="hidden">
+          <!-- Enemy and player share the same panel shape (see .combatant in
+               style.css) -- both float over the full-bleed #combat-art
+               background above rather than one of them living inside a
+               separate cropped art banner (2026-09-11, second pass: "put
+               the full image behind the UI... the picture goes from the top
+               of the screen to the hot bar with the UI floating over the
+               image", replacing the first pass's own smaller in-flow art
+               banner). -->
+          <div class="combatant">
+            <div class="combatant-head">
+              <span class="combatant-name">
+                <span id="combat-enemy-name">Grey Wolf</span>
+                <span id="combat-brace-badge" class="brace-badge">Braced</span>
+              </span>
+              <span class="combatant-hp"><span id="combat-enemy-hp-num">40</span> / <span id="combat-enemy-maxhp-num">40</span></span>
+            </div>
+            <div class="bar"><div id="combat-enemy-hp-fill" class="bar-fill hp-fill enemy"></div></div>
+            <div class="combat-enemy-timer-row">Next attack in <span id="combat-enemy-timer-num">--</span></div>
+          </div>
+
+          <div class="combatant">
+            <div class="combatant-head">
+              <span class="combatant-name">You</span>
+              <span class="combatant-hp"><span id="combat-player-hp-num">50</span> / <span id="combat-player-maxhp-num">50</span></span>
+            </div>
+            <div class="bar"><div id="combat-player-hp-fill" class="bar-fill hp-fill player"></div></div>
+            <div class="timer-row">
+              <span id="combat-player-cd-label">Ready</span>
+              <div class="bar"><div id="combat-player-cd-fill" class="bar-fill timer-fill player-cd"></div></div>
+            </div>
+          </div>
+
+          <div class="combat-actions">
+            <button class="combat-action attack" id="combat-btn-attack">
+              <span class="name">Attack</span>
+              <span class="sub" id="combat-attack-sub">Weapon damage, no defense</span>
+            </button>
+            <button class="combat-action defend" id="combat-btn-defend">
+              <span class="name">Defend</span>
+              <span class="sub">Halves next hit, more with a shield</span>
+            </button>
+            <!-- Opens a picker over every FOODS-category item actually in
+                 the Bag (combat.js's openItemPicker()), not just whatever
+                 happens to be equipped in the Food slot -- per the request
+                 for the ability to use a consumable mid-fight rather than
+                 only the one pre-equipped item. A single match consumes
+                 straight away, no picker needed for a one-item bag. -->
+            <button class="combat-action items" id="combat-btn-items">
+              <span class="name">Items</span>
+              <span class="sub" id="combat-items-sub">No food in your bag</span>
+            </button>
+            <button class="combat-action flee" id="combat-btn-flee">
+              <span class="name">Flee</span>
+              <span class="sub" id="combat-flee-sub">50% chance to escape</span>
+            </button>
+          </div>
+
+          <!-- The scrolling combat log is pulled from the screen (2026-08-30)
+               -- it cluttered the fight view more than it earned its place.
+               src/combat.js's log()/drawLog()/combatLog are all untouched
+               and still run every attack; drawLog() already no-ops safely
+               the moment el("combat-log") can't find this element, so
+               nothing needed to change on the JS side. Reintroduce by
+               putting a #combat-log element back somewhere (not necessarily
+               here) -- the logic underneath is ready as soon as there's
+               something for it to write into. -->
+        </div>
       </div>
 
-      <div id="combat-arena" class="hidden">
-        <!-- Archery/Melee's own compact progress, visible while actually
-             fighting -- see combat.js's drawWeaponSkillsXp(). Whichever
-             one a kill feeds depends on the weapon equipped at the moment
-             the enemy falls, not which of these happens to be showing. -->
-        <div class="combat-skill-row">
-          <div class="combat-skill">
-            <span id="combat-archery-level" class="combat-skill-label">Archery — Lv 0</span>
-            <div class="bar xp-bar small"><div id="combat-archery-fill" class="xp-fill"></div></div>
-          </div>
-          <div class="combat-skill">
-            <span id="combat-melee-level" class="combat-skill-label">Melee — Lv 0</span>
-            <div class="bar xp-bar small"><div id="combat-melee-fill" class="xp-fill"></div></div>
-          </div>
-        </div>
-
-        <div class="combatant">
-          <div class="combatant-head">
-            <span class="combatant-name">
-              <span id="combat-enemy-name">Grey Wolf</span>
-              <span id="combat-brace-badge" class="brace-badge">Braced</span>
-            </span>
-            <span class="combatant-hp"><span id="combat-enemy-hp-num">40</span> / <span id="combat-enemy-maxhp-num">40</span></span>
-          </div>
-          <div class="bar"><div id="combat-enemy-hp-fill" class="bar-fill hp-fill enemy"></div></div>
-          <div class="timer-row">
-            <span>Next attack</span>
-            <div class="bar"><div id="combat-enemy-timer-fill" class="bar-fill timer-fill enemy-atk"></div></div>
-            <span id="combat-enemy-timer-num">--</span>
-          </div>
-        </div>
-
-        <div class="combatant">
-          <div class="combatant-head">
-            <span class="combatant-name">You</span>
-            <span class="combatant-hp"><span id="combat-player-hp-num">50</span> / <span id="combat-player-maxhp-num">50</span></span>
-          </div>
-          <div class="bar"><div id="combat-player-hp-fill" class="bar-fill hp-fill player"></div></div>
-          <div class="timer-row">
-            <span id="combat-player-cd-label">Ready</span>
-            <div class="bar"><div id="combat-player-cd-fill" class="bar-fill timer-fill player-cd"></div></div>
-          </div>
-        </div>
-
-        <div class="combat-actions">
-          <button class="combat-action attack" id="combat-btn-attack">
-            <span class="name">Attack</span>
-            <span class="sub" id="combat-attack-sub">Weapon damage, no defense</span>
-          </button>
-          <button class="combat-action defend" id="combat-btn-defend">
-            <span class="name">Defend</span>
-            <span class="sub">Halves next hit, more with a shield</span>
-          </button>
-          <button class="combat-action eat" id="combat-btn-eat">
-            <span class="name">Eat</span>
-            <span class="sub" id="combat-eat-sub">Equip food first</span>
-          </button>
-          <button class="combat-action flee" id="combat-btn-flee">
-            <span class="name">Flee</span>
-            <span class="sub" id="combat-flee-sub">50% chance to escape</span>
-          </button>
-        </div>
-
-        <!-- The scrolling combat log is pulled from the screen (2026-08-30)
-             -- it cluttered the fight view more than it earned its place.
-             src/combat.js's log()/drawLog()/combatLog are all untouched
-             and still run every attack; drawLog() already no-ops safely
-             the moment el("combat-log") can't find this element, so
-             nothing needed to change on the JS side. Reintroduce by
-             putting a #combat-log element back somewhere (not necessarily
-             here) -- the logic underneath is ready as soon as there's
-             something for it to write into. -->
-
-        <div id="combat-result" class="combat-result">
+      <!-- A concluded fight is its own centered overlay now (2026-09-11,
+           third pass), same "hold the screen's full attention for a beat"
+           modal shape #zonewheel already uses for a zone level-up, rather
+           than sitting inline at the bottom of .combat-ui where it'd be
+           just one more thing stacked under the action buttons -- per the
+           request, "Fight Again" sits dead center, impossible to miss or
+           misjudge a tap on. Sibling of .combat-ui (not nested inside it)
+           so it isn't pinned to the bottom alongside everything else --
+           #combat-result's own fixed positioning (style.css) takes it out
+           of that flow entirely. -->
+      <div id="combat-result" class="combat-result">
+        <div class="combat-result-card">
           <div id="combat-result-headline" class="result-headline">Victory</div>
           <div id="combat-result-sub" class="result-sub">+20 Combat XP, +15 Shards.</div>
           <button id="combat-btn-again">Fight again</button>
@@ -534,6 +618,15 @@
 
       <div id="map-travel-note" class="map-travel-note hidden"></div>
 
+      <div class="map-controls" role="group" aria-label="Map controls">
+        <button id="map-zoom-out" aria-label="Zoom out">−</button>
+        <output id="map-zoom-level" aria-label="Zoom level">400%</output>
+        <button id="map-zoom-in" aria-label="Zoom in">+</button>
+        <button id="map-center">Locate me</button>
+        <button id="map-fit">World</button>
+      </div>
+      <div class="map-help">Drag to explore · Pinch or scroll to zoom · Travel clears the fog</div>
+
       <div id="map-viewport" class="map-viewport">
         <div id="map-canvas" class="map-canvas"></div>
       </div>
@@ -541,6 +634,13 @@
 
     <!-- ============================ CRAFTING ============================= -->
     <div id="screen-craft" class="screen hidden">
+
+      <!-- Reuses the Home card's exact Workshop scene as a full-screen,
+           non-interactive backdrop. Recipes and station cards remain the
+           original HTML controls layered above it. -->
+      <div id="workshop-art" class="workshop-art" aria-hidden="true">
+        <img class="sprite-img" alt="" draggable="false">
+      </div>
 
       <header class="field-head">
         <button id="back-craft" class="back" aria-label="Back">‹</button>
@@ -1441,30 +1541,6 @@
         <div id="zw-result" class="zw-result">Spinning…</div>
         <div class="zw-hint">Tap to continue</div>
       </div>
-    </div>
-
-    <!-- Persistent -- above the dock on every screen, not a place you
-         navigate to. See src/forage.js. -->
-    <div id="forage-bar" class="forage-bar">
-      <button class="pill" data-item="forage">
-        <div class="pill-fill"></div>
-        <div class="pill-level-fill"></div>
-        <span class="pill-level-badge">0</span>
-        <span class="pill-icon">
-          <img class="sprite-img" alt="" draggable="false">
-          <svg class="sprite-fallback" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 3v3.2" />
-            <path d="M12 6.2c1.6-1.1 3-1.1 4.2 0" />
-            <circle cx="9.2" cy="11" r="3.3" />
-            <circle cx="15" cy="10" r="3.1" />
-            <circle cx="12.3" cy="16" r="3.3" />
-          </svg>
-        </span>
-        <span class="pill-body">
-          <span class="pill-name">Forage</span>
-          <span class="pill-sub">Tap to forage</span>
-        </span>
-      </button>
     </div>
 
     <nav id="dock" class="dock"></nav>

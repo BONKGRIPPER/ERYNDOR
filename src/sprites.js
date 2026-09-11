@@ -11,7 +11,7 @@
 //   assets/sprites/crops/<cropId>/<n>.png   growth frame n, 0..crop.waters
 //                                            (n == waters is the ripe frame)
 //   assets/sprites/trees/<treeId>/<n>.png    same idea, for Logging
-//   assets/sprites/forage/basket.png         the one persistent forage button
+//   assets/sprites/fishing/net.png           the active Fishing net action
 //   assets/sprites/mining/pickaxe.png        fallback Dig icon when no tool is equipped
 //   assets/sprites/mining/surface.png        the Surface & Bank action icon
 //   assets/sprites/mining/zones/<slug>.png   the Mining screen's big art banner,
@@ -30,11 +30,21 @@
 //                                             Skills screen
 //   assets/sprites/dock/<screenId>.png       the five persistent navigation
 //                                             icons along the bottom edge
+//   assets/sprites/logging/zones/<slug>.png  one forest banner for every
+//                                             location with loggingZone data
+//   assets/sprites/foraging/zones/<art>.png  one full-screen Foraging scene
+//                                             for every location with forageArt
+//   assets/sprites/home/<art>.png            full-bleed artwork for Home
+//                                             cards declaring an art key
+//   assets/sprites/combat/enemies/<slug>.png one art banner per ENEMIES
+//                                             entry, slugged off its name
+//   assets/sprites/combat/selectors/<slug>.png one compact transparent
+//                                               portrait per ENEMIES entry
 //
 // Files are looked for once at startup. Square art scales best -- images are
 // fit with `object-fit: contain` so nothing gets stretched.
 
-import { CROPS, TREES, RECIPES, STATIONS, TINTS, SKILLS, MINE_ZONES, DOCK_IDS } from "./data.js";
+import { CROPS, TREES, RECIPES, STATIONS, TINTS, SKILLS, MINE_ZONES, DOCK_IDS, LOCATIONS, PLACES, ENEMIES } from "./data.js";
 
 export const SPRITE_BASE = "assets/sprites/";
 
@@ -47,7 +57,7 @@ export function slug(name) {
 function allSpriteKeys() {
   const keys = [
     "soil/tilled", "tools/seeds", "tools/fertilizer", "tools/water",
-    "forage/basket", "mining/pickaxe", "mining/surface",
+    "fishing/net", "mining/pickaxe", "mining/surface",
   ];
   Object.keys(CROPS).forEach(function (id) {
     for (let n = 0; n <= CROPS[id].waters; n++) keys.push("crops/" + id + "/" + n);
@@ -60,7 +70,23 @@ function allSpriteKeys() {
   Object.keys(TINTS).forEach(function (name) { keys.push("items/" + slug(name)); });
   Object.keys(SKILLS).forEach(function (id) { keys.push("skills/" + id); });
   DOCK_IDS.forEach(function (id) { keys.push("dock/" + id); });
+  Object.keys(LOCATIONS).forEach(function (id) {
+    const zoneName = LOCATIONS[id].loggingZone;
+    if (zoneName) keys.push("logging/zones/" + slug(zoneName));
+    const forageArt = LOCATIONS[id].forageArt;
+    if (forageArt) keys.push("foraging/zones/" + forageArt);
+  });
+  PLACES.forEach(function (place) {
+    if (place.art) keys.push("home/" + place.art);
+  });
   MINE_ZONES.forEach(function (zone) { keys.push("mining/zones/" + slug(zone.name)); });
+  // Combat gets both a compact enemy-picker portrait and a full encounter
+  // scene, kept separate so neither UI has to make an awkward crop.
+  Object.keys(ENEMIES).forEach(function (key) {
+    const enemySlug = slug(ENEMIES[key].name);
+    keys.push("combat/selectors/" + enemySlug);
+    keys.push("combat/enemies/" + enemySlug);
+  });
   // Not a STATIONS entry (see beehive.js's own header for why), so it
   // isn't picked up by the stations/<id> loop that'd normally cover this
   // -- added by hand instead.

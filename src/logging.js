@@ -66,6 +66,19 @@ function treeFor(plot) {
   return TREES[plot.tree] || TREES.pine;
 }
 
+// The Logging banner is location-driven rather than tree-driven: a later
+// zone can grow the same species while still having its own environment art.
+// Adding `loggingZone` to a LOCATIONS entry and dropping the matching slugged
+// PNG into assets/sprites/logging/zones/ is enough to extend the system.
+function drawLogArt() {
+  const loc = LOCATIONS[state.currentLocation];
+  const zoneName = (loc && loc.loggingZone) || ((loc && loc.name) || "Unknown") + " Forest";
+  const tree = TREES[treeForCurrentLocation()] || TREES.pine;
+  useSprite(el("log-art"), "logging/zones/" + slug(zoneName));
+  el("log-art-label").textContent = zoneName;
+  el("log-art-tree").textContent = tree.name + " grove";
+}
+
 const TREE_SVG =
   '<svg viewBox="0 0 40 40" aria-hidden="true">' +
   '<path class="stem" d="M20 34 V19" />' +
@@ -220,6 +233,8 @@ function fellTree(i, plot, node) {
 export function drawLogging() {
   const now = Date.now();
 
+  drawLogArt();
+
   state.logPlots.forEach(function (plot, i) {
     const node = el("log-plots").children[i];
     if (!node) return;
@@ -319,48 +334,65 @@ function axeDamage() {
   return (AXES[item] && AXES[item].damage) || AXES["Wooden Axe"].damage;
 }
 
-// One full-width pill, same shape inventory.js's buildEquipRow() builds --
-// no .pill-fill (there's no progress to show on an equip slot itself).
+// The same real equip pill used by Inventory, compacted by .art-tool-corner
+// because its host now lives inside the forest banner like Mining's Pickaxe.
+// There is no .pill-fill because an equip slot has no progress of its own.
+// Built once and updated in place on every later call (this runs every
+// tick via drawLogging()) -- rebuilding the whole pill each time, as this
+// used to, tore out and recreated the <img> every ~200ms, which defeated
+// useSprite()'s own same-key caching (a fresh <img> has no dataset.key to
+// compare against) and reloaded/repainted the icon constantly, reading as
+// a visible stutter on a perfectly static icon. Bug fixed 2026-09-11.
 function drawAxeSlot() {
   const wrap = el("log-axe-slot");
   if (!wrap) return;
-  wrap.replaceChildren();
   const equipped = state.equipment.axe;
 
-  const btn = document.createElement("button");
-  btn.className = "pill equip-row";
+  let btn = wrap.querySelector(".equip-row");
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.className = "pill equip-row";
 
-  const icon = document.createElement("span");
-  icon.className = "pill-icon";
-  const img = document.createElement("img");
-  img.className = "sprite-img";
-  img.alt = "";
-  img.draggable = false;
-  const fallback = document.createElement("span");
-  fallback.className = "sprite-fallback";
-  if (equipped) fallback.style.background = TINTS[equipped] || "#9a8f7d";
-  icon.append(img, fallback);
-  if (equipped) useSprite(icon, "items/" + slug(equipped));
+    const icon = document.createElement("span");
+    icon.className = "pill-icon";
+    const img = document.createElement("img");
+    img.className = "sprite-img";
+    img.alt = "";
+    img.draggable = false;
+    const fallback = document.createElement("span");
+    fallback.className = "sprite-fallback";
+    icon.append(img, fallback);
 
-  const body = document.createElement("span");
-  body.className = "pill-body";
-  const name = document.createElement("span");
-  name.className = "pill-name";
-  name.textContent = "Axe";
-  const sub = document.createElement("span");
-  sub.className = "pill-sub";
+    const body = document.createElement("span");
+    body.className = "pill-body";
+    const name = document.createElement("span");
+    name.className = "pill-name";
+    name.textContent = "Axe";
+    const sub = document.createElement("span");
+    sub.className = "pill-sub";
+    body.append(name, sub);
+
+    btn.append(icon, body);
+    btn.addEventListener("click", openAxePicker);
+    wrap.replaceChildren(btn);
+  }
+
+  const icon = btn.querySelector(".pill-icon");
+  const fallback = icon.querySelector(".sprite-fallback");
+  if (equipped) {
+    fallback.style.background = TINTS[equipped] || "#9a8f7d";
+    useSprite(icon, "items/" + slug(equipped));
+  } else {
+    fallback.style.background = "";
+    icon.classList.remove("using-sprite");
+  }
   // The damage stat right alongside the name -- what's actually driving
   // the chop-time formula (TREE.health / damage, see touchLogPlot()
   // above) rather than a bare item name the player has to already know
   // the numbers behind.
-  sub.textContent = equipped
+  btn.querySelector(".pill-sub").textContent = equipped
     ? equipped + " · " + AXES[equipped].damage + " dmg"
     : "Empty — tap to equip";
-  body.append(name, sub);
-
-  btn.append(icon, body);
-  btn.addEventListener("click", openAxePicker);
-  wrap.append(btn);
 }
 
 // Same picker shape inventory.js's openEquipPicker() uses -- an "Unequip"

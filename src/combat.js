@@ -32,14 +32,16 @@
 import {
   COMBAT_UNARMED, COMBAT_BASE_DEFENSE, COMBAT_BASE_RECOVERY_MS, COMBAT_XP,
   COMBAT_PLAYER_MAX_HP, FLEE_CHANCE, COMBAT_NIGHT_MULT, WEAPONS, ARMORS, SHIELDS, FOODS, ENEMIES,
-  LOCATIONS, COMBAT_AUTO_ATTACK_DELAY_MS,
+  TINTS, LOCATIONS, COMBAT_AUTO_ATTACK_DELAY_MS,
 } from "./data.js";
 import { state, save, gainItem, gainSkillXp } from "./state.js";
 import { openZoneWheel } from "./zoneWheel.js";
-import { levelProgress, levelFromXp } from "./skills.js";
+import { levelProgress } from "./skills.js";
 import { isNight } from "./time.js";
+import { useSprite, slug } from "./sprites.js";
 import { el } from "./dom.js";
 import { show } from "./screens.js";
+import { openSheet, closeSheet } from "./sheet.js";
 import { drawBag, updateWalletNote, updateSkillsNote } from "./hub.js";
 
 // Baked into the fight once, at startFight() -- see state.combat.nightBoost
@@ -66,7 +68,6 @@ function shieldStats() {
 // to a neutral {0, 1} for an empty (or non-armor) slot, same "no penalty
 // for going without" rule the shield/weapon fallbacks already follow.
 function armorStats(slot) { return ARMORS[state.equipment[slot]] || { defense: 0, recoveryMult: 1 }; }
-function foodStats() { return FOODS[state.equipment.food] || null; }
 
 // Every body slot's defense stacks (plus the shield's); every body slot's
 // recoveryMult multiplies together onto the base recovery time -- three
@@ -141,16 +142,16 @@ function syncBar(node, remainingMs, totalMs) {
   node.style.width = "100%";
 }
 
-// Re-syncs both timer bars from the live deadlines in state.combat -- safe
-// to call from an action handler (a fresh cycle just started) or from
-// screens.js on screen-open (resuming a cycle already in progress).
+// Re-syncs the player's cooldown bar from the live deadline in
+// state.combat -- safe to call from an action handler (a fresh cycle just
+// started) or from screens.js on screen-open (resuming a cycle already in
+// progress). The enemy's own attack countdown (2026-09-11 rework) is a
+// plain number now, not a second bar -- refreshCombat() already redraws
+// it every tick same as every other number on this screen, no separate
+// sync needed.
 export function syncTimerBars() {
   const c = state.combat;
   if (!c) return;
-  const enemy = ENEMIES[c.enemyKey];
-  if (!c.over) {
-    syncBar(el("combat-enemy-timer-fill"), Math.max(0, c.enemyNextAttackAt - Date.now()), enemy.attackMs);
-  }
   const cdFill = el("combat-player-cd-fill");
   if (c.over || Date.now() >= c.playerCooldownUntil) {
     cdFill.style.transitionDuration = "0ms";
@@ -179,12 +180,16 @@ export function buildCombatIdle() {
     const btn = document.createElement("button");
     btn.className = "villager-hire";
     btn.innerHTML =
-      '<span class="villager-hire-icon">' + enemy.icon + "</span>" +
+      '<span class="villager-hire-icon combat-enemy-selector-art">' +
+        '<img class="sprite-img" alt="" draggable="false">' +
+        '<span class="sprite-fallback">' + enemy.icon + "</span>" +
+      "</span>" +
       '<span class="villager-hire-body">' +
         '<span class="villager-hire-name">Fight a ' + enemy.name + "</span>" +
         '<span class="villager-hire-sub">' + enemy.note + "</span>" +
       "</span>" +
       '<span class="villager-hire-level">Lv ' + enemy.level + "</span>";
+    useSprite(btn.querySelector(".combat-enemy-selector-art"), "combat/selectors/" + slug(enemy.name));
     btn.addEventListener("click", function () { startFight(key); });
     wrap.append(btn);
   });
@@ -322,16 +327,28 @@ function defend() {
   syncTimerBars();
 }
 
-function eat() {
+// Every FOODS-category item actually sitting in the Bag right now, not
+// just whatever's pre-equipped in the Food slot -- the whole point of the
+// Items button (per the request: "ability to use consumable items while
+// in combat") is that any food you're carrying is usable mid-fight, not
+// only the one item Inventory's Equipment page happens to have equipped.
+function bagFoods() {
+  return Object.keys(FOODS).filter(function (name) { return (state.bag[name] || 0) > 0; });
+}
+
+// Consumes one of `itemName` straight from the Bag -- same effect eat()
+// always had, just parameterized on whichever food was actually tapped
+// instead of always reading state.equipment.food.
+function useItem(itemName) {
   const c = state.combat;
   if (!c || c.over || Date.now() < c.playerCooldownUntil) return;
-  const foodName = state.equipment.food;
-  const food = foodStats();
-  if (!food || (state.bag[foodName] || 0) < 1) return;
-  state.bag[foodName] -= 1;
+  const food = FOODS[itemName];
+  if (!food || (state.bag[itemName] || 0) < 1) return;
+  state.bag[itemName] -= 1;
+  if (state.bag[itemName] <= 0) delete state.bag[itemName];
   const before = c.playerHP;
   c.playerHP = clamp(c.playerHP + food.heal, 0, c.playerMaxHP);
-  let healLog = "You eat " + foodName + ", +" + (c.playerHP - before) + " HP.";
+  let healLog = "You eat " + itemName + ", +" + (c.playerHP - before) + " HP.";
   // Optional -- only Honey carries these fields so far. Overwrites any
   // boost already running rather than stacking, same "refresh, don't
   // add" rule a second Defend before the first resolves would follow if
@@ -347,6 +364,39 @@ function eat() {
   drawBag();
   refreshCombat();
   syncTimerBars();
+}
+
+// The Items button's own handler -- a bag with exactly one food type just
+// eats it straight away (no picker needed for a one-item choice, same
+// "skip the trivial decision" reasoning Craft/Foraging's own single-tap
+// pills already follow), two or more open a sheet to choose which.
+function openItemPicker() {
+  const c = state.combat;
+  if (!c || c.over || Date.now() < c.playerCooldownUntil) return;
+  const names = bagFoods();
+  if (names.length === 0) return;
+  if (names.length === 1) { useItem(names[0]); return; }
+
+  const body = el("sheet-body");
+  body.replaceChildren();
+  names.forEach(function (name) {
+    const food = FOODS[name];
+    const row = document.createElement("button");
+    row.className = "seed-row";
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = TINTS[name] || "#9a8f7d";
+    const text = document.createElement("div");
+    text.className = "seed-name";
+    text.textContent = name;
+    const count = document.createElement("span");
+    count.className = "seed-count";
+    count.textContent = "x" + state.bag[name] + " · +" + food.heal + " HP";
+    row.append(dot, text, count);
+    row.addEventListener("click", function () { closeSheet(); useItem(name); });
+    body.append(row);
+  });
+  openSheet("Use an item");
 }
 
 // A coin flip, checked once per tap -- succeed and the fight just ends,
@@ -428,17 +478,19 @@ export function drawCombatXp() {
   combatLevelBefore = p.level;
 }
 
-// Archery/Melee's own compact progress, shown in the arena while actually
-// fighting (per the request) rather than as full xp-bars like Combat's
-// own -- no level-up flash on these two, just the numbers, so the arena
-// doesn't get busier than the combat log's own removal was trying to fix.
-export function drawWeaponSkillsXp() {
-  const archery = levelProgress(state.archeryXp);
-  const melee = levelProgress(state.meleeXp);
-  el("combat-archery-level").textContent = "Archery — Lv " + archery.level;
-  el("combat-archery-fill").style.width = (Math.min(1, archery.into / archery.need) * 100).toFixed(1) + "%";
-  el("combat-melee-level").textContent = "Melee — Lv " + melee.level;
-  el("combat-melee-fill").style.width = (Math.min(1, melee.into / melee.need) * 100).toFixed(1) + "%";
+// The enemy's own full-bleed background -- one custom image per ENEMIES
+// entry (assets/sprites/combat/enemies/<slug>.png, registered in
+// sprites.js's allSpriteKeys()), same "picture behind the UI" treatment
+// Farm/Workshop/Foraging's own art layers already use (2026-09-11, second
+// pass) rather than a separate cropped banner. No fallback vector here --
+// an enemy with no art yet just leaves the plain background color
+// showing through, same as those other screens do for a location with no
+// art registered. Only needs redrawing when the enemy itself changes (a
+// fresh startFight()), not every tick -- same "set once, not read fresh
+// every redraw" rule Mining's own drawMineArt() follows for its zone
+// illustration.
+function drawCombatArt(enemy) {
+  useSprite(el("combat-art"), "combat/enemies/" + slug(enemy.name));
 }
 
 export function refreshCombat() {
@@ -452,12 +504,16 @@ export function refreshCombat() {
     arena.classList.add("hidden");
     result.classList.remove("show");
     el("combat-night-note").classList.toggle("hidden", !isNight());
+    // No enemy selected yet -- clear any art left over from the last
+    // fight rather than leaving it showing behind the idle enemy list.
+    el("combat-art").classList.remove("using-sprite");
     return;
   }
   idle.classList.add("hidden");
   arena.classList.remove("hidden");
 
   const enemy = ENEMIES[c.enemyKey];
+  drawCombatArt(enemy);
   el("combat-enemy-name").textContent = enemy.name + (c.nightBoost ? " \u{1F319} (2x)" : "");
   el("combat-enemy-hp-num").textContent = c.enemyHP;
   el("combat-enemy-maxhp-num").textContent = c.enemyMaxHP;
@@ -482,13 +538,14 @@ export function refreshCombat() {
   const ready = running && Date.now() >= c.playerCooldownUntil;
   el("combat-player-cd-label").textContent = !running ? "" : ready ? "Ready" : "Recovering";
 
-  const foodName = state.equipment.food;
-  const food = foodStats();
-  el("combat-eat-sub").textContent = !food
-    ? "Equip food first"
-    : (state.bag[foodName] || 0) < 1
-      ? "Out of " + foodName
-      : foodName + " x" + state.bag[foodName] + ", +" + food.heal + " HP";
+  // Every food actually in the Bag, not just whatever's equipped -- see
+  // openItemPicker()'s own header comment.
+  const foods = bagFoods();
+  el("combat-items-sub").textContent = foods.length === 0
+    ? "No food in your bag"
+    : foods.length === 1
+      ? foods[0] + " x" + state.bag[foods[0]] + ", +" + FOODS[foods[0]].heal + " HP"
+      : foods.length + " kinds of food in your bag";
 
   // Same "name the exact ammo and how many are left" treatment Eat's own
   // sub-text gives food -- only a `ranged` weapon (its own `ammo` field,
@@ -517,7 +574,7 @@ export function refreshCombat() {
   const canAct = ready;
   el("combat-btn-attack").disabled = !canAct || outOfAmmo;
   el("combat-btn-defend").disabled = !canAct;
-  el("combat-btn-eat").disabled = !canAct || !food || (state.bag[foodName] || 0) < 1;
+  el("combat-btn-items").disabled = !canAct || foods.length === 0;
   el("combat-btn-flee").disabled = !canAct;
   el("combat-flee-sub").textContent = Math.round(FLEE_CHANCE * 100) + "% chance to escape";
 
@@ -560,7 +617,7 @@ buildCombatIdle();
 
 el("combat-btn-attack").addEventListener("click", attack);
 el("combat-btn-defend").addEventListener("click", defend);
-el("combat-btn-eat").addEventListener("click", eat);
+el("combat-btn-items").addEventListener("click", openItemPicker);
 el("combat-btn-flee").addEventListener("click", flee);
 el("combat-btn-again").addEventListener("click", function () { startFight(); });
 

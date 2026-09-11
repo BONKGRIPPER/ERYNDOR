@@ -44,7 +44,7 @@ import { openSheet, closeSheet } from "./sheet.js";
 // Woodcutting skill's own field, "tanning" not "tanner") -- same
 // hand-listed shape SKILL_ROWS in skillsScreen.js already is.
 const SKILL_XP_FIELDS = [
-  "farmingXp", "loggingXp", "foragingXp", "miningXp", "archeryXp", "meleeXp",
+  "farmingXp", "loggingXp", "miningXp", "archeryXp", "meleeXp",
   "sowingXp", "millingXp", "stonecuttingXp", "tanningXp", "fishingXp",
   "tailoringXp", "grindingXp", "beekeepingXp", "fletcherXp", "weavingXp",
   "combatXp",
@@ -124,7 +124,7 @@ function advanceTime(ms) {
     if (p.chopSwing) shift(p.chopSwing, "readyAt", ms);
   });
   state.beehiveSlots.forEach(function (s) { shift(s, "readyAt", ms); });
-  shift(state.forage, "readyAt", ms);
+  Object.keys(state.forageTimers).forEach(function (key) { shift(state.forageTimers[key], "readyAt", ms); });
   state.workers.forEach(function (w) { shift(w, "nextTickAt", ms); });
   Object.keys(RECIPES).forEach(function (id) { shift(state.crafting[id], "readyAt", ms); });
   Object.keys(STATIONS).forEach(function (id) { shift(state.stations[id], "readyAt", ms); });

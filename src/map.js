@@ -15,7 +15,7 @@ import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { openSheet, closeSheet } from "./sheet.js";
 import {
-  roadBetween, isTraveling, isAtHome, startTravel,
+  roadBetween, isTraveling, isAtHome, startTravel, allRoadPaths,
 } from "./travel.js";
 
 const TYPE_ICON = {
@@ -33,10 +33,29 @@ const TYPE_LABEL = {
 
 // Grid-to-pixel spacing and canvas padding -- tune these, not the per-tile
 // math below, if the map ever needs to feel more/less cramped.
-const COL_W = 150;
-const ROW_H = 130;
-const PAD = 64;
+import { WORLD, MAP_PLACES, MAP_ROUTES, visiblePlaces } from './worldMap.js';
+let zoom = 4;
+let initialized = false;
+let lastLocation = null;
 const SVG_NS = "http://www.w3.org/2000/svg";
+
+// Every location name a route actually passes through, in order (the
+// final destination included) -- walks `roads` the same way
+// travel.js's own minutesForRoadPath() does, just collecting names
+// instead of summing minutes. Used only to tell two branching routes
+// apart in the sheet (openLocationSheet() below); a single-route
+// destination never needs this.
+function waypointNames(from, roads) {
+  const names = [];
+  let at = from;
+  roads.forEach(function (roadId) {
+    const road = ROADS.find(function (r) { return r.id === roadId; });
+    if (!road) return;
+    at = road.from === at ? road.to : road.from;
+    names.push(LOCATIONS[at] ? LOCATIONS[at].name : at);
+  });
+  return names;
+}
 
 function openLocationSheet(id) {
   const loc = LOCATIONS[id];
@@ -65,6 +84,12 @@ function openLocationSheet(id) {
 
   const note = document.createElement("div");
   const road = roadBetween(state.currentLocation, id);
+  // Every unlocked route there is, not just a direct road -- multi-hop
+  // trips are one summed travel event now (see travel.js's startTravel()),
+  // so a destination two or three roads away is just as reachable from
+  // here as a next-door one, only slower. Sorted fastest first by
+  // allRoadPaths() itself.
+  const paths = id === state.currentLocation ? [] : allRoadPaths(state.currentLocation, id);
   if (id === state.currentLocation) {
     note.className = "map-sheet-here";
     note.textContent = isAtHome() ? "You are home." : "You are here.";
@@ -77,24 +102,38 @@ function openLocationSheet(id) {
     note.className = "map-sheet-fact";
     note.textContent = "Already on the road to " + LOCATIONS[state.travel.to].name + " -- can't change course mid-trip.";
     body.append(note);
-  } else if (!road) {
+  } else if (paths.length === 0) {
     note.className = "map-sheet-fact";
-    note.textContent = "No direct road from here yet.";
-    body.append(note);
-  } else if (road.locked) {
-    note.className = "map-sheet-fact";
-    note.textContent = typeof road.locked === "string" ? "Locked: " + road.locked : "Locked.";
+    // A direct-but-locked road gets its own specific reason; no road at
+    // all (however many hops) falls back to the generic message.
+    note.textContent = road && road.locked
+      ? (typeof road.locked === "string" ? "Locked: " + road.locked : "Locked.")
+      : "No route from here yet.";
     body.append(note);
   } else {
-    const btn = document.createElement("button");
-    btn.className = "map-travel-btn";
-    btn.textContent = "Travel (" + road.minutes + " min)";
-    btn.addEventListener("click", function () {
-      startTravel(id);
-      closeSheet();
-      buildMap();
+    // A single route (every location on today's map) is one plain Travel
+    // button, same as always. More than one -- a future branching node,
+    // where two different roads both eventually reach `id` -- offers one
+    // button per route instead of silently picking the fastest for the
+    // player, each named by its own intermediate stop(s) so the options
+    // actually read as different choices; see travel.js's own
+    // allRoadPaths()/startTravel(id, roads).
+    paths.forEach(function (path) {
+      const btn = document.createElement("button");
+      btn.className = "map-travel-btn";
+      if (paths.length > 1) {
+        const stops = waypointNames(state.currentLocation, path.roads).slice(0, -1);
+        btn.textContent = "Travel via " + (stops.join(", ") || loc.name) + " (" + path.minutes + " min)";
+      } else {
+        btn.textContent = "Travel (" + path.minutes + " min)";
+      }
+      btn.addEventListener("click", function () {
+        startTravel(id, path.roads);
+        closeSheet();
+        buildMap();
+      });
+      body.append(btn);
     });
-    body.append(btn);
   }
 
   // What you can *do* at a location -- activities, market, the outpost,
@@ -119,99 +158,114 @@ function openLocationSheet(id) {
 // grid y grows upward from Aerendell (pos.y 0), but pixel y grows
 // downward, so without the flip "up the map" would render as "down the
 // screen."
-function makePixelFn() {
-  const positions = Object.keys(LOCATIONS).map(function (id) { return LOCATIONS[id].pos; });
-  const xs = positions.map(function (p) { return p.x; });
-  const ys = positions.map(function (p) { return p.y; });
-  const minX = Math.min.apply(null, xs);
-  const maxY = Math.max.apply(null, ys);
-  const pixel = function (id) {
-    const p = LOCATIONS[id].pos;
-    return { x: PAD + (p.x - minX) * COL_W, y: PAD + (maxY - p.y) * ROW_H };
-  };
-  const width = PAD * 2 + (Math.max.apply(null, xs) - minX) * COL_W;
-  const height = PAD * 2 + (maxY - Math.min.apply(null, ys)) * ROW_H;
-  return { pixel: pixel, width: width, height: height };
+function svgEl(tag, attrs) {
+  const node = document.createElementNS(SVG_NS, tag);
+  Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value));
+  return node;
 }
-
-export function buildMap() {
+function centerPlayer() {
   const viewport = el("map-viewport");
-  const canvas = el("map-canvas");
+  const p = MAP_PLACES[state.currentLocation] || MAP_PLACES.aerendell;
+  viewport.scrollLeft = p.x * zoom - viewport.clientWidth / 2;
+  viewport.scrollTop = p.y * zoom - viewport.clientHeight / 2;
+}
+export function buildMap() {
+  const viewport = el("map-viewport"), canvas = el("map-canvas");
+  const left = viewport.scrollLeft, top = viewport.scrollTop;
   canvas.replaceChildren();
-
-  const ids = Object.keys(LOCATIONS);
-  const layout = makePixelFn();
-  const pixel = layout.pixel;
-  const width = layout.width;
-  const height = layout.height;
-  canvas.style.width = width + "px";
-  canvas.style.height = height + "px";
-
-  // Which single road (if any) the player is currently walking, so both
-  // passes below can pick it out and mark it gold instead of the usual
-  // dim dashed line.
-  const travelRoad = state.travel && roadBetween(state.travel.from, state.travel.to);
-
-  // Roads first (under the nodes): one dashed line per ROADS entry, plus a
-  // badge centered on the line itself rather than off to the side.
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("width", width);
-  svg.setAttribute("height", height);
-  svg.classList.add("map-svg");
-  ROADS.forEach(function (road) {
-    const a = pixel(road.from);
-    const b = pixel(road.to);
-    const line = document.createElementNS(SVG_NS, "line");
-    line.setAttribute("x1", a.x);
-    line.setAttribute("y1", a.y);
-    line.setAttribute("x2", b.x);
-    line.setAttribute("y2", b.y);
-    line.setAttribute("class", "map-road-line" + (road.locked ? " locked" : "") + (road === travelRoad ? " traveling" : ""));
-    svg.append(line);
+  canvas.style.width = WORLD.width * zoom + "px";
+  canvas.style.height = WORLD.height * zoom + "px";
+  const terrain = document.createElement("img");
+  terrain.src = WORLD.image;
+  terrain.className = "world-map-terrain";
+  terrain.alt = "";
+  terrain.draggable = false;
+  canvas.append(terrain);
+  const visited = { ...state.mapVisited, aerendell: true, [state.currentLocation]: true };
+  const visible = visiblePlaces(visited, ROADS);
+  if (state.travel) visible.add(state.travel.to);
+  const active = new Set(state.travel?.roads || []);
+  const svg = svgEl("svg", { width: WORLD.width * zoom, height: WORLD.height * zoom,
+    viewBox: "0 0 " + WORLD.width + " " + WORLD.height, class: "map-svg" });
+  const defs = svgEl("defs", {});
+  // Blur the combined silhouette, not separate white-backed gradients:
+  // neighboring discoveries must join without covering one another again.
+  const feather = svgEl("filter", { id: "map-fog-feather", x: "-40%", y: "-40%", width: "180%", height: "180%", "color-interpolation-filters": "sRGB" });
+  feather.append(svgEl("feGaussianBlur", { stdDeviation: 9 }));
+  const gradient = svgEl("linearGradient", { id: "map-fog-color", x1: "0%", y1: "0%", x2: "65%", y2: "100%" });
+  gradient.append(svgEl("stop", { offset: "0%", "stop-color": "#263e50" }),
+    svgEl("stop", { offset: "50%", "stop-color": "#172c3d" }),
+    svgEl("stop", { offset: "100%", "stop-color": "#304653" }));
+  const mask = svgEl("mask", { id: "map-fog-mask", maskUnits: "userSpaceOnUse", x: 0, y: 0, width: WORLD.width, height: WORLD.height });
+  mask.style.maskType = "luminance";
+  mask.append(svgEl("rect", { width: WORLD.width, height: WORLD.height, fill: "white" }));
+  const clearings = svgEl("g", { fill: "black", filter: "url(#map-fog-feather)" });
+  Object.keys(visited).forEach(id => {
+    const p = MAP_PLACES[id];
+    if (!visited[id] || !p) return;
+    // Stable, gently irregular contours instead of obvious circular holes.
+    // Atlas-space geometry stays fixed while panning and zooming.
+    const phase = (p.x + p.y) * 0.017;
+    const points = Array.from({ length: 64 }, (_, i) => {
+      const a = i * Math.PI * 2 / 64;
+      const r = 74 + 8 * Math.sin(3 * a + phase) + 5 * Math.cos(5 * a - phase);
+      return [p.x + Math.cos(a) * r, p.y + Math.sin(a) * r * 0.86].join(",");
+    });
+    clearings.append(svgEl("polygon", { points: points.join(" ") }));
   });
-  canvas.append(svg);
-
-  ROADS.forEach(function (road) {
-    const a = pixel(road.from);
-    const b = pixel(road.to);
+  ROADS.forEach(road => {
+    const points = MAP_ROUTES[road.id];
+    if (points && state.mapExploredRoads?.[road.id]) {
+      clearings.append(svgEl("polyline", { points: points.map(p => p.join(",")).join(" "),
+        fill: "none", stroke: "black", "stroke-width": 58, "stroke-linecap": "round", "stroke-linejoin": "round" }));
+    }
+  });
+  mask.append(clearings);
+  defs.append(feather, gradient, mask); svg.append(defs);
+  svg.append(svgEl("rect", { width: WORLD.width, height: WORLD.height, fill: "url(#map-fog-color)", opacity: ".90", mask: "url(#map-fog-mask)" }));
+  ROADS.forEach(road => {
+    if (!visible.has(road.from) || !visible.has(road.to)) return;
+    const points = MAP_ROUTES[road.id];
+    if (!points) return;
+    svg.append(svgEl("polyline", { points: points.map(p => p.join(",")).join(" "),
+      fill: "none", class: "map-road-line" + (road.locked ? " locked" : "") + (active.has(road.id) ? " traveling" : ""),
+      "vector-effect": "non-scaling-stroke" }));
+    const mid = points[Math.floor(points.length / 2)];
     const badge = document.createElement("div");
-    badge.className = "map-road-badge" + (road.locked ? " locked" : "") + (road === travelRoad ? " traveling" : "");
-    badge.style.left = (a.x + b.x) / 2 + "px";
-    badge.style.top = (a.y + b.y) / 2 + "px";
-    badge.textContent = road.locked
-      ? "\u{1F512}" + (typeof road.locked === "string" ? " " + road.locked : "")
-      : road.minutes + " min";
+    badge.className = "map-road-badge" + (active.has(road.id) ? " traveling" : "");
+    badge.style.left = mid[0] * zoom + "px"; badge.style.top = mid[1] * zoom + "px";
+    badge.textContent = road.locked ? "Locked" : road.minutes + " min";
     canvas.append(badge);
   });
-
-  ids.forEach(function (id) {
-    const loc = LOCATIONS[id];
-    const p = pixel(id);
-    const isHere = id === state.currentLocation && !isAtHome();
-    const isDest = !!(state.travel && state.travel.to === id);
+  canvas.insertBefore(svg, terrain.nextSibling);
+  visible.forEach(id => {
+    const loc = LOCATIONS[id], p = MAP_PLACES[id];
+    if (!loc || !p) return;
+    const here = id === state.currentLocation;
     const node = document.createElement("button");
-    node.className = "map-node" + (isHere ? " current" : "") + (isDest ? " traveling" : "");
-    node.style.left = p.x + "px";
-    node.style.top = p.y + "px";
+    node.className = "map-node" + (here ? " current" : "") + (state.travel?.to === id ? " traveling" : "") + (!visited[id] ? " unexplored" : "");
+    node.style.left = p.x * zoom + "px"; node.style.top = p.y * zoom + "px";
     node.dataset.locId = id;
-    node.innerHTML =
-      '<span class="map-node-circle">' + (TYPE_ICON[loc.type] || "\u{2753}") + "</span>" +
-      '<span class="map-node-label">' + loc.name + "</span>" +
-      '<span class="map-node-type">' +
-        (isAtHome() && id === HOME_LOCATION_ID ? "Home" : isHere ? "You are here" : isDest ? "Arriving..." : (TYPE_LABEL[loc.type] || loc.type)) +
-      "</span>";
+    node.innerHTML = '<span class="map-node-circle">' + (TYPE_ICON[loc.type] || "◆") + '</span><span class="map-node-label">' + loc.name + '</span><span class="map-node-type">' + (here ? "You are here" : visited[id] ? "Visited" : "Unexplored") + '</span>';
+    node.addEventListener("click", e => { if (e.detail === 0) openLocationSheet(id); });
     canvas.append(node);
   });
-
-  // Open already centered on the player's current location -- the bottom
-  // of the chain today -- rather than the canvas's default top-left.
-  requestAnimationFrame(function () {
-    const cur = pixel(state.currentLocation);
-    viewport.scrollLeft = Math.max(0, cur.x - viewport.clientWidth / 2);
-    viewport.scrollTop = Math.max(0, cur.y - viewport.clientHeight / 2);
+  el("map-zoom-level").textContent = Math.round(zoom * 100) + "%";
+  requestAnimationFrame(() => {
+    if (!initialized || lastLocation !== state.currentLocation) centerPlayer();
+    else { viewport.scrollLeft = left; viewport.scrollTop = top; }
+    initialized = true; lastLocation = state.currentLocation;
   });
-
   updateTravelNote();
+}
+function setZoom(value, x, y) {
+  const v = el("map-viewport");
+  x ??= v.clientWidth / 2; y ??= v.clientHeight / 2;
+  const px = (v.scrollLeft + x) / zoom, py = (v.scrollTop + y) / zoom;
+  const min = Math.min(v.clientWidth / WORLD.width, v.clientHeight / WORLD.height);
+  zoom = Math.min(16, Math.max(min, value));
+  buildMap();
+  requestAnimationFrame(() => { v.scrollLeft = px * zoom - x; v.scrollTop = py * zoom - y; });
 }
 
 // Live countdown while a trip is in flight -- refreshed every tick by
@@ -252,38 +306,47 @@ el("back-map").addEventListener("click", function () { show("explore"); });
 // their children, so this never needs to run again).
 (function setupDrag() {
   const viewport = el("map-viewport");
-  let drag = null;
-
-  // Which node (if any) was actually under the pointer at the *start* of
-  // the gesture is decided here, at pointerdown -- not read back off a
-  // later "click" event. setPointerCapture below retargets every
-  // subsequent pointer event (and the click that follows them) to
-  // `viewport` itself, so by the time a click event exists its own
-  // e.target is useless for finding which node got tapped.
-  viewport.addEventListener("pointerdown", function (e) {
-    const node = e.target.closest(".map-node");
-    drag = {
-      x: e.clientX, y: e.clientY,
-      left: viewport.scrollLeft, top: viewport.scrollTop,
-      moved: false,
-      locId: node ? node.dataset.locId : null,
-    };
+  const pointers = new Map();
+  let moved = false, target = null;
+  viewport.addEventListener("pointerdown", e => {
+    if (e.button !== 0) return;
+    if (!pointers.size) { moved = false; target = e.target.closest(".map-node")?.dataset.locId; }
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY });
+    if (pointers.size > 1) moved = true;
     viewport.setPointerCapture(e.pointerId);
   });
-  viewport.addEventListener("pointermove", function (e) {
-    if (!drag) return;
-    const dx = e.clientX - drag.x;
-    const dy = e.clientY - drag.y;
-    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) drag.moved = true;
-    viewport.scrollLeft = drag.left - dx;
-    viewport.scrollTop = drag.top - dy;
+  viewport.addEventListener("pointermove", e => {
+    const prev = pointers.get(e.pointerId);
+    if (!prev) return;
+    if (Math.hypot(e.clientX - prev.startX, e.clientY - prev.startY) > 5) moved = true;
+    const other = [...pointers.entries()].find(([id]) => id !== e.pointerId)?.[1];
+    if (other) {
+      const before = Math.hypot(prev.x - other.x, prev.y - other.y);
+      const after = Math.hypot(e.clientX - other.x, e.clientY - other.y);
+      const rect = viewport.getBoundingClientRect();
+      if (before > 0) setZoom(zoom * after / before, (e.clientX + other.x) / 2 - rect.left, (e.clientY + other.y) / 2 - rect.top);
+    } else {
+      viewport.scrollLeft -= e.clientX - prev.x;
+      viewport.scrollTop -= e.clientY - prev.y;
+    }
+    pointers.set(e.pointerId, { ...prev, x: e.clientX, y: e.clientY });
   });
-  // A tap opens its node's sheet right here, once the pointer lifts
-  // without having moved past the drag threshold -- a real drag just
-  // pans and never opens anything.
-  viewport.addEventListener("pointerup", function () {
-    if (drag && !drag.moved && drag.locId) openLocationSheet(drag.locId);
-    drag = null;
+  viewport.addEventListener("pointerup", e => {
+    if (pointers.has(e.pointerId) && pointers.size === 1 && !moved && target) openLocationSheet(target);
+    pointers.delete(e.pointerId);
   });
-  viewport.addEventListener("pointercancel", function () { drag = null; });
+  viewport.addEventListener("pointercancel", e => { moved = true; pointers.delete(e.pointerId); });
+  viewport.addEventListener("lostpointercapture", e => pointers.delete(e.pointerId));
+  viewport.addEventListener("wheel", e => {
+    e.preventDefault();
+    const rect = viewport.getBoundingClientRect();
+    setZoom(zoom * Math.exp(-e.deltaY * .002), e.clientX - rect.left, e.clientY - rect.top);
+  }, { passive: false });
+  el("map-zoom-in").addEventListener("click", () => setZoom(zoom * 1.4));
+  el("map-zoom-out").addEventListener("click", () => setZoom(zoom / 1.4));
+  el("map-center").addEventListener("click", centerPlayer);
+  el("map-fit").addEventListener("click", () => {
+    setZoom(Math.min(viewport.clientWidth / WORLD.width, viewport.clientHeight / WORLD.height));
+    requestAnimationFrame(() => { viewport.scrollLeft = 0; viewport.scrollTop = 0; });
+  });
 })();

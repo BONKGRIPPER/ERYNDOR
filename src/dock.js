@@ -14,6 +14,8 @@ import { el } from "./dom.js";
 import { show } from "./screens.js";
 import { isTraveling, enterHomeMode } from "./travel.js";
 import { useSprite } from "./sprites.js";
+import { drawBag } from "./hub.js";
+import { showToast } from "./toast.js";
 
 export function buildDock() {
   const dock = el("dock");
@@ -40,10 +42,18 @@ export function buildDock() {
     btn.addEventListener("click", function () {
       if (id === "home") {
         // Home is only offered at Aerendell (refreshDock keeps it hidden
-        // otherwise); enterHomeMode() flips into the production context so
-        // screens.js's show() lets the workshop grid through.
-        enterHomeMode();
+        // otherwise); enterHomeMode() flips into the production context
+        // *and* unloads the Bag into the Warehouse, same as arriving home
+        // by any other road, so anything just gathered at Aerendell in
+        // field context is actually there for Crafting/stations to spend.
+        const result = enterHomeMode();
         show("home");
+        if (result && result.moved > 0) {
+          drawBag();
+          showToast(result.blocked > 0
+            ? result.moved + " cargo unloaded · " + result.blocked + " still in Bag"
+            : result.moved + " cargo unloaded to Warehouse");
+        }
         return;
       }
       if (SCREEN_IDS.indexOf(id) >= 0) { show(id); return; }

@@ -12,14 +12,12 @@
 // own. useSprite() gives every row a real assets/sprites/skills/<id>.png
 // the moment one exists, same pipeline as every other icon in the game.
 //
-// Foraging is the odd one out: it's capped at FORAGE_MAX_LEVEL, but its XP
-// keeps accumulating past whatever that level needs (see forage.js's own
-// speed lookup, which does the same Math.min clamp) -- so its row clamps
-// level to the cap and shows a full, "MAX" bar once XP crosses that
-// threshold, rather than levelProgress() drifting into a level number and
-// "into/need" pair that don't mean anything past the cap.
+// Foraging (2026-09-11) no longer has a row here -- its per-item mastery
+// bars now live on their own pills on the Foraging screen (forage.js),
+// same as a crafted item's own mastery bar lives on its Craft Bench pill
+// rather than on this journal-wide list.
 
-import { FORAGE_MAX_LEVEL, SKILLS } from "./data.js";
+import { SKILLS } from "./data.js";
 import { state, save, SAVE_KEY } from "./state.js";
 import { levelProgress, levelFromXp, MAX_SKILL_LEVEL } from "./skills.js";
 import { useSprite } from "./sprites.js";
@@ -31,7 +29,6 @@ import { openSheet } from "./sheet.js";
 const SKILL_ROWS = [
   { id: "farming",  xpOf: function () { return state.farmingXp; } },
   { id: "logging",  xpOf: function () { return state.loggingXp; } },
-  { id: "foraging", xpOf: function () { return state.foragingXp; }, maxLevel: FORAGE_MAX_LEVEL },
   { id: "mining",   xpOf: function () { return state.miningXp; } },
   // Combat's own row is replaced by these two (2026-09-03), not shown
   // alongside it -- state.combatXp still exists and still gains XP on
@@ -51,90 +48,127 @@ const SKILL_ROWS = [
   { id: "weaving", xpOf: function () { return state.weavingXp; } },
 ];
 
-export function buildSkills() {
+// Untouched skills (never gained a single point of XP) stay off the list
+// entirely -- per the request, "keep skills hidden" until there's
+// actually something to show for them, rather than a wall of sixteen
+// zero-progress rows from the very first boot. Sorted highest level to
+// lowest (ties broken by raw XP, so two skills at the same level still
+// read highest-progress-first rather than in registration order) --
+// re-derived fresh on every draw rather than cached, so leveling one
+// skill past another re-sorts the list on the spot instead of waiting
+// for the screen to be reopened.
+function visibleSkillRows() {
+  return SKILL_ROWS
+    .filter(function (skill) { return skill.xpOf() > 0; })
+    .sort(function (a, b) {
+      const xpA = a.xpOf();
+      const xpB = b.xpOf();
+      const levelDiff = levelFromXp(xpB) - levelFromXp(xpA);
+      return levelDiff !== 0 ? levelDiff : xpB - xpA;
+    });
+}
+
+function buildSkillRow(skill) {
+  const meta = SKILLS[skill.id];
+  const row = document.createElement("div");
+  row.className = "skill-row";
+
+  const icon = document.createElement("span");
+  icon.className = "skill-icon";
+  const img = document.createElement("img");
+  img.className = "sprite-img";
+  img.alt = "";
+  img.draggable = false;
+  const fallback = document.createElement("span");
+  fallback.className = "sprite-fallback";
+  fallback.textContent = meta.icon;
+  icon.append(img, fallback);
+
+  const body = document.createElement("div");
+  body.className = "skill-row-body";
+
+  const head = document.createElement("div");
+  head.className = "skill-row-head";
+  const name = document.createElement("span");
+  name.className = "skill-name";
+  name.textContent = meta.name;
+  const level = document.createElement("span");
+  level.className = "skill-level";
+  head.append(name, level);
+
+  const sub = document.createElement("div");
+  sub.className = "skill-row-sub";
+  const count = document.createElement("span");
+  sub.append(count);
+
+  const bar = document.createElement("div");
+  bar.className = "bar xp-bar";
+  const fill = document.createElement("div");
+  fill.className = "xp-fill";
+  bar.append(fill);
+
+  body.append(head, sub, bar);
+  row.append(icon, body);
+  useSprite(icon, "skills/" + skill.id);
+  return row;
+}
+
+function fillSkillRow(row, skill) {
+  const xp = skill.xpOf();
+  // Every skill now hits the same global MAX_SKILL_LEVEL ceiling
+  // (skills.js) -- `maxLevel` is no longer set by any SKILL_ROWS entry
+  // (Foraging, the one skill that used to override it, dropped off this
+  // list entirely in the 2026-09-11 rework), but the override path
+  // itself is left in rather than stripped, in case a future skill needs
+  // its own cap again.
+  const cap = skill.maxLevel !== undefined ? skill.maxLevel : MAX_SKILL_LEVEL;
+  const maxed = levelFromXp(xp) >= cap;
+
+  row.classList.toggle("maxed", maxed);
+  row.querySelector(".skill-level").textContent = maxed
+    ? "Level " + cap + " (MAX)"
+    : "Level " + levelProgress(xp).level;
+
+  const fill = row.querySelector(".xp-fill");
+  if (maxed) {
+    row.querySelector(".skill-row-sub span").textContent =
+      xp.toLocaleString() + " XP total";
+    fill.style.width = "100%";
+  } else {
+    const p = levelProgress(xp);
+    row.querySelector(".skill-row-sub span").textContent = p.into + " / " + p.need;
+    fill.style.width = (Math.min(1, p.into / p.need) * 100).toFixed(1) + "%";
+  }
+}
+
+// Rebuilt from scratch every call rather than patched in place -- the
+// visible set and its order can both change on any XP gain (a skill
+// appearing for the first time, or overtaking another in the sort), and
+// the whole list is short enough (16 skills, tops) that a full rebuild is
+// cheaper than diffing which rows moved. buildSkills() (journal.js, on
+// opening the Skills view) and drawSkills() (hub.js's updateSkillsNote(),
+// every time any skill gains XP while this screen is open) are now the
+// same function under two names, kept separate only so each call site
+// still reads like what it's actually doing.
+export function drawSkills() {
   const list = el("skills-list");
   list.replaceChildren();
-
-  SKILL_ROWS.forEach(function (skill) {
-    const meta = SKILLS[skill.id];
-    const row = document.createElement("div");
-    row.className = "skill-row";
-
-    const icon = document.createElement("span");
-    icon.className = "skill-icon";
-    const img = document.createElement("img");
-    img.className = "sprite-img";
-    img.alt = "";
-    img.draggable = false;
-    const fallback = document.createElement("span");
-    fallback.className = "sprite-fallback";
-    fallback.textContent = meta.icon;
-    icon.append(img, fallback);
-
-    const body = document.createElement("div");
-    body.className = "skill-row-body";
-
-    const head = document.createElement("div");
-    head.className = "skill-row-head";
-    const name = document.createElement("span");
-    name.className = "skill-name";
-    name.textContent = meta.name;
-    const level = document.createElement("span");
-    level.className = "skill-level";
-    head.append(name, level);
-
-    const sub = document.createElement("div");
-    sub.className = "skill-row-sub";
-    const count = document.createElement("span");
-    sub.append(count);
-
-    const bar = document.createElement("div");
-    bar.className = "bar xp-bar";
-    const fill = document.createElement("div");
-    fill.className = "xp-fill";
-    bar.append(fill);
-
-    body.append(head, sub, bar);
-    row.append(icon, body);
+  const rows = visibleSkillRows();
+  if (rows.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "inv-empty";
+    empty.textContent = "Nothing trained yet -- go earn some XP.";
+    list.append(empty);
+    return;
+  }
+  rows.forEach(function (skill) {
+    const row = buildSkillRow(skill);
+    fillSkillRow(row, skill);
     list.append(row);
-
-    useSprite(icon, "skills/" + skill.id);
-  });
-
-  drawSkills();
-}
-
-export function drawSkills() {
-  const rows = document.querySelectorAll("#skills-list .skill-row");
-  SKILL_ROWS.forEach(function (skill, i) {
-    const row = rows[i];
-    if (!row) return;
-    const xp = skill.xpOf();
-    // Foraging keeps its own lower cap (FORAGE_MAX_LEVEL); every other
-    // skill now hits the same global MAX_SKILL_LEVEL ceiling (skills.js) --
-    // both read through the same "maxed" display path here rather than
-    // this screen needing two separate branches for what's really the
-    // same situation at two different numbers.
-    const cap = skill.maxLevel !== undefined ? skill.maxLevel : MAX_SKILL_LEVEL;
-    const maxed = levelFromXp(xp) >= cap;
-
-    row.classList.toggle("maxed", maxed);
-    row.querySelector(".skill-level").textContent = maxed
-      ? "Level " + cap + " (MAX)"
-      : "Level " + levelProgress(xp).level;
-
-    const fill = row.querySelector(".xp-fill");
-    if (maxed) {
-      row.querySelector(".skill-row-sub span").textContent =
-        xp.toLocaleString() + " XP total";
-      fill.style.width = "100%";
-    } else {
-      const p = levelProgress(xp);
-      row.querySelector(".skill-row-sub span").textContent = p.into + " / " + p.need;
-      fill.style.width = (Math.min(1, p.into / p.need) * 100).toFixed(1) + "%";
-    }
   });
 }
+
+export function buildSkills() { drawSkills(); }
 
 el("back-skills").addEventListener("click", function () { show(isAtHome() ? "home" : "explore"); });
 

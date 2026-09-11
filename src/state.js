@@ -80,14 +80,14 @@ export const state = {
   campfire: { selectedFuel: null, selectedCook: null, current: null },
   farmingXp: 0,
   loggingXp: 0,
-  foragingXp: 0,
   // One assignable worker per profession (see WORKERS in data.js), each
   // entry { role, homeLocation, nextTickAt }, capped at workerCap()
   // (src/workers.js) -- entirely house-derived now (HOUSE_WORKER_SLOTS
   // per House, see `housing` below), no more Shard cost to assign one.
   // "forager" is one of these roles too (2026-09-04, second pass -- used
-  // to be its own standalone state.villager) -- its own tick loop still
-  // lives in forage.js (settleForage()), not workers.js's generic one.
+  // to be its own standalone state.villager) -- its auto-gather now routes
+  // through workers.js's own generic attemptRole() like every other role
+  // (see forage.js's tryAutoForage()).
   // `homeLocation` is recorded at assignment (state.currentLocation at
   // that moment); it's the Forager's actual working zone, but flavor/
   // display only for every other role -- their own station is a single
@@ -138,18 +138,20 @@ export const state = {
   // -- each slot needs its own fresh tap, same as a Craft pill. See
   // src/beehive.js.
   beehiveSlots: [],
-  // The one running gather, or null while idle -- { startedAt, readyAt,
-  // poolId }, same {startedAt,readyAt} deadline shape every other timer in
-  // this game uses (crafting, stations, campfire). `poolId` is locked in at
-  // the moment the gather starts (see forage.js's startForage()), so what
-  // it actually produces is rolled from wherever it began, not wherever the
-  // player happens to be standing when it resolves.
-  forage: null,
-  // Foraging's own action mastery -- see FORAGE_LEVEL_THRESHOLDS in
-  // data.js. `clicks` counts completed gathers toward the *next* level
-  // (resets to 0 the instant that level lands), same shape as
-  // state.itemLevels' own {level, crafts} entries.
-  forageLevel: { level: 0, clicks: 0 },
+  // One running gather per (location, item) pair, keyed
+  // "<locationId>|<item>" -- { startedAt, readyAt, item, loc }, same
+  // {startedAt,readyAt} deadline shape every other timer in this game uses
+  // (crafting, stations, campfire). Keyed by location as well as item name
+  // (not just item name) so the same item foraged at two different
+  // locations at once -- the player at one, the Forager villager working
+  // another -- never collides in one slot. See forage.js.
+  forageTimers: {},
+  // Per-item forage mastery -- see FORAGE_USES_BASE/GROWTH and
+  // FORAGE_SPEED_MULT in data.js. Same {level, uses} shape as
+  // state.itemLevels' own {level, crafts} entries, just keyed by the raw
+  // item name instead of a recipe id, and tracked across every location
+  // that item can be foraged at (see FORAGE_ITEMS in data.js).
+  forageItemLevels: {},
   // Same shape as foraging, one slot per recipe.
   crafting: { flintAxe: null, flintPickaxe: null, stonePickaxe: null },
   sowingXp: 0,
@@ -226,6 +228,8 @@ export const state = {
   // (src/map.js) highlights this one with "You are here"; src/travel.js
   // is what's allowed to change it, once a trip finishes.
   currentLocation: "aerendell",
+  mapVisited: { aerendell: true },
+  mapExploredRoads: {},
   // Home is a real physical context now, separate from the last/selected
   // field zone. Production screens require "home"; active gathering
   // screens require "field". "traveling" blocks both until settleTravel().
@@ -411,6 +415,20 @@ export function deliverProduction(name, amount) {
   return true;
 }
 
+// Same "retain the complete output until there's room" contract as
+// deliverProduction() above, just against the carried Bag instead of the
+// Warehouse -- for the one production system whose whole point is handing
+// the player something to equip (the Craft Bench, see craft.js's
+// settleCraft()), rather than pooling material at Home. Inputs still come
+// out of the Warehouse like every other station; only the finished item
+// itself lands somewhere the Equipment picker can actually see it
+// (openEquipPicker() in inventory.js only ever reads the Bag).
+export function deliverToBag(name, amount) {
+  if (bagRoomFor(name) < amount) return false;
+  gainItem(name, amount);
+  return true;
+}
+
 // Returning home unloads the entire carried Bag in one pass. Anything that
 // cannot fit stays carried; no reward is ever discarded by the unload.
 export function unloadBagToWarehouse() {
@@ -551,10 +569,9 @@ export function save() {
       plots: state.plots, logPlots: state.logPlots, beehiveSlots: state.beehiveSlots,
       wateringCan: state.wateringCan,
       farmingXp: state.farmingXp, loggingXp: state.loggingXp,
-      foragingXp: state.foragingXp,
       workers: state.workers, housing: state.housing,
       lastActiveAt: state.lastActiveAt,
-      forage: state.forage, forageLevel: state.forageLevel,
+      forageTimers: state.forageTimers, forageItemLevels: state.forageItemLevels,
       crafting: state.crafting,
       sowingXp: state.sowingXp, millingXp: state.millingXp,
       stonecuttingXp: state.stonecuttingXp, tanningXp: state.tanningXp,
@@ -577,6 +594,8 @@ export function save() {
       hubOrder: state.hubOrder,
       discoveredItems: state.discoveredItems,
       currentLocation: state.currentLocation,
+      mapVisited: state.mapVisited,
+      mapExploredRoads: state.mapExploredRoads,
       playerContext: state.playerContext,
       travel: state.travel,
       shipments: state.shipments,
@@ -657,7 +676,6 @@ export function load() {
     }
     if (typeof data.farmingXp === "number") state.farmingXp = data.farmingXp;
     if (typeof data.loggingXp === "number") state.loggingXp = data.loggingXp;
-    if (typeof data.foragingXp === "number") state.foragingXp = data.foragingXp;
     // Same "drop anything that doesn't have a real deadline" filter every
     // other timer-bearing array in this save follows -- a worker with no
     // valid nextTickAt (shouldn't happen outside a hand-edited save) just
@@ -696,18 +714,13 @@ export function load() {
     // reports as away-time -- default to now (no gap) if this is somehow
     // missing, rather than a stale/undefined value producing a nonsense span.
     state.lastActiveAt = typeof data.lastActiveAt === "number" ? data.lastActiveAt : Date.now();
-    // A save from before the single-tap Forage timer (2026-08-31) has no
-    // `forage` at all -- only the old swing-based `forageProgress`, which
-    // has nothing left to resume into (a partial swing was never worth
-    // anything on its own). Discarded rather than migrated, same as
-    // Logging's old crop-shape saves were.
-    state.forage = (data.forage && typeof data.forage.readyAt === "number") ? data.forage : null;
-    // A save from before forage mastery existed has no `forageLevel` at
-    // all -- starts at level 0, same as a save that's never crafted a
-    // given item has no `itemLevels` entry for it.
-    if (data.forageLevel && typeof data.forageLevel.level === "number") {
-      state.forageLevel = { level: data.forageLevel.level, clicks: data.forageLevel.clicks || 0 };
-    }
+    // A save from before Foraging's per-item rework (2026-09-11) has only
+    // the old shared-pill shape (`forage`/`forageLevel`) -- neither has
+    // anything worth resuming into (a single in-flight gather, or a
+    // mastery bar keyed to no specific item), so both are discarded rather
+    // than migrated, same as Logging's old crop-shape saves were.
+    state.forageTimers = (data.forageTimers && typeof data.forageTimers === "object") ? data.forageTimers : {};
+    state.forageItemLevels = (data.forageItemLevels && typeof data.forageItemLevels === "object") ? data.forageItemLevels : {};
     if (data.crafting) {
       Object.keys(RECIPES).forEach(function (item) {
         const c = data.crafting[item];
@@ -834,6 +847,15 @@ export function load() {
     }
     if (Array.isArray(data.hubOrder)) state.hubOrder = data.hubOrder;
     if (typeof data.currentLocation === "string") state.currentLocation = data.currentLocation;
+    state.mapVisited = { aerendell: true };
+    Object.keys(data.mapVisited || {}).forEach(id => {
+      if (LOCATIONS[id] && data.mapVisited[id] === true) state.mapVisited[id] = true;
+    });
+    if (LOCATIONS[state.currentLocation]) state.mapVisited[state.currentLocation] = true;
+    state.mapExploredRoads = {};
+    Object.keys(data.mapExploredRoads || {}).forEach(id => {
+      if (data.mapExploredRoads[id] === true) state.mapExploredRoads[id] = true;
+    });
     if (data.travel && typeof data.travel.readyAt === "number") {
       state.travel = data.travel;
     } else {

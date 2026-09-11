@@ -1,12 +1,18 @@
 // ================================================================ crafting
 //
 // A third loop, same shape as foraging, but starting one costs materials.
-// The cost comes out of the bag the instant a craft starts, matching how
-// Field already spends a seed the instant you plant -- so a craft, once
-// running, can never fail to finish for lack of materials.
+// The cost comes out of the Warehouse the instant a craft starts, same as
+// every other Home production system -- so a craft, once running, can
+// never fail to finish for lack of materials. The finished item itself
+// goes into the carried Bag, not the Warehouse (2026-09-11) -- unlike a
+// conversion station's raw output, most of what's on this bench is
+// equippable gear, and Inventory's Equipment picker only ever offers
+// items it finds in the Bag (inventory.js's openEquipPicker()), so
+// Warehouse-only output meant a manual Storage-to-Bag move before a
+// freshly crafted axe or pickaxe could actually be worn.
 
 import { RECIPES, CRAFT_MS } from "./data.js";
-import { state, save, deliverProduction } from "./state.js";
+import { state, save, deliverToBag } from "./state.js";
 import { pillFor, setPillFill } from "./pills.js";
 import { useSprite } from "./sprites.js";
 import { el } from "./dom.js";
@@ -54,7 +60,7 @@ export function settleCraft() {
     const c = state.crafting[item];
     if (!c || Date.now() < c.readyAt) return;
     const name = RECIPES[item].name;
-    if (!deliverProduction(name, 1)) return;
+    if (!deliverToBag(name, 1)) return;
     state.crafting[item] = null;
     setPillFill(item, 0, 0);
     if (recordCraft(name)) leveledUp[item] = true;
@@ -86,9 +92,9 @@ export function refreshCraft(only, flash) {
     pill.classList.toggle("unaffordable", !active && !affordable);
     pill.classList.toggle("affordable-ready", !active && affordable);
     const sub = pill.querySelector(".pill-sub");
-    if (active) sub.textContent = Date.now() >= state.crafting[item].readyAt ? "Warehouse full — output waiting" : "Crafting…";
+    if (active) sub.textContent = Date.now() >= state.crafting[item].readyAt ? "Bag full — output waiting" : "Crafting…";
     else sub.replaceChildren.apply(sub, buildCostNodes(recipe.cost));
-    pill.querySelector(".pill-count").textContent = state.storage[recipe.name] || 0;
+    pill.querySelector(".pill-count").textContent = state.bag[recipe.name] || 0;
 
     // The crafted item's own mastery -- independent of anything above.
     const badge = pill.querySelector(".pill-level-badge");
@@ -113,6 +119,7 @@ document.querySelectorAll("#screen-craft .pill").forEach(function (pill) {
 el("back-craft").addEventListener("click", function () { show("home"); });
 
 export function applyCraftSprites() {
+  useSprite(el("workshop-art"), "home/workshop");
   document.querySelectorAll("#screen-craft .pill").forEach(function (pill) {
     useSprite(pill.querySelector(".pill-icon"), "craft/" + pill.dataset.item);
   });
